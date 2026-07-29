@@ -239,7 +239,13 @@ app.whenReady().then(async () => {
   });
 
   if (!isDev) {
-    autoUpdater.checkForUpdatesAndNotify();
+    // Auto-update check — wrapped in try/catch so a missing update server
+    // never crashes the app
+    try {
+      autoUpdater.checkForUpdatesAndNotify();
+    } catch {
+      // ignore
+    }
   }
 });
 
