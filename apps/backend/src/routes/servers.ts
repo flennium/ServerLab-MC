@@ -196,6 +196,22 @@ serverRoutes.delete("/:id/files", async (req, res, next) => {
   }
 });
 
+// PATCH /api/servers/:id/files/rename
+serverRoutes.patch("/:id/files/rename", async (req, res, next) => {
+  try {
+    const fm = await getFileManager(req.params.id);
+    const { oldPath, newPath } = req.body as { oldPath: string; newPath: string };
+    if (!oldPath || !newPath) {
+      res.status(400).json({ error: "oldPath and newPath are required" });
+      return;
+    }
+    await fm.rename(oldPath, newPath);
+    res.json({ message: "Renamed" });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ─── Backups ──────────────────────────────────────────────────────────────────
 
 // GET /api/servers/:id/backups

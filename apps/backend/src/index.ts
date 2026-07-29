@@ -48,6 +48,11 @@ app.use("/api/backups", backupRoutes);
 // Health-check (unauthenticated — Electron uses this to know the backend is up)
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
+// Data path (unauthenticated — used by SettingsPage open-data-folder)
+app.get("/api/data-path", (_req, res) => {
+  res.json({ path: process.cwd() });
+});
+
 app.use(errorHandler);
 
 // ─── Socket handlers ──────────────────────────────────────────────────────────

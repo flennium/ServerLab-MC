@@ -100,14 +100,11 @@ function createWindow(): void {
 
 // ─── IPC handlers (renderer → main) ──────────────────────────────────────────
 
-/** Expose the backend origin and auth token to the renderer through IPC.
- *  The renderer calls window.serverlab.getBackendConfig() via the contextBridge. */
 ipcMain.handle("backend:config", () => ({
   origin: `http://127.0.0.1:${BACKEND_PORT}`,
   token: BACKEND_TOKEN,
 }));
 
-/** Open a native folder-picker dialog */
 ipcMain.handle("dialog:openDirectory", async () => {
   const { dialog } = await import("electron");
   const result = await dialog.showOpenDialog(mainWindow!, {
@@ -115,6 +112,12 @@ ipcMain.handle("dialog:openDirectory", async () => {
   });
   return result.canceled ? null : result.filePaths[0];
 });
+
+ipcMain.handle("shell:openPath", (_event, filePath: string) => {
+  shell.openPath(filePath);
+});
+
+ipcMain.handle("app:version", () => app.getVersion());
 
 // ─── App lifecycle ────────────────────────────────────────────────────────────
 

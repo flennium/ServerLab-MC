@@ -1,10 +1,10 @@
 import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AppShell } from "./components/layout/AppShell.js";
 import { DashboardPage } from "./pages/DashboardPage.js";
-import { ServersPage } from "./pages/ServersPage.js";
-import { ServerDetailPage } from "./pages/ServerDetailPage.js";
-import { JavaManagerPage } from "./pages/JavaManagerPage.js";
-import { SettingsPage } from "./pages/SettingsPage.js";
+import { ServersPage } from "./pages/ServersPage.tsx";
+import { ServerDetailPage } from "./pages/ServerDetailPage.tsx";
+import { JavaManagerPage } from "./pages/JavaManagerPage.tsx";
+import { SettingsPage } from "./pages/SettingsPage.tsx";
 
 export function App() {
   return (

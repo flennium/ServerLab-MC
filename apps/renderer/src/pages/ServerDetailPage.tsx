@@ -4,11 +4,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 import { useServerStore } from "../store/serverStore.js";
 import { StatusBadge } from "../components/ui/StatusBadge.js";
+import { ConfirmModal } from "../components/ui/ConfirmModal.js";
+import { Skeleton } from "../components/ui/Skeleton.js";
 import { Console } from "../components/server/Console.js";
 import { FileManager } from "../components/server/FileManager.js";
 import { FileEditor } from "../components/server/FileEditor.js";
 import { PerformanceMonitor } from "../components/server/PerformanceMonitor.js";
 import { BackupPanel } from "../components/server/BackupPanel.js";
+import { api } from "../lib/apiClient.js";
+import type { Server, UpdateServerDto } from "@serverlab/shared";
 
 type Tab = "console" | "files" | "monitor" | "backups" | "settings";
 
@@ -31,14 +35,34 @@ export function ServerDetailPage() {
   const { servers, fetchServers, startServer, stopServer, restartServer, deleteServer } =
     useServerStore();
 
+  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("console");
   const [openFile, setOpenFile] = useState<OpenFile | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
-    fetchServers();
+    fetchServers().finally(() => setLoading(false));
   }, [fetchServers]);
 
   const server = servers.find((s) => s.id === id);
+
+  // Loading state — show skeleton header instead of "not found" flash
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="flex items-start justify-between">
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-7 w-48" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <Skeleton className="h-9 w-24 rounded" />
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
+        </div>
+      </div>
+    );
+  }
 
   if (!server) {
     return (
@@ -54,7 +78,6 @@ export function ServerDetailPage() {
   const isActive = server.status === "running" || server.status === "starting";
 
   async function handleDelete() {
-    if (!confirm(`Delete "${server!.name}"? A backup will be taken first.`)) return;
     await deleteServer(server!.id);
     navigate("/servers");
   }
@@ -76,9 +99,9 @@ export function ServerDetailPage() {
           <p className="mt-1 text-sm text-muted capitalize">
             {server.software} {server.version} · Port {server.port}
           </p>
+          <p className="mt-0.5 font-mono text-xs text-muted">{server.path}</p>
         </div>
 
-        {/* Controls */}
         <div className="flex gap-2 flex-wrap">
           {!isActive ? (
             <button
@@ -104,7 +127,7 @@ export function ServerDetailPage() {
             </>
           )}
           <button
-            onClick={handleDelete}
+            onClick={() => setConfirmDelete(true)}
             className="rounded bg-danger/20 px-4 py-2 text-sm font-medium text-danger hover:bg-danger/30 transition-colors"
           >
             Delete
@@ -115,10 +138,10 @@ export function ServerDetailPage() {
       {/* ── Stats row ── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { label: "RAM Min", value: `${server.ramMinMb} MB` },
-          { label: "RAM Max", value: `${server.ramMaxMb} MB` },
-          { label: "Port",    value: String(server.port) },
-          { label: "Auto-start", value: server.autoStart ? "On" : "Off" },
+          { label: "RAM Min",     value: `${server.ramMinMb} MB` },
+          { label: "RAM Max",     value: `${server.ramMaxMb} MB` },
+          { label: "Port",        value: String(server.port) },
+          { label: "Auto-start",  value: server.autoStart ? "On" : "Off" },
         ].map(({ label, value }) => (
           <div key={label} className="rounded-lg border border-border bg-surface-2 px-4 py-3">
             <p className="text-xs text-muted">{label}</p>
@@ -128,11 +151,7 @@ export function ServerDetailPage() {
       </div>
 
       {/* ── Tab bar ── */}
-      <div
-        className="flex gap-0 border-b border-border"
-        role="tablist"
-        aria-label="Server sections"
-      >
+      <div className="flex gap-0 border-b border-border" role="tablist" aria-label="Server sections">
         {TABS.map(({ id: tid, label }) => (
           <button
             key={tid}
@@ -164,42 +183,44 @@ export function ServerDetailPage() {
 
           {tab === "files" && (
             <div className="flex flex-col gap-4">
-              {openFile ? (
+              {openFile && (
                 <FileEditor
                   serverId={server.id}
                   filePath={openFile.path}
                   fileName={openFile.name}
                   onClose={() => setOpenFile(null)}
                 />
-              ) : null}
-              <FileManager
-                serverId={server.id}
-                onOpenFile={handleOpenFile}
-              />
+              )}
+              <FileManager serverId={server.id} onOpenFile={handleOpenFile} />
             </div>
           )}
 
           {tab === "monitor" && (
-            <PerformanceMonitor
-              serverId={server.id}
-              ramMaxMb={server.ramMaxMb}
-            />
+            <PerformanceMonitor serverId={server.id} ramMaxMb={server.ramMaxMb} />
           )}
 
           {tab === "backups" && <BackupPanel serverId={server.id} />}
 
-          {tab === "settings" && (
-            <ServerSettings server={server} />
-          )}
+          {tab === "settings" && <ServerSettings server={server} />}
         </motion.div>
       </AnimatePresence>
+
+      {/* ── Delete confirmation ── */}
+      {confirmDelete && (
+        <ConfirmModal
+          title={`Delete "${server.name}"?`}
+          message="A backup will be taken automatically before deletion. This cannot be undone."
+          confirmLabel="Delete server"
+          danger
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
     </div>
   );
 }
 
-// ─── Inline settings panel ────────────────────────────────────────────────────
-import { api } from "../lib/apiClient.js";
-import type { Server, UpdateServerDto } from "@serverlab/shared";
+// ─── Settings tab ─────────────────────────────────────────────────────────────
 
 function ServerSettings({ server }: { server: Server }) {
   const { fetchServers } = useServerStore();
@@ -216,6 +237,19 @@ function ServerSettings({ server }: { server: Server }) {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Reset when server prop changes (e.g. after save)
+  useEffect(() => {
+    setForm({
+      name: server.name,
+      javaPath: server.javaPath,
+      ramMinMb: server.ramMinMb,
+      ramMaxMb: server.ramMaxMb,
+      port: server.port,
+      startupArgs: server.startupArgs ?? "",
+      autoStart: server.autoStart,
+    });
+  }, [server.id]);
+
   function set<K extends keyof UpdateServerDto>(key: K, value: UpdateServerDto[K]) {
     setForm((f) => ({ ...f, [key]: value }));
   }
@@ -227,7 +261,7 @@ function ServerSettings({ server }: { server: Server }) {
       await api.patch(`/api/servers/${server.id}`, form);
       await fetchServers();
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      setTimeout(() => setSaved(false), 2500);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
     } finally {
@@ -241,65 +275,33 @@ function ServerSettings({ server }: { server: Server }) {
   return (
     <div className="max-w-lg flex flex-col gap-4">
       <Field label="Name">
-        <input
-          type="text"
-          value={form.name ?? ""}
-          onChange={(e) => set("name", e.target.value)}
-          className={inputCls}
-        />
+        <input type="text" value={form.name ?? ""} onChange={(e) => set("name", e.target.value)} className={inputCls} />
       </Field>
+
       <div className="grid grid-cols-2 gap-3">
         <Field label="RAM min (MB)">
-          <input
-            type="number"
-            value={form.ramMinMb}
-            onChange={(e) => set("ramMinMb", Number(e.target.value))}
-            className={inputCls}
-          />
+          <input type="number" value={form.ramMinMb} onChange={(e) => set("ramMinMb", Number(e.target.value))} min={512} className={inputCls} />
         </Field>
         <Field label="RAM max (MB)">
-          <input
-            type="number"
-            value={form.ramMaxMb}
-            onChange={(e) => set("ramMaxMb", Number(e.target.value))}
-            className={inputCls}
-          />
+          <input type="number" value={form.ramMaxMb} onChange={(e) => set("ramMaxMb", Number(e.target.value))} min={512} className={inputCls} />
         </Field>
       </div>
+
       <div className="grid grid-cols-2 gap-3">
         <Field label="Port">
-          <input
-            type="number"
-            value={form.port}
-            onChange={(e) => set("port", Number(e.target.value))}
-            className={inputCls}
-          />
+          <input type="number" value={form.port} onChange={(e) => set("port", Number(e.target.value))} min={1024} max={65535} className={inputCls} />
         </Field>
         <Field label="Java executable">
-          <input
-            type="text"
-            value={form.javaPath ?? ""}
-            onChange={(e) => set("javaPath", e.target.value)}
-            className={inputCls}
-          />
+          <input type="text" value={form.javaPath ?? ""} onChange={(e) => set("javaPath", e.target.value)} className={inputCls} />
         </Field>
       </div>
+
       <Field label="Extra startup arguments">
-        <input
-          type="text"
-          value={form.startupArgs ?? ""}
-          onChange={(e) => set("startupArgs", e.target.value)}
-          placeholder="--nogui --noconsole"
-          className={inputCls}
-        />
+        <input type="text" value={form.startupArgs ?? ""} onChange={(e) => set("startupArgs", e.target.value)} placeholder="e.g. --nogui" className={inputCls} />
       </Field>
+
       <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={form.autoStart ?? false}
-          onChange={(e) => set("autoStart", e.target.checked)}
-          className="accent-accent"
-        />
+        <input type="checkbox" checked={form.autoStart ?? false} onChange={(e) => set("autoStart", e.target.checked)} className="accent-accent" />
         Auto-start on app launch
       </label>
 
@@ -315,7 +317,7 @@ function ServerSettings({ server }: { server: Server }) {
         >
           {saving ? "Saving…" : "Save changes"}
         </button>
-        {saved && <span className="text-sm text-accent">✓ Saved</span>}
+        {saved && <span className="text-sm text-accent animate-pulse">✓ Saved</span>}
       </div>
     </div>
   );

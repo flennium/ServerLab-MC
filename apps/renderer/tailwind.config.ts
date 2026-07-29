@@ -11,15 +11,17 @@ const config: Config = {
           1: "#161616",
           2: "#1e1e1e",
           3: "#272727",
+          console: "#0a0a0a",
         },
         border: "#2e2e2e",
         accent: {
-          DEFAULT: "#22c55e", // green — "running" colour
+          DEFAULT: "#22c55e",
           hover: "#16a34a",
         },
         danger: "#ef4444",
         warning: "#f59e0b",
         muted: "#6b7280",
+        info: "#5555FF",
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],

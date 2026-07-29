@@ -24,7 +24,11 @@ function getExtensions(fileName: string) {
       return [json()];
     case "js":
     case "ts":
+    case "mjs":
+    case "cjs":
       return [javascript()];
+    // .properties, .toml, .conf, .ini — plain text, no specific extension available
+    // but we still open them — just no extra language highlighting
     default:
       return [];
   }
@@ -88,7 +92,7 @@ export function FileEditor({ serverId, filePath, fileName, onClose }: FileEditor
   }, [handleSave]);
 
   return (
-    <div className="flex flex-col rounded-lg border border-border overflow-hidden bg-[#0a0a0a]">
+    <div className="flex flex-col rounded-lg border border-border overflow-hidden bg-surface-console">
       {/* Header bar */}
       <div className="flex items-center gap-3 border-b border-border px-3 py-2">
         <span className="font-mono text-xs text-muted truncate flex-1">

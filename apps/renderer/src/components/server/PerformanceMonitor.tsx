@@ -91,7 +91,6 @@ export function PerformanceMonitor({ serverId, ramMaxMb }: PerformanceMonitorPro
         </ResponsiveContainer>
       </ChartCard>
 
-      {/* RAM chart */}
       <ChartCard title="RAM (MB)">
         <ResponsiveContainer width="100%" height={90}>
           <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>

@@ -8,7 +8,7 @@ interface ConsoleLine {
   text: string;
 }
 
-/** Parse Minecraft §-colour codes into HTML spans */
+/** Parse Minecraft §-colour codes into escaped HTML spans */
 function parseMinecraftColors(line: string): string {
   const COLOR_MAP: Record<string, string> = {
     "§0": "#000000", "§1": "#0000AA", "§2": "#00AA00", "§3": "#00AAAA",
@@ -31,7 +31,6 @@ function parseMinecraftColors(line: string): string {
       }
       i += 2;
     } else {
-      // Escape HTML entities
       const ch = line[i];
       if (ch === "<") html += "&lt;";
       else if (ch === ">") html += "&gt;";
@@ -40,7 +39,6 @@ function parseMinecraftColors(line: string): string {
       i++;
     }
   }
-
   if (openSpan) html += "</span>";
   return html;
 }
@@ -56,13 +54,25 @@ export function Console({ serverId }: ConsoleProps) {
   const [input, setInput] = useState("");
   const [history, setHistory] = useState<string[]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
+  const [autoScroll, setAutoScroll] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-scroll to bottom when new lines arrive
+  // Auto-scroll only when autoScroll is enabled
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [lines]);
+    if (autoScroll) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [lines, autoScroll]);
+
+  // Pause auto-scroll when user scrolls up
+  function handleScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    setAutoScroll(atBottom);
+  }
 
   // Subscribe to Socket.IO console output for this server
   useEffect(() => {
@@ -72,15 +82,13 @@ export function Console({ serverId }: ConsoleProps) {
       const handler = (payload: ConsoleOutputPayload) => {
         if (payload.serverId !== serverId) return;
         setLines((prev) => {
-          const next = [
-            ...prev,
-            { timestamp: payload.timestamp, text: payload.line },
-          ];
+          const next = [...prev, { timestamp: payload.timestamp, text: payload.line }];
           return next.length > MAX_LINES ? next.slice(-MAX_LINES) : next;
         });
       };
 
       socket.on("console:output", handler);
+      // ✅ Proper cleanup — prevents listener leak on re-render
       cleanup = () => socket.off("console:output", handler);
     });
 
@@ -90,15 +98,13 @@ export function Console({ serverId }: ConsoleProps) {
   const sendCommand = useCallback(async () => {
     const cmd = input.trim();
     if (!cmd) return;
-
     setHistory((h) => [cmd, ...h.slice(0, 49)]);
     setHistoryIdx(-1);
     setInput("");
-
     try {
       await api.post(`/api/servers/${serverId}/command`, { command: cmd });
     } catch {
-      // Command errors surface in the console stream itself
+      // errors surface in the console stream
     }
   }, [input, serverId]);
 
@@ -119,23 +125,50 @@ export function Console({ serverId }: ConsoleProps) {
   }
 
   return (
-    <div className="flex flex-col rounded-lg border border-border bg-[#0a0a0a] overflow-hidden">
+    <div className="flex flex-col rounded-lg border border-border bg-surface-console overflow-hidden">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
+        <span className="text-xs text-muted">Console</span>
+        <div className="flex items-center gap-2">
+          {!autoScroll && (
+            <button
+              onClick={() => {
+                setAutoScroll(true);
+                bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+              }}
+              className="rounded bg-surface-3 px-2 py-0.5 text-xs text-warning hover:bg-border transition-colors"
+            >
+              ↓ Resume scroll
+            </button>
+          )}
+          <button
+            onClick={() => setLines([])}
+            className="rounded bg-surface-3 px-2 py-0.5 text-xs text-muted hover:text-white hover:bg-border transition-colors"
+            title="Clear console"
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+
       {/* Output area */}
       <div
-        className="flex-1 overflow-y-auto px-4 py-3 console-font"
-        style={{ height: "360px" }}
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="overflow-y-auto px-4 py-3 console-font"
+        style={{ height: "380px" }}
         role="log"
         aria-live="polite"
         aria-label="Server console output"
       >
         {lines.length === 0 && (
-          <p className="text-muted">Console output will appear here once the server starts.</p>
+          <p className="text-muted text-xs">
+            Console output will appear here once the server starts.
+          </p>
         )}
         {lines.map((line, i) => (
           <div key={i} className="leading-relaxed whitespace-pre-wrap break-all">
             <span
-              // Safe: we control this HTML — user-provided content goes through
-              // entity-escaping in parseMinecraftColors before being injected.
               dangerouslySetInnerHTML={{ __html: parseMinecraftColors(line.text) }}
             />
           </div>
@@ -145,7 +178,7 @@ export function Console({ serverId }: ConsoleProps) {
 
       {/* Input row */}
       <div className="flex border-t border-border">
-        <span className="flex items-center px-3 text-accent console-font select-none">
+        <span className="flex items-center px-3 text-accent console-font select-none" aria-hidden="true">
           &gt;
         </span>
         <input
@@ -154,7 +187,7 @@ export function Console({ serverId }: ConsoleProps) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type a command…"
+          placeholder="Type a command and press Enter…"
           className="flex-1 bg-transparent py-2 pr-3 text-sm console-font text-white placeholder:text-muted focus:outline-none"
           aria-label="Console command input"
           spellCheck={false}
