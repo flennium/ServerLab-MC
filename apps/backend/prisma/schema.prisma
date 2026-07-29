@@ -1,0 +1,66 @@
+// ─── Prisma schema — ServerLab MC ─────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Server {
+  id          String   @id @default(uuid())
+  name        String
+  path        String
+  version     String
+  software    String   // paper | purpur | spigot | fabric
+  javaPath    String
+  ramMinMb    Int      @default(1024)
+  ramMaxMb    Int      @default(4096)
+  port        Int      @default(25565)
+  startupArgs String?
+  autoStart   Boolean  @default(false)
+  status      String   @default("stopped") // stopped|starting|running|stopping|crashed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  backups     Backup[]
+
+  @@map("servers")
+}
+
+model Template {
+  id            String    @id @default(uuid())
+  name          String
+  repositoryUrl String
+  version       String?
+  author        String?
+  official      Boolean   @default(false)
+  installedAt   DateTime?
+
+  @@map("templates")
+}
+
+model Backup {
+  id        String   @id @default(uuid())
+  serverId  String
+  location  String
+  sizeBytes Int
+  type      String   @default("manual") // manual | scheduled
+  createdAt DateTime @default(now())
+
+  server    Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@map("backups")
+}
+
+model JavaVersion {
+  id       String  @id @default(uuid())
+  major    Int
+  path     String
+  vendor   String? // adoptium | manual
+  detected Boolean @default(true)
+
+  @@map("java_versions")
+}

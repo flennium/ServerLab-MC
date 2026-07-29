@@ -1,0 +1,38 @@
+{
+  "name": "@serverlab/renderer",
+  "version": "1.0.0",
+  "description": "ServerLab MC React renderer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-yaml": "^6.1.3",
+    "@codemirror/theme-one-dark": "^6.1.3",
+    "@serverlab/shared": "*",
+    "@uiw/react-codemirror": "^4.25.11",
+    "clsx": "^2.1.1",
+    "framer-motion": "^11.2.10",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.24.0",
+    "recharts": "^3.10.1",
+    "socket.io-client": "^4.7.5",
+    "zustand": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.39",
+    "tailwindcss": "^3.4.6",
+    "typescript": "^5.5.0",
+    "vite": "^5.3.2"
+  }
+}
