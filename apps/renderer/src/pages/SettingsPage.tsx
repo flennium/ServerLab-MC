@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 // Read version from package.json at build time via Vite's import.meta
 // (Vite exposes define replacements; we fall back to a hardcoded string for web-only dev)
-const APP_VERSION = "2.0.0";
+const APP_VERSION = "2.1.0";
 
 function getPlatformLabel(): string {
   if (typeof window !== "undefined" && window.serverlab) {
