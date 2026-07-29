@@ -47,12 +47,29 @@ function startBackend(): void {
 
   const dbPath = path.join(dataDir, "serverlab.db");
 
-  const backendEntry = isDev
-    ? path.join(__dirname, "../../backend/src/index.ts")
-    : path.join(process.resourcesPath, "backend/dist/index.js");
+  let command: string;
+  let args: string[];
 
-  const command = isDev ? "npx" : process.execPath;
-  const args = isDev ? ["tsx", backendEntry] : [backendEntry];
+  if (isDev) {
+    // Dev: use tsx to run TypeScript directly
+    command = "npx";
+    args = [
+      "tsx",
+      path.join(__dirname, "../../backend/src/index.ts"),
+    ];
+  } else {
+    // Production: run the pre-bundled index.js with Node.
+    // Electron ships its own Node runtime at process.execPath,
+    // but that's the Electron binary. We use a separate node.exe
+    // that electron-builder extracts to resources, falling back to
+    // the system node if not found.
+    const bundledNode = path.join(process.resourcesPath, "node", "node.exe");
+    const systemNode = "node";
+    command = fs.existsSync(bundledNode) ? bundledNode : systemNode;
+    args = [
+      path.join(process.resourcesPath, "backend", "dist", "index.js"),
+    ];
+  }
 
   backendProcess = spawn(command, args, {
     env: {
@@ -60,9 +77,18 @@ function startBackend(): void {
       PORT: String(BACKEND_PORT),
       BACKEND_TOKEN,
       NODE_ENV: isDev ? "development" : "production",
-      // ↓ These two env vars are the sole authority for where data lives
       DATA_DIR: dataDir,
       DATABASE_URL: `file:${dbPath}`,
+      // Tell Prisma where to find its query engine in production
+      PRISMA_QUERY_ENGINE_LIBRARY: isDev
+        ? ""
+        : path.join(
+            process.resourcesPath,
+            "backend",
+            "node_modules",
+            ".prisma",
+            "client"
+          ),
     },
     stdio: ["pipe", "pipe", "pipe"],
     detached: false,
@@ -88,6 +114,55 @@ function stopBackend(): void {
   }
 }
 
+// ─── DB migrations (production first-launch) ─────────────────────────────────
+
+async function runMigrations(): Promise<void> {
+  const dataDir = getDataDir();
+  const dbPath = path.join(dataDir, "serverlab.db");
+  const migrationsPath = path.join(
+    process.resourcesPath,
+    "backend",
+    "dist",
+    "prisma",
+    "migrations"
+  );
+  const schemaPath = path.join(
+    process.resourcesPath,
+    "backend",
+    "dist",
+    "prisma",
+    "schema.prisma"
+  );
+  const bundledNode = path.join(process.resourcesPath, "node", "node.exe");
+  const nodeCmd = fs.existsSync(bundledNode) ? bundledNode : "node";
+  const prismaCli = path.join(
+    process.resourcesPath,
+    "backend",
+    "node_modules",
+    ".bin",
+    "prisma"
+  );
+
+  if (!fs.existsSync(prismaCli)) {
+    console.log("[migrations] prisma CLI not found, skipping");
+    return;
+  }
+
+  return new Promise((resolve) => {
+    const proc = spawn(nodeCmd, [prismaCli, "migrate", "deploy", "--schema", schemaPath], {
+      env: {
+        ...process.env,
+        DATABASE_URL: `file:${dbPath}`,
+      },
+      stdio: "pipe",
+    });
+    proc.stdout?.on("data", (d: Buffer) => console.log("[migrate]", d.toString().trim()));
+    proc.stderr?.on("data", (d: Buffer) => console.log("[migrate:err]", d.toString().trim()));
+    proc.on("exit", () => resolve());
+    proc.on("error", () => resolve()); // Don't block app start if migration fails
+  });
+}
+
 // ─── Window creation ──────────────────────────────────────────────────────────
 
 function createWindow(): void {
@@ -111,7 +186,7 @@ function createWindow(): void {
     mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(
-      path.join(__dirname, "../../renderer/dist/index.html")
+      path.join(process.resourcesPath, "renderer", "index.html")
     );
   }
 
@@ -151,7 +226,11 @@ ipcMain.handle("app:version", () => app.getVersion());
 
 // ─── App lifecycle ────────────────────────────────────────────────────────────
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Run DB migrations on first launch (production only)
+  if (!isDev) {
+    await runMigrations();
+  }
   startBackend();
   createWindow();
 
