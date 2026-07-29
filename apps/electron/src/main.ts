@@ -1,10 +1,11 @@
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import path from "path";
+import fs from "fs";
 import { spawn, ChildProcess } from "child_process";
 import { autoUpdater } from "electron-updater";
 import crypto from "crypto";
 
-// ─── Startup token (shared secretly with renderer via env var) ────────────────
+// ─── Startup token ────────────────────────────────────────────────────────────
 const BACKEND_TOKEN = crypto.randomBytes(32).toString("hex");
 const BACKEND_PORT = 3001;
 
@@ -13,17 +14,45 @@ let backendProcess: ChildProcess | null = null;
 
 const isDev = !app.isPackaged;
 
+/**
+ * The single source of truth for where all persistent app data lives.
+ *
+ * Dev:        <project>/data/   (keeps dev data out of the source tree)
+ * Production: %APPDATA%\ServerLab MC\   (standard Windows userData path)
+ *
+ * Structure:
+ *   <DATA_DIR>/
+ *     serverlab.db         ← SQLite database
+ *     backups/             ← zip archives
+ *     logs/                ← app-level logs
+ */
+function getDataDir(): string {
+  if (isDev) {
+    const devDir = path.join(__dirname, "../../../data");
+    fs.mkdirSync(devDir, { recursive: true });
+    return devDir;
+  }
+  // app.getPath("userData") = %APPDATA%\ServerLab MC on Windows
+  return app.getPath("userData");
+}
+
 // ─── Backend lifecycle ────────────────────────────────────────────────────────
 
 function startBackend(): void {
+  const dataDir = getDataDir();
+
+  // Ensure sub-directories exist before the backend starts
+  fs.mkdirSync(path.join(dataDir, "backups"), { recursive: true });
+  fs.mkdirSync(path.join(dataDir, "logs"), { recursive: true });
+
+  const dbPath = path.join(dataDir, "serverlab.db");
+
   const backendEntry = isDev
     ? path.join(__dirname, "../../backend/src/index.ts")
     : path.join(process.resourcesPath, "backend/dist/index.js");
 
   const command = isDev ? "npx" : process.execPath;
-  const args = isDev
-    ? ["ts-node", backendEntry]
-    : [backendEntry];
+  const args = isDev ? ["tsx", backendEntry] : [backendEntry];
 
   backendProcess = spawn(command, args, {
     env: {
@@ -31,10 +60,11 @@ function startBackend(): void {
       PORT: String(BACKEND_PORT),
       BACKEND_TOKEN,
       NODE_ENV: isDev ? "development" : "production",
+      // ↓ These two env vars are the sole authority for where data lives
+      DATA_DIR: dataDir,
+      DATABASE_URL: `file:${dbPath}`,
     },
     stdio: ["pipe", "pipe", "pipe"],
-    // Keep child alive only as long as the parent — falls back to tree-kill
-    // on non-Windows. On Windows, a Job Object is preferred; see README notes.
     detached: false,
   });
 

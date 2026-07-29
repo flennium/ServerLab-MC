@@ -2,13 +2,20 @@ import fs from "fs";
 import fsPromises from "fs/promises";
 import path from "path";
 import archiver from "archiver";
-import { pipeline } from "stream/promises";
 import { createWriteStream } from "fs";
 import { prisma } from "../lib/prisma.js";
 import { logger } from "../lib/logger.js";
 import { io } from "../index.js";
 
-const BACKUPS_ROOT = path.join(process.cwd(), "backups");
+/**
+ * Backups are stored in DATA_DIR/backups/ (injected by Electron main).
+ * Falls back to <cwd>/backups/ for standalone dev without Electron.
+ */
+function getBackupsRoot(): string {
+  const dataDir = process.env.DATA_DIR;
+  if (dataDir) return path.join(dataDir, "backups");
+  return path.join(process.cwd(), "backups");
+}
 
 export async function createBackup(
   serverId: string,
@@ -16,6 +23,7 @@ export async function createBackup(
 ): Promise<string> {
   const server = await prisma.server.findUniqueOrThrow({ where: { id: serverId } });
 
+  const BACKUPS_ROOT = getBackupsRoot();
   await fsPromises.mkdir(BACKUPS_ROOT, { recursive: true });
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");

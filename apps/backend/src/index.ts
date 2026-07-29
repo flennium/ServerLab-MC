@@ -50,7 +50,8 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 
 // Data path (unauthenticated — used by SettingsPage open-data-folder)
 app.get("/api/data-path", (_req, res) => {
-  res.json({ path: process.cwd() });
+  const dataDir = process.env.DATA_DIR ?? process.cwd();
+  res.json({ path: dataDir });
 });
 
 app.use(errorHandler);
@@ -60,7 +61,9 @@ registerSocketHandlers(io);
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 httpServer.listen(PORT, HOST, () => {
+  const dataDir = process.env.DATA_DIR ?? process.cwd();
   logger.info(`ServerLab MC backend listening on ${HOST}:${PORT}`);
+  logger.info(`Data directory: ${dataDir}`);
   startMonitor();
 });
 

@@ -18,6 +18,17 @@ apps/backend/prisma/prisma/
 # Keep migrations in git — they are the source of truth for the schema
 # apps/backend/prisma/migrations/
 
+# Runtime data directory (DB + backups — generated at runtime, never committed)
+data/*.db
+data/*.db-journal
+data/backups/*
+!data/backups/.gitkeep
+data/logs/*
+data/logs/
+
+# Stray data dirs from old migration paths
+apps/data/
+
 # Environment
 .env
 .env.local

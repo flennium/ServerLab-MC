@@ -43,7 +43,7 @@ export function Sidebar() {
 
       <div className="flex-1" />
 
-      <div className="px-5 py-4 text-xs text-muted">v2.0.0</div>
+      <div className="px-5 py-4 text-xs text-muted">v2.1.0</div>
     </aside>
   );
 }
