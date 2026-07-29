@@ -5,6 +5,11 @@ node_modules/
 dist/
 out/
 build/
+stage/
+
+# Shared package compiled output (regenerated on build)
+packages/shared/src/*.js
+packages/shared/src/*.js.map
 
 # Electron packaged output
 release/

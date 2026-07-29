@@ -1,39 +1,48 @@
-/**
- * electron-builder configuration
- * Run: npm run package
- */
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
   appId: "dev.serverlab.mc",
   productName: "ServerLab MC",
-  copyright: "Copyright © 2025",
+  copyright: "Copyright © 2025 ServerLab MC",
 
+  // Stage dir is a clean folder containing only main.js, preload.js, package.json
+  // This is what gets packed into the asar archive
   directories: {
+    app: "stage",
     output: "release",
     buildResources: "build-resources",
   },
 
-  files: [
-    // Electron main + preload
-    "apps/electron/dist/**",
-    // Renderer static assets
-    "apps/renderer/dist/**",
-    // Backend compiled
-    "apps/backend/dist/**",
-    "apps/backend/prisma/schema.prisma",
-    // Root package manifest
-    "package.json",
-    "node_modules/**",
-    // Exclude dev/test artifacts
-    "!**/*.map",
-    "!**/node_modules/.cache/**",
-  ],
+  // Files inside stage/ to include in the asar
+  files: ["**/*", "!**/*.map"],
 
+  // Extra files copied to resources/ dir (accessible via process.resourcesPath)
   extraResources: [
+    // Renderer static assets
     {
-      from: "apps/backend",
-      to: "backend",
-      filter: ["dist/**", "prisma/**", "package.json"],
+      from: "apps/renderer/dist",
+      to: "renderer",
+    },
+    // Backend esbuild bundle + prisma schema/migrations
+    {
+      from: "apps/backend/dist",
+      to: "backend/dist",
+    },
+    // @prisma/client (has native query engine .node file)
+    {
+      from: "node_modules/@prisma",
+      to: "backend/node_modules/@prisma",
+      filter: ["**/*", "!**/*.map"],
+    },
+    {
+      from: "node_modules/.prisma",
+      to: "backend/node_modules/.prisma",
+      filter: ["**/*"],
+    },
+    // prisma CLI (needed for migrate deploy on first launch)
+    {
+      from: "node_modules/prisma",
+      to: "backend/node_modules/prisma",
+      filter: ["**/*", "!**/*.map"],
     },
   ],
 
@@ -48,10 +57,15 @@ module.exports = {
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
     shortcutName: "ServerLab MC",
+    installerIcon: "build-resources/icon.ico",
+    uninstallerIcon: "build-resources/icon.ico",
+    license: null,
   },
 
   publish: {
     provider: "github",
+    owner: "flennium",
+    repo: "ServerLab-MC",
     releaseType: "release",
   },
 };
