@@ -10,18 +10,19 @@ export interface BackendConfig {
 }
 
 contextBridge.exposeInMainWorld("serverlab", {
-  /**
-   * Returns the local backend's origin URL and the startup auth token.
-   * The renderer attaches the token as an Authorization header on every request.
-   */
   getBackendConfig: (): Promise<BackendConfig> =>
     ipcRenderer.invoke("backend:config"),
 
-  /**
-   * Opens a native OS folder picker and returns the selected path (or null).
-   */
   openDirectoryDialog: (): Promise<string | null> =>
     ipcRenderer.invoke("dialog:openDirectory"),
+
+  openPath: (path: string): Promise<void> =>
+    ipcRenderer.invoke("shell:openPath", path),
+
+  getAppVersion: (): Promise<string> =>
+    ipcRenderer.invoke("app:version"),
+
+  getPlatform: (): string => process.platform,
 });
 
 // Type augmentation so TypeScript in the renderer knows about window.serverlab
@@ -30,6 +31,9 @@ declare global {
     serverlab: {
       getBackendConfig: () => Promise<BackendConfig>;
       openDirectoryDialog: () => Promise<string | null>;
+      openPath: (path: string) => Promise<void>;
+      getAppVersion: () => Promise<string>;
+      getPlatform: () => string;
     };
   }
 }

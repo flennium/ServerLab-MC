@@ -9,6 +9,9 @@ declare global {
     serverlab?: {
       getBackendConfig: () => Promise<{ origin: string; token: string }>;
       openDirectoryDialog: () => Promise<string | null>;
+      openPath: (path: string) => Promise<void>;
+      getAppVersion: () => Promise<string>;
+      getPlatform: () => string;
     };
   }
 }
