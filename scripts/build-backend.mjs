@@ -20,11 +20,11 @@ const ROOT = path.resolve(fileURLToPath(import.meta.url), "../..");
 const BACKEND = path.join(ROOT, "apps/backend");
 const OUT = path.join(BACKEND, "dist");
 
+console.log("⚙  Bundling backend with esbuild…");
+
 // Clean output dir
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });
-
-console.log("⚙  Bundling backend with esbuild…");
 
 await build({
   entryPoints: [path.join(BACKEND, "src/index.ts")],

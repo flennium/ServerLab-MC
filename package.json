@@ -13,7 +13,7 @@
     "dev": "node scripts/dev.mjs",
     "build:shared": "npm run build --workspace=packages/shared",
     "build:renderer": "npm run build --workspace=apps/renderer",
-    "build:electron": "npm run build --workspace=apps/electron",
+    "build:electron": "node scripts/build-electron.mjs",
     "build:backend": "node scripts/build-backend.mjs",
     "build:stage": "node scripts/build-electron-stage.mjs",
     "build": "npm run build:shared && npm run build:renderer && npm run build:electron && npm run build:backend && npm run build:stage",

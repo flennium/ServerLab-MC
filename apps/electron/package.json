@@ -5,8 +5,9 @@
   "private": true,
   "main": "dist/main.js",
   "scripts": {
-    "dev": "tsc --watch",
-    "build": "tsc"
+    "dev": "tsc --noEmit --watch",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@serverlab/shared": "*",
