@@ -13,6 +13,7 @@ release/
 apps/backend/prisma/dev.db
 apps/backend/prisma/dev.db-journal
 apps/backend/prisma/*.db
+apps/backend/prisma/prisma/
 
 # Keep migrations in git — they are the source of truth for the schema
 # apps/backend/prisma/migrations/
