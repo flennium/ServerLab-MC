@@ -19,7 +19,10 @@ import {
   type JavaRuntimeProviderId,
 } from "@serverlab/shared";
 import { javaRuntimePaths } from "./JavaRuntimePaths.js";
-import { javaRuntimeProviderRegistry, assertAllowedJavaUrl } from "./JavaRuntimeProviders.js";
+import {
+  javaRuntimeProviderRegistry,
+  assertAllowedJavaUrl,
+} from "./JavaRuntimeProviders.js";
 import { javaRuntimeRegistry } from "./JavaRuntimeRegistry.js";
 import { javaRuntimeValidator } from "./JavaRuntimeValidator.js";
 import type { ResolvedJavaRuntime } from "./types.js";
@@ -30,7 +33,9 @@ interface ActiveInstall {
   cancelled: boolean;
 }
 
-function toInstall(record: Awaited<ReturnType<typeof prisma.javaInstallJob.findUnique>>): JavaInstallJob {
+function toInstall(
+  record: Awaited<ReturnType<typeof prisma.javaInstallJob.findUnique>>
+): JavaInstallJob {
   if (!record) throw new Error("Java install job not found");
   return {
     id: record.id,
@@ -89,7 +94,13 @@ export class JavaInstallService {
     const tmpPath = path.join(javaRuntimePaths.tmpRoot, `${installId}.part`);
 
     try {
-      await this.updateInstall(installId, { status: "running", stage: "resolving-provider" });
+      const cached = await this.reuseCachedRuntime(installId, input.major, providerId);
+      if (cached) return cached;
+
+      await this.updateInstall(installId, {
+        status: "running",
+        stage: "resolving-provider",
+      });
       runtimeMeta = await javaRuntimeProviderRegistry.resolveWithFallback({
         provider: input.provider,
         major: input.major,
@@ -102,7 +113,12 @@ export class JavaInstallService {
       });
 
       const provider = javaRuntimeProviderRegistry.get(runtimeMeta.provider);
-      const sizeBytes = await this.downloadToTmp(installId, runtimeMeta, tmpPath, provider.allowedHosts);
+      const sizeBytes = await this.downloadToTmp(
+        installId,
+        runtimeMeta,
+        tmpPath,
+        provider.allowedHosts
+      );
 
       const verifying = await this.updateInstall(installId, {
         stage: "verifying",
@@ -150,7 +166,10 @@ export class JavaInstallService {
         etaSeconds: 0,
       });
       this.emit(done, 100);
-      logger.info({ installId, runtimeId: runtime.id, provider: runtimeMeta.provider }, "Java runtime installed");
+      logger.info(
+        { installId, runtimeId: runtime.id, provider: runtimeMeta.provider },
+        "Java runtime installed"
+      );
       return { install: done, runtime };
     } catch (error) {
       const active = this.active.get(installId);
@@ -189,7 +208,43 @@ export class JavaInstallService {
   async cleanupTmp(): Promise<void> {
     await javaRuntimeRegistry.ensureDirectories();
     const entries = await fsp.readdir(javaRuntimePaths.tmpRoot).catch(() => []);
-    await Promise.all(entries.map((entry) => fsp.rm(path.join(javaRuntimePaths.tmpRoot, entry), { force: true })));
+    await Promise.all(
+      entries.map((entry) =>
+        fsp.rm(path.join(javaRuntimePaths.tmpRoot, entry), { force: true })
+      )
+    );
+  }
+
+  private async reuseCachedRuntime(
+    installId: string,
+    major: number,
+    provider: JavaRuntimeProviderId
+  ): Promise<{ install: JavaInstallJob; runtime: JavaRuntime } | null> {
+    const runtime = await javaRuntimeRegistry.findReusableManagedRuntime({
+      major,
+      provider,
+    });
+    if (!runtime) return null;
+
+    const validated = await javaRuntimeValidator.validateRuntime(runtime);
+    if (validated.status !== "valid" || validated.major !== major) return null;
+
+    await javaRuntimeRegistry.touchUsed(validated.id);
+    const install = await this.updateInstall(installId, {
+      provider: validated.provider ?? provider,
+      major,
+      version: validated.version,
+      status: "completed",
+      stage: "done",
+      bytesReceived: 0,
+      totalBytes: 0,
+      speedBytesPerSec: 0,
+      etaSeconds: 0,
+      error: null,
+    });
+    this.emit(install, 100);
+    logger.info({ installId, runtimeId: validated.id }, "Reused cached Java runtime");
+    return { install, runtime: validated };
   }
 
   private installRoot(runtime: ResolvedJavaRuntime): string {
@@ -227,7 +282,11 @@ export class JavaInstallService {
             },
           },
           (response) => {
-            if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400) {
+            if (
+              response.statusCode &&
+              response.statusCode >= 300 &&
+              response.statusCode < 400
+            ) {
               const location = response.headers.location;
               if (!location || redirectsLeft <= 0) {
                 reject(new Error("Runtime provider redirected too many times"));
@@ -239,12 +298,15 @@ export class JavaInstallService {
               return;
             }
             if (response.statusCode !== 200) {
-              reject(new Error(`Java runtime download failed with HTTP ${response.statusCode}`));
+              reject(
+                new Error(`Java runtime download failed with HTTP ${response.statusCode}`)
+              );
               return;
             }
 
             const contentLength = Number(response.headers["content-length"]);
-            if (Number.isFinite(contentLength) && contentLength > 0) totalBytes = contentLength;
+            if (Number.isFinite(contentLength) && contentLength > 0)
+              totalBytes = contentLength;
 
             response.on("data", (chunk: Buffer) => {
               bytesReceived += chunk.length;
@@ -254,7 +316,9 @@ export class JavaInstallService {
                 totalBytes && speed > 0
                   ? Math.max(0, Math.round((totalBytes - bytesReceived) / speed))
                   : null;
-              const percent = totalBytes ? Math.min(95, (bytesReceived / totalBytes) * 95) : 0;
+              const percent = totalBytes
+                ? Math.min(95, (bytesReceived / totalBytes) * 95)
+                : 0;
               const now = Date.now();
               if (now - lastEmitAt > 250) {
                 lastEmitAt = now;
@@ -267,7 +331,9 @@ export class JavaInstallService {
                   etaSeconds: eta,
                 })
                   .then((install) => this.emit(install, percent))
-                  .catch((error) => logger.warn({ error }, "Failed to update Java install progress"));
+                  .catch((error) =>
+                    logger.warn({ error }, "Failed to update Java install progress")
+                  );
               }
             });
 
@@ -285,16 +351,25 @@ export class JavaInstallService {
     });
   }
 
-  private async verifyChecksum(filePath: string, runtime: ResolvedJavaRuntime): Promise<void> {
+  private async verifyChecksum(
+    filePath: string,
+    runtime: ResolvedJavaRuntime
+  ): Promise<void> {
     if (!runtime.checksum) return;
     const buffer = await fsp.readFile(filePath);
     const actual = crypto.createHash("sha256").update(buffer).digest("hex");
     if (actual.toLowerCase() !== runtime.checksum.toLowerCase()) {
-      throw new Error("Downloaded Java runtime checksum does not match provider metadata");
+      throw new Error(
+        "Downloaded Java runtime checksum does not match provider metadata"
+      );
     }
   }
 
-  private async extractArchive(filePath: string, destination: string, archiveType: "zip" | "tar.gz"): Promise<void> {
+  private async extractArchive(
+    filePath: string,
+    destination: string,
+    archiveType: "zip" | "tar.gz"
+  ): Promise<void> {
     if (archiveType === "zip") {
       await extractZip(filePath, { dir: destination });
       return;
@@ -305,7 +380,9 @@ export class JavaInstallService {
         windowsHide: true,
         stdio: "ignore",
       });
-      proc.on("exit", (code) => (code === 0 ? resolve() : reject(new Error("Failed to extract Java archive"))));
+      proc.on("exit", (code) =>
+        code === 0 ? resolve() : reject(new Error("Failed to extract Java archive"))
+      );
       proc.on("error", reject);
     });
   }

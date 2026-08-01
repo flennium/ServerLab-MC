@@ -121,9 +121,9 @@ function TemplateSystemPanel() {
   }, []);
 
   return (
-    <SettingsCard icon={Search} title="Template system">
+    <SettingsCard icon={Search} title="Future features">
       {!capabilities ? (
-        <p className="text-sm text-muted">Loading template capabilities...</p>
+        <p className="text-sm text-muted">Loading future features...</p>
       ) : (
         <div className="grid gap-2">
           {capabilities.capabilities.map((capability) => (
@@ -133,13 +133,25 @@ function TemplateSystemPanel() {
             >
               <div className="flex items-center justify-between gap-3">
                 <span className="font-medium text-white">{capability.label}</span>
-                <span className="rounded border border-border bg-panel px-2 py-0.5 text-[0.68rem] uppercase text-muted">
-                  {capability.status}
+                <span className="rounded border border-border bg-panel px-2 py-0.5 text-[0.68rem] uppercase text-copper">
+                  {capability.status.replace("-", " ")}
                 </span>
               </div>
               <p className="mt-1 text-xs leading-5 text-muted">
                 {capability.description}
               </p>
+              {capability.details && capability.details.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {capability.details.map((detail) => (
+                    <span
+                      key={detail}
+                      className="rounded border border-border bg-panel px-2 py-0.5 text-[0.68rem] text-muted"
+                    >
+                      {detail}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
