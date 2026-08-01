@@ -1,101 +1,140 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
-import { execFile } from "child_process";
-import { promisify } from "util";
+import type { InstallJdkDto, JavaRuntimeProviderId, ServerSoftware } from "@serverlab/shared";
+import { javaRuntimeProviderRegistry } from "../services/java/JavaRuntimeProviders.js";
+import { javaDetectionService } from "../services/java/JavaDetectionService.js";
+import { javaRuntimeRegistry } from "../services/java/JavaRuntimeRegistry.js";
+import { javaRuntimeValidator } from "../services/java/JavaRuntimeValidator.js";
+import { javaRecommendationService } from "../services/java/JavaRecommendationService.js";
+import { javaInstallService } from "../services/java/JavaInstallService.js";
 
 export const javaRoutes = Router();
-const execFileAsync = promisify(execFile);
 
-// GET /api/java
+function providerId(value: unknown): JavaRuntimeProviderId | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (value === "adoptium" || value === "microsoft") return value;
+  throw new Error("Unknown Java runtime provider");
+}
+
 javaRoutes.get("/", async (_req, res, next) => {
   try {
-    const versions = await prisma.javaVersion.findMany({
-      orderBy: { major: "asc" },
-    });
+    const versions = await prisma.javaVersion.findMany({ orderBy: { major: "asc" } });
     res.json({ versions });
   } catch (err) {
     next(err);
   }
 });
 
-// POST /api/java/detect  — scan PATH and well-known locations, persist results
+javaRoutes.get("/providers", (_req, res, next) => {
+  try {
+    res.json({ providers: javaRuntimeProviderRegistry.list() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+javaRoutes.get("/runtimes", async (_req, res, next) => {
+  try {
+    const runtimes = await javaRuntimeRegistry.listRuntimes();
+    res.json({ runtimes });
+  } catch (err) {
+    next(err);
+  }
+});
+
 javaRoutes.post("/detect", async (_req, res, next) => {
   try {
-    const candidates = await detectJavaInstallations();
-    // Upsert each detected JDK
-    for (const candidate of candidates) {
-      await prisma.javaVersion.upsert({
-        where: { id: candidate.path }, // use path as natural key for detection
-        create: {
-          id: candidate.path,
-          major: candidate.major,
-          path: candidate.path,
-          vendor: candidate.vendor ?? null,
-          detected: true,
-        },
-        update: { major: candidate.major, vendor: candidate.vendor ?? null },
-      });
-    }
-    const versions = await prisma.javaVersion.findMany({
-      orderBy: { major: "asc" },
-    });
-    res.json({ versions });
+    await javaDetectionService.detect();
+    const [versions, runtimes] = await Promise.all([
+      prisma.javaVersion.findMany({ orderBy: { major: "asc" } }),
+      javaRuntimeRegistry.listRuntimes(),
+    ]);
+    res.json({ versions, runtimes });
   } catch (err) {
     next(err);
   }
 });
 
-// POST /api/java/install — download a JDK via Adoptium API (v2 full impl)
+javaRoutes.get("/recommendation", async (req, res, next) => {
+  try {
+    const minecraftVersion = String(req.query.minecraftVersion ?? "");
+    const software = String(req.query.software ?? "paper") as ServerSoftware;
+    if (!minecraftVersion) {
+      res.status(400).json({ error: "minecraftVersion is required" });
+      return;
+    }
+    const recommendation = await javaRecommendationService.recommend({
+      minecraftVersion,
+      software,
+    });
+    res.json(recommendation);
+  } catch (err) {
+    next(err);
+  }
+});
+
+javaRoutes.post("/installations", async (req, res, next) => {
+  try {
+    const body = req.body as InstallJdkDto;
+    if (!body.major || !Number.isFinite(Number(body.major))) {
+      res.status(400).json({ error: "major is required" });
+      return;
+    }
+    const result = await javaInstallService.install({
+      major: Number(body.major),
+      provider: providerId(body.provider),
+      packageType: body.packageType ?? "jre",
+      requestId: body.requestId,
+    });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+javaRoutes.post("/installations/:id/cancel", async (req, res, next) => {
+  try {
+    const install = await javaInstallService.cancel(req.params.id);
+    res.json({ install, runtime: null });
+  } catch (err) {
+    next(err);
+  }
+});
+
+javaRoutes.post("/runtimes/:id/validate", async (req, res, next) => {
+  try {
+    const runtime = await javaRuntimeRegistry.getRuntime(req.params.id);
+    if (!runtime) {
+      res.status(404).json({ error: "Java runtime not found" });
+      return;
+    }
+    const validated = await javaRuntimeValidator.validateRuntime(runtime);
+    res.json({ runtime: validated });
+  } catch (err) {
+    next(err);
+  }
+});
+
+javaRoutes.delete("/runtimes/:id", async (req, res, next) => {
+  try {
+    await javaRuntimeRegistry.removeRuntime(req.params.id);
+    res.json({ message: "Java runtime removed" });
+  } catch (err) {
+    next(err);
+  }
+});
+
 javaRoutes.post("/install", async (req, res, next) => {
   try {
-    const { major } = req.body as { major: number };
-    // TODO: call Adoptium API, download, extract, add to DB
-    res.status(202).json({ message: `JDK ${major} install queued` });
+    const body = req.body as InstallJdkDto;
+    const result = await javaInstallService.install({
+      major: Number(body.major),
+      provider: providerId(body.provider),
+      packageType: body.packageType ?? "jre",
+      requestId: body.requestId,
+    });
+    res.json({ message: `Java ${body.major} installed`, ...result });
   } catch (err) {
     next(err);
   }
 });
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-interface DetectedJava {
-  major: number;
-  path: string;
-  vendor?: string;
-}
-
-async function detectJavaInstallations(): Promise<DetectedJava[]> {
-  const results: DetectedJava[] = [];
-
-  // Try the java on PATH first
-  try {
-    const { stdout } = await execFileAsync("java", ["-version"], {
-      timeout: 5000,
-    });
-    const version = parseJavaVersion(stdout);
-    if (version) results.push({ major: version, path: "java" });
-  } catch {
-    // java not on PATH — that's fine
-  }
-
-  // Well-known Windows JDK install paths
-  const wellKnown = [
-    "C:\\Program Files\\Eclipse Adoptium",
-    "C:\\Program Files\\Java",
-    "C:\\Program Files\\Microsoft",
-  ];
-
-  // This is intentionally minimal for v1 — a proper scanner will glob these
-  // directories in the v2 Java Manager implementation.
-
-  return results;
-}
-
-function parseJavaVersion(versionOutput: string): number | null {
-  // Java prints version to stderr: e.g. `openjdk version "21.0.3" ...`
-  const match = versionOutput.match(/version "(\d+)/);
-  if (!match) return null;
-  const major = parseInt(match[1], 10);
-  // Old style: 1.8 → 8
-  return major === 1 ? 8 : major;
-}

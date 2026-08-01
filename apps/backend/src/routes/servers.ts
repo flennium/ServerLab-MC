@@ -3,8 +3,14 @@ import { prisma } from "../lib/prisma.js";
 import { serverManager } from "../services/ServerManager.js";
 import { FileManager } from "../services/FileManager.js";
 import { createBackup } from "../services/BackupService.js";
+import { softwareDownloadService } from "../services/software/SoftwareDownloadService.js";
+import { serverSoftwareInstaller } from "../services/software/ServerSoftwareInstaller.js";
+import { javaRuntimeRegistry } from "../services/java/JavaRuntimeRegistry.js";
+import { javaRuntimeValidator } from "../services/java/JavaRuntimeValidator.js";
+import { javaRecommendationService } from "../services/java/JavaRecommendationService.js";
 import { logger } from "../lib/logger.js";
 import type {
+  AssignServerJavaRuntimeDto,
   CreateServerDto,
   UpdateServerDto,
   SendCommandDto,
@@ -12,6 +18,71 @@ import type {
 } from "@serverlab/shared";
 
 export const serverRoutes = Router();
+
+async function resolveJavaSelection(input: {
+  version: string;
+  software: string;
+  javaRuntimeId?: string | null;
+  javaPath: string;
+  javaOverrideMode?: string;
+  allowUnsupportedJava?: boolean;
+  strict: boolean;
+}): Promise<{
+  javaRuntimeId: string | null;
+  javaPath: string;
+  javaOverrideMode: string;
+  allowUnsupportedJava: boolean;
+}> {
+  const javaOverrideMode = input.javaOverrideMode ?? (input.javaRuntimeId ? "automatic" : "manual");
+  const allowUnsupportedJava = input.allowUnsupportedJava ?? false;
+
+  if (javaOverrideMode === "manual") {
+    await javaRuntimeValidator.validateExecutable(input.javaPath);
+    return {
+      javaRuntimeId: null,
+      javaPath: input.javaPath,
+      javaOverrideMode,
+      allowUnsupportedJava,
+    };
+  }
+
+  let runtime = input.javaRuntimeId ? await javaRuntimeRegistry.getRuntime(input.javaRuntimeId) : null;
+  const recommendation = await javaRecommendationService.recommend({
+    minecraftVersion: input.version,
+    software: input.software,
+  });
+  if (!runtime) runtime = recommendation.compatibleRuntime;
+  if (!runtime) {
+    if (input.strict) {
+      throw new Error(`Java ${recommendation.requiredMajor} is required. Install or select a compatible runtime.`);
+    }
+    return {
+      javaRuntimeId: null,
+      javaPath: input.javaPath,
+      javaOverrideMode: "manual",
+      allowUnsupportedJava,
+    };
+  }
+
+  const validated = await javaRuntimeValidator.validateRuntime(runtime);
+  if (
+    validated.status !== "valid" ||
+    !javaRecommendationService.isCompatible(
+      validated.major,
+      recommendation.requiredMajor,
+      allowUnsupportedJava
+    )
+  ) {
+    throw new Error(`Selected Java runtime is not compatible. Java ${recommendation.requiredMajor} is required.`);
+  }
+
+  return {
+    javaRuntimeId: validated.id,
+    javaPath: validated.executablePath,
+    javaOverrideMode: "automatic",
+    allowUnsupportedJava,
+  };
+}
 
 // GET /api/servers
 serverRoutes.get("/", async (_req, res, next) => {
@@ -27,13 +98,56 @@ serverRoutes.get("/", async (_req, res, next) => {
 serverRoutes.post("/", async (req, res, next) => {
   try {
     const body = req.body as CreateServerDto;
+    let version = body.version;
+    let software = body.software;
+
+    if (body.softwareSource) {
+      if (!body.eulaAccepted) {
+        res.status(400).json({ error: "Minecraft EULA acceptance is required" });
+        return;
+      }
+
+      const requestId = body.softwareSource.requestId;
+      const { artifact } = await softwareDownloadService.ensureArtifact({
+        provider: body.softwareSource.provider,
+        minecraftVersion: body.softwareSource.minecraftVersion,
+        buildId: body.softwareSource.buildId,
+        requestId,
+      });
+      if (requestId) await softwareDownloadService.markStage(requestId, "installing-server-files");
+      await serverSoftwareInstaller.install({
+        artifact,
+        serverPath: body.path,
+        eulaAccepted: body.eulaAccepted,
+      });
+      if (requestId) {
+        await softwareDownloadService.markStage(requestId, "writing-eula");
+        await softwareDownloadService.markStage(requestId, "done");
+      }
+      version = body.softwareSource.minecraftVersion;
+      software = body.softwareSource.provider;
+    }
+
+    const javaSelection = await resolveJavaSelection({
+      version,
+      software,
+      javaRuntimeId: body.javaRuntimeId,
+      javaPath: body.javaPath,
+      javaOverrideMode: body.javaOverrideMode,
+      allowUnsupportedJava: body.allowUnsupportedJava,
+      strict: Boolean(body.softwareSource),
+    });
+
     const server = await prisma.server.create({
       data: {
         name: body.name,
         path: body.path,
-        version: body.version,
-        software: body.software,
-        javaPath: body.javaPath,
+        version,
+        software,
+        javaPath: javaSelection.javaPath,
+        javaRuntimeId: javaSelection.javaRuntimeId,
+        javaOverrideMode: javaSelection.javaOverrideMode,
+        allowUnsupportedJava: javaSelection.allowUnsupportedJava,
         ramMinMb: body.ramMinMb ?? 1024,
         ramMaxMb: body.ramMaxMb ?? 4096,
         port: body.port ?? 25565,
@@ -66,6 +180,29 @@ serverRoutes.patch("/:id", async (req, res, next) => {
     const server = await prisma.server.update({
       where: { id: req.params.id },
       data: body,
+    });
+    res.json({ server });
+  } catch (err) {
+    next(err);
+  }
+});
+
+serverRoutes.patch("/:id/java-runtime", async (req, res, next) => {
+  try {
+    const existing = await prisma.server.findUniqueOrThrow({ where: { id: req.params.id } });
+    const body = req.body as AssignServerJavaRuntimeDto;
+    const selection = await resolveJavaSelection({
+      version: existing.version,
+      software: existing.software,
+      javaRuntimeId: body.javaRuntimeId,
+      javaPath: body.javaPath ?? existing.javaPath,
+      javaOverrideMode: body.javaOverrideMode,
+      allowUnsupportedJava: body.allowUnsupportedJava,
+      strict: true,
+    });
+    const server = await prisma.server.update({
+      where: { id: req.params.id },
+      data: selection,
     });
     res.json({ server });
   } catch (err) {

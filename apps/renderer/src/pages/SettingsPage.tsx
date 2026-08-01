@@ -1,18 +1,24 @@
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
+import { Database, FolderOpen, Info, Keyboard, RefreshCw, Trash2 } from "lucide-react";
+import { Button } from "../components/ui/Button.js";
+import { Alert, Card, PageHeader } from "../components/ui/Layout.js";
+import { LabelValue } from "../components/ui/Form.js";
+import { api } from "../lib/apiClient.js";
+import type { SoftwareArtifact, SoftwareArtifactListResponse } from "@serverlab/shared";
 
-// Read version from package.json at build time via Vite's import.meta
-// (Vite exposes define replacements; we fall back to a hardcoded string for web-only dev)
 const APP_VERSION = "2.1.0";
 
 function getPlatformLabel(): string {
   if (typeof window !== "undefined" && window.serverlab) {
-    const p = window.serverlab.getPlatform();
+    const platform = window.serverlab.getPlatform();
     const map: Record<string, string> = {
       win32: "Windows",
       darwin: "macOS",
       linux: "Linux",
     };
-    return map[p] ?? p;
+    return map[platform] ?? platform;
   }
   return navigator.platform || "Unknown";
 }
@@ -32,14 +38,11 @@ export function SettingsPage() {
     setOpeningFolder(true);
     try {
       if (window.serverlab?.openPath) {
-        // userData path is exposed via a backend endpoint
         const res = await fetch("http://127.0.0.1:3001/health")
           .then(() => fetch("http://127.0.0.1:3001/api/data-path"))
           .catch(() => null);
 
-        const dataPath = res?.ok
-          ? ((await res.json()) as { path: string }).path
-          : null;
+        const dataPath = res?.ok ? ((await res.json()) as { path: string }).path : null;
 
         if (dataPath) {
           await window.serverlab.openPath(dataPath);
@@ -52,79 +55,223 @@ export function SettingsPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-semibold">Settings</h1>
+      <PageHeader
+        eyebrow="Local app"
+        title="Settings"
+        description="Application metadata, local storage, and keyboard affordances."
+      />
 
-      <div className="flex flex-col gap-4 max-w-lg">
-        {/* About */}
-        <section className="rounded-lg border border-border bg-surface-2 p-5">
-          <h2 className="mb-4 font-semibold">About</h2>
-          <dl className="flex flex-col gap-3 text-sm">
-            <Row label="Application" value="ServerLab MC" />
-            <Row label="Version" value={`v${version}`} />
-            <Row label="Platform" value={platform} />
-            <Row label="Engine" value="Electron + React + Node.js" />
-          </dl>
-        </section>
+      <div className="grid max-w-5xl grid-cols-1 gap-4 lg:grid-cols-2">
+        <SettingsCard icon={Info} title="About">
+          <div className="flex flex-col gap-3">
+            <LabelValue label="Application" value="ServerLab MC" />
+            <LabelValue label="Version" value={`v${version}`} />
+            <LabelValue label="Platform" value={platform} />
+            <LabelValue label="Engine" value="Electron + React + Node.js" />
+          </div>
+        </SettingsCard>
 
-        {/* Data */}
-        <section className="rounded-lg border border-border bg-surface-2 p-5">
-          <h2 className="mb-1 font-semibold">Data</h2>
-          <p className="mb-4 text-sm text-muted">
-            All server profiles and backups are stored locally. No data leaves your machine.
+        <SettingsCard icon={Database} title="Local data">
+          <p className="mb-4 text-sm leading-6 text-muted">
+            Server profiles and backups are stored on this machine.
           </p>
-          <button
+          <Button
             onClick={handleOpenDataFolder}
             disabled={openingFolder}
-            className="rounded bg-surface-3 px-4 py-2 text-sm font-medium hover:bg-border disabled:opacity-50 transition-colors"
+            icon={FolderOpen}
+            variant="secondary"
           >
-            {openingFolder ? "Opening…" : "Open data folder"}
-          </button>
-        </section>
+            {openingFolder ? "Opening..." : "Open data folder"}
+          </Button>
+        </SettingsCard>
 
-        {/* Keyboard shortcuts */}
-        <section className="rounded-lg border border-border bg-surface-2 p-5">
-          <h2 className="mb-4 font-semibold">Keyboard shortcuts</h2>
-          <div className="flex flex-col gap-2 text-sm">
-            <ShortcutRow keys={["Ctrl", "S"]} label="Save file (in editor)" />
-            <ShortcutRow keys={["↑", "↓"]} label="Browse command history (console)" />
+        <SettingsCard icon={Keyboard} title="Keyboard">
+          <div className="flex flex-col gap-3">
+            <ShortcutRow keys={["Ctrl", "S"]} label="Save the open file" />
+            <ShortcutRow keys={["Up", "Down"]} label="Browse console command history" />
             <ShortcutRow keys={["Enter"]} label="Send console command" />
           </div>
-        </section>
+        </SettingsCard>
 
-        {/* Roadmap teaser */}
-        <section className="rounded-lg border border-border bg-surface-2 p-5">
-          <h2 className="mb-2 font-semibold">Coming next — v3.0</h2>
-          <ul className="flex flex-col gap-1.5 text-sm text-muted list-disc list-inside">
-            <li>GitHub template browser</li>
+        <SettingsCard icon={Info} title="Next work">
+          <ul className="flex list-disc flex-col gap-2 pl-4 text-sm leading-6 text-muted">
+            <li>Template browser</li>
             <li>Community template repositories</li>
             <li>One-click server creation from templates</li>
           </ul>
-        </section>
+        </SettingsCard>
+
+        <SoftwareCachePanel />
       </div>
     </div>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function SettingsCard({
+  icon: Icon,
+  title,
+  children,
+}: {
+  icon: LucideIcon;
+  title: string;
+  children: ReactNode;
+}) {
   return (
-    <div className="flex items-center justify-between">
-      <dt className="text-muted">{label}</dt>
-      <dd className="font-medium">{value}</dd>
-    </div>
+    <Card className="p-5">
+      <div className="mb-4 flex items-center gap-2">
+        <Icon className="h-4 w-4 text-copper" aria-hidden="true" />
+        <h2 className="font-display text-lg font-semibold">{title}</h2>
+      </div>
+      {children}
+    </Card>
   );
+}
+
+function SoftwareCachePanel() {
+  const [artifacts, setArtifacts] = useState<SoftwareArtifact[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      const { artifacts } = await api.get<SoftwareArtifactListResponse>("/api/software/cache");
+      setArtifacts(artifacts);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Failed to load software cache");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function revealCache() {
+    if (!window.serverlab?.openPath) return;
+    const { path } = await api.get<{ path: string }>("/api/software/cache/path");
+    await window.serverlab.openPath(path);
+  }
+
+  async function removeArtifact(id: string) {
+    setError(null);
+    try {
+      await api.delete(`/api/software/cache/${id}`);
+      await load();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Failed to remove artifact");
+    }
+  }
+
+  return (
+    <Card className="p-5 lg:col-span-2">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Database className="h-4 w-4 text-copper" aria-hidden="true" />
+          <h2 className="font-display text-lg font-semibold">Software cache</h2>
+        </div>
+        <div className="flex gap-2">
+          <Button onClick={load} disabled={loading} icon={RefreshCw} variant="secondary" size="sm">
+            Refresh
+          </Button>
+          <Button onClick={revealCache} icon={FolderOpen} variant="secondary" size="sm">
+            Reveal
+          </Button>
+        </div>
+      </div>
+
+      {error && <Alert tone="danger">{error}</Alert>}
+
+      {artifacts.length === 0 ? (
+        <div className="rounded border border-border bg-rail px-4 py-8 text-center">
+          <p className="font-display text-base font-semibold text-white">
+            {loading ? "Loading cache..." : "No cached software"}
+          </p>
+          <p className="mt-1 text-sm text-muted">
+            Downloaded server jars will appear here after server creation.
+          </p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[680px] text-left text-sm">
+            <thead className="border-b border-border text-xs uppercase text-muted">
+              <tr>
+                <th className="pb-2 font-semibold">Provider</th>
+                <th className="pb-2 font-semibold">Minecraft</th>
+                <th className="pb-2 font-semibold">Build</th>
+                <th className="pb-2 font-semibold">Size</th>
+                <th className="pb-2 font-semibold">Last used</th>
+                <th className="pb-2 font-semibold">Status</th>
+                <th className="pb-2 text-right font-semibold">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {artifacts.map((artifact) => (
+                <tr key={artifact.id}>
+                  <td className="py-3 font-semibold capitalize text-white">{artifact.provider}</td>
+                  <td className="py-3 font-mono text-xs text-white">{artifact.minecraftVersion}</td>
+                  <td className="py-3 font-mono text-xs text-muted">{artifact.buildId}</td>
+                  <td className="py-3 text-muted">{formatBytes(artifact.sizeBytes)}</td>
+                  <td className="py-3 text-muted">
+                    {formatDate(artifact.lastUsedAt ?? artifact.downloadedAt ?? artifact.createdAt)}
+                  </td>
+                  <td className="py-3">
+                    <span className="rounded border border-border bg-rail px-2 py-1 text-xs capitalize text-muted">
+                      {artifact.status}
+                    </span>
+                  </td>
+                  <td className="py-3 text-right">
+                    <Button
+                      onClick={() => removeArtifact(artifact.id)}
+                      icon={Trash2}
+                      variant="danger"
+                      size="sm"
+                    >
+                      Remove
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let amount = value;
+  let unit = 0;
+  while (amount >= 1024 && unit < units.length - 1) {
+    amount /= 1024;
+    unit += 1;
+  }
+  return `${amount.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+function formatDate(value: Date | string | null): string {
+  if (!value) return "Never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown";
+  return date.toLocaleString();
 }
 
 function ShortcutRow({ keys, label }: { keys: string[]; label: string }) {
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-center justify-between gap-4 text-sm">
       <span className="text-muted">{label}</span>
-      <div className="flex gap-1">
-        {keys.map((k) => (
+      <div className="flex shrink-0 gap-1">
+        {keys.map((key) => (
           <kbd
-            key={k}
-            className="rounded border border-border bg-surface-3 px-1.5 py-0.5 font-mono text-xs"
+            key={key}
+            className="rounded border border-border bg-rail px-2 py-1 font-mono text-xs text-white"
           >
-            {k}
+            {key}
           </kbd>
         ))}
       </div>

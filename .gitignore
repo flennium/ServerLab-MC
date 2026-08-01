@@ -30,6 +30,8 @@ data/backups/*
 !data/backups/.gitkeep
 data/logs/*
 data/logs/
+data/java-runtimes/
+data/software-cache/
 
 # Stray data dirs from old migration paths
 apps/data/
@@ -62,7 +64,3 @@ desktop.ini
 
 # TypeScript
 *.tsbuildinfo
-
-
-# Readme for now
-README.md

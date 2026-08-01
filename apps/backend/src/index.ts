@@ -9,8 +9,13 @@ import { serverRoutes } from "./routes/servers.js";
 import { templateRoutes } from "./routes/templates.js";
 import { javaRoutes } from "./routes/java.js";
 import { backupRoutes } from "./routes/backups.js";
+import { softwareRoutes } from "./routes/software.js";
 import { registerSocketHandlers } from "./socket/index.js";
 import { startMonitor, stopMonitor } from "./services/MonitorService.js";
+import { ensureDatabaseSchema } from "./services/DatabaseSchemaService.js";
+import { softwareCacheService } from "./services/software/SoftwareCacheService.js";
+import { setSoftwareSocketServer } from "./services/software/softwareEvents.js";
+import { javaInstallService } from "./services/java/JavaInstallService.js";
 import type { ServerToClientEvents, ClientToServerEvents } from "@serverlab/shared";
 
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
@@ -26,6 +31,7 @@ export const io = new IOServer<ClientToServerEvents, ServerToClientEvents>(
     cors: { origin: "*" }, // only reachable from 127.0.0.1 anyway
   }
 );
+setSoftwareSocketServer(io);
 
 // ─── Express middleware ───────────────────────────────────────────────────────
 app.use(
@@ -44,6 +50,7 @@ app.use("/api/servers", serverRoutes);
 app.use("/api/templates", templateRoutes);
 app.use("/api/java", javaRoutes);
 app.use("/api/backups", backupRoutes);
+app.use("/api/software", softwareRoutes);
 
 // Health-check (unauthenticated — Electron uses this to know the backend is up)
 app.get("/health", (_req, res) => res.json({ ok: true }));
@@ -60,11 +67,26 @@ app.use(errorHandler);
 registerSocketHandlers(io);
 
 // ─── Start ────────────────────────────────────────────────────────────────────
-httpServer.listen(PORT, HOST, () => {
-  const dataDir = process.env.DATA_DIR ?? process.cwd();
-  logger.info(`ServerLab MC backend listening on ${HOST}:${PORT}`);
-  logger.info(`Data directory: ${dataDir}`);
-  startMonitor();
+async function start(): Promise<void> {
+  await ensureDatabaseSchema();
+
+  httpServer.listen(PORT, HOST, () => {
+    const dataDir = process.env.DATA_DIR ?? process.cwd();
+    logger.info(`ServerLab MC backend listening on ${HOST}:${PORT}`);
+    logger.info(`Data directory: ${dataDir}`);
+    softwareCacheService.cleanupTmp().catch((err) => {
+      logger.warn({ err }, "Failed to clean software cache tmp directory");
+    });
+    javaInstallService.cleanupTmp().catch((err) => {
+      logger.warn({ err }, "Failed to clean Java runtime tmp directory");
+    });
+    startMonitor();
+  });
+}
+
+start().catch((err) => {
+  logger.error({ err }, "Backend startup failed");
+  process.exit(1);
 });
 
 process.on("SIGTERM", () => {

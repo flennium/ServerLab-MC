@@ -14,7 +14,6 @@
  *  - All paths are resolved and validated before extraction
  */
 
-import fs from "fs";
 import fsPromises from "fs/promises";
 import path from "path";
 import os from "os";
@@ -169,7 +168,7 @@ export async function installTemplate(
   emitProgress(templateId, "Preparing", 2);
 
   // 1. Build download URL
-  const { zipUrl, branch } = repoUrlToZip(template.repositoryUrl);
+  const { zipUrl } = repoUrlToZip(template.repositoryUrl);
   logger.info({ templateId, zipUrl }, "Installing template");
 
   // 2. Create temp staging directory

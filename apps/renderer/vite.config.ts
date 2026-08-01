@@ -4,6 +4,8 @@ import path from "path";
 
 export default defineConfig({
   plugins: [react()],
+  // base "./" makes all asset paths relative — required for file:// protocol in Electron
+  base: "./",
   resolve: {
     alias: {
       "@serverlab/shared": path.resolve(
