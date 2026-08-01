@@ -1,27 +1,13 @@
-export type ServerStatus =
-  | "stopped"
-  | "starting"
-  | "running"
-  | "stopping"
-  | "crashed";
+export type ServerStatus = "stopped" | "starting" | "running" | "stopping" | "crashed";
 
 export type ServerFramework = "paper" | "purpur" | "spigot" | "fabric";
 
 export type ServerSoftware = ServerFramework;
 
-export type SoftwareArtifactStatus =
-  | "cached"
-  | "downloading"
-  | "failed"
-  | "corrupted";
+export type SoftwareArtifactStatus = "cached" | "downloading" | "failed" | "corrupted";
 
 export type SoftwareDownloadStatus =
-  | "queued"
-  | "running"
-  | "cached"
-  | "completed"
-  | "failed"
-  | "cancelled";
+  "queued" | "running" | "cached" | "completed" | "failed" | "cancelled";
 
 export type SoftwareInstallStage =
   | "resolving-provider"
@@ -39,22 +25,14 @@ export type JavaRuntimeProviderId = "adoptium" | "microsoft";
 export type JavaRuntimeSource = "managed" | "system" | "manual";
 
 export type JavaRuntimeStatus =
-  | "valid"
-  | "missing"
-  | "corrupted"
-  | "unsupported"
-  | "installing";
+  "valid" | "missing" | "corrupted" | "unsupported" | "installing";
 
 export type JavaOverrideMode = "automatic" | "manual";
 
 export type JavaPackageType = "jre" | "jdk";
 
 export type JavaInstallStatus =
-  | "queued"
-  | "running"
-  | "completed"
-  | "failed"
-  | "cancelled";
+  "queued" | "running" | "completed" | "failed" | "cancelled";
 
 export type JavaInstallStage =
   | "resolving-provider"
@@ -129,6 +107,7 @@ export interface JavaRuntime {
   executablePath: string;
   status: JavaRuntimeStatus;
   checksum: string | null;
+  sizeBytes: number | null;
   detectedAt: Date | null;
   installedAt: Date | null;
   lastValidatedAt: Date | null;

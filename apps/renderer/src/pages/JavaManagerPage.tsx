@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Coffee, Download, FolderOpen, RefreshCw, ShieldCheck, Trash2, X } from "lucide-react";
+import {
+  CheckCircle2,
+  Coffee,
+  Download,
+  FolderOpen,
+  RefreshCw,
+  ShieldCheck,
+  Trash2,
+  X,
+} from "lucide-react";
 import { api } from "../lib/apiClient.js";
 import { getSocket } from "../lib/socket.js";
 import { Alert, Card, PageHeader, StatTile } from "../components/ui/Layout.js";
@@ -18,7 +27,9 @@ import type {
 const INSTALL_TARGETS = [8, 11, 17, 21, 25];
 
 export function JavaManagerPage() {
-  const [providers, setProviders] = useState<JavaRuntimeProviderListResponse["providers"]>([]);
+  const [providers, setProviders] = useState<
+    JavaRuntimeProviderListResponse["providers"]
+  >([]);
   const [provider, setProvider] = useState<JavaRuntimeProviderId>("adoptium");
   const [runtimes, setRuntimes] = useState<JavaRuntime[]>([]);
   const [serverUsage, setServerUsage] = useState<Record<string, number>>({});
@@ -32,12 +43,26 @@ export function JavaManagerPage() {
   const managed = runtimes.filter((runtime) => runtime.source === "managed");
   const system = runtimes.filter((runtime) => runtime.source !== "managed");
   const validCount = runtimes.filter((runtime) => runtime.status === "valid").length;
+  const managedCacheSize = managed.reduce(
+    (total, runtime) => total + (runtime.sizeBytes ?? 0),
+    0
+  );
+  const cachedInstallTarget = managed.find(
+    (runtime) =>
+      runtime.major === installMajor &&
+      runtime.provider === provider &&
+      runtime.status === "valid"
+  );
   const missingCore = INSTALL_TARGETS.filter(
-    (major) => !runtimes.some((runtime) => runtime.major === major && runtime.status === "valid")
+    (major) =>
+      !runtimes.some((runtime) => runtime.major === major && runtime.status === "valid")
   );
 
   const providerOptions = useMemo(
-    () => providers.filter((item) => item.enabled && item.supportedMajors.includes(installMajor)),
+    () =>
+      providers.filter(
+        (item) => item.enabled && item.supportedMajors.includes(installMajor)
+      ),
     [installMajor, providers]
   );
 
@@ -46,7 +71,10 @@ export function JavaManagerPage() {
   }, []);
 
   useEffect(() => {
-    if (providerOptions.length > 0 && !providerOptions.some((item) => item.id === provider)) {
+    if (
+      providerOptions.length > 0 &&
+      !providerOptions.some((item) => item.id === provider)
+    ) {
       setProvider(providerOptions[0].id);
     }
   }, [provider, providerOptions]);
@@ -83,7 +111,8 @@ export function JavaManagerPage() {
       setRuntimes(runtimeData.runtimes);
       const usage: Record<string, number> = {};
       for (const server of serverData.servers) {
-        if (server.javaRuntimeId) usage[server.javaRuntimeId] = (usage[server.javaRuntimeId] ?? 0) + 1;
+        if (server.javaRuntimeId)
+          usage[server.javaRuntimeId] = (usage[server.javaRuntimeId] ?? 0) + 1;
       }
       setServerUsage(usage);
     } catch (error) {
@@ -167,7 +196,12 @@ export function JavaManagerPage() {
         title="Java Runtime Center"
         description="Manage the Java runtimes ServerLab uses to create and start Minecraft servers."
         actions={
-          <Button onClick={detect} disabled={loading} icon={RefreshCw} variant="secondary">
+          <Button
+            onClick={detect}
+            disabled={loading}
+            icon={RefreshCw}
+            variant="secondary"
+          >
             {loading ? "Scanning..." : "Scan system"}
           </Button>
         }
@@ -176,40 +210,95 @@ export function JavaManagerPage() {
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile label="Valid runtimes" value={validCount} tone="good" />
         <StatTile label="Managed" value={managed.length} />
-        <StatTile label="System" value={system.length} tone="info" />
-        <StatTile label="Missing targets" value={missingCore.length} tone={missingCore.length ? "warn" : "good"} />
+        <StatTile label="Java cache" value={formatBytes(managedCacheSize)} tone="info" />
+        <StatTile
+          label="Missing targets"
+          value={missingCore.length}
+          tone={missingCore.length ? "warn" : "good"}
+        />
       </div>
 
       {error && (
-        <Alert tone="danger" className="mb-4" action={<IconButton icon={X} label="Dismiss Java error" onClick={() => setError(null)} />}>
+        <Alert
+          tone="danger"
+          className="mb-4"
+          action={
+            <IconButton
+              icon={X}
+              label="Dismiss Java error"
+              onClick={() => setError(null)}
+            />
+          }
+        >
           {error}
         </Alert>
       )}
-      {message && <Alert tone="success" className="mb-4">{message}</Alert>}
+      {message && (
+        <Alert tone="success" className="mb-4">
+          {message}
+        </Alert>
+      )}
 
       <div className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-[0.85fr_1.15fr]">
         <Card className="p-5">
           <div className="mb-4 flex items-center gap-2">
             <Download className="h-4 w-4 text-copper" aria-hidden="true" />
-            <h2 className="font-display text-lg font-semibold">Install managed runtime</h2>
+            <h2 className="font-display text-lg font-semibold">
+              Install managed runtime
+            </h2>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Java major">
-              <Select value={installMajor} onChange={(event) => setInstallMajor(Number(event.target.value))}>
-                {INSTALL_TARGETS.map((major) => <option key={major} value={major}>Java {major}</option>)}
+              <Select
+                value={installMajor}
+                onChange={(event) => setInstallMajor(Number(event.target.value))}
+              >
+                {INSTALL_TARGETS.map((major) => (
+                  <option key={major} value={major}>
+                    Java {major}
+                  </option>
+                ))}
               </Select>
             </Field>
             <Field label="Provider">
-              <Select value={provider} onChange={(event) => setProvider(event.target.value as JavaRuntimeProviderId)}>
-                {providerOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+              <Select
+                value={provider}
+                onChange={(event) =>
+                  setProvider(event.target.value as JavaRuntimeProviderId)
+                }
+              >
+                {providerOptions.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
               </Select>
             </Field>
           </div>
+          {cachedInstallTarget && (
+            <Alert tone="success" className="mt-4">
+              Java {installMajor} from {cachedInstallTarget.distribution} is already
+              cached and will be reused after validation.
+            </Alert>
+          )}
           <div className="mt-4 flex gap-2">
-            <Button onClick={install} disabled={Boolean(installingId)} icon={Download} variant="primary">
-              {installingId ? "Installing..." : `Install Java ${installMajor}`}
+            <Button
+              onClick={install}
+              disabled={Boolean(installingId)}
+              icon={Download}
+              variant="primary"
+            >
+              {installingId
+                ? "Installing..."
+                : cachedInstallTarget
+                  ? `Use cached Java ${installMajor}`
+                  : `Install Java ${installMajor}`}
             </Button>
-            {installingId && <Button onClick={cancelInstall} icon={X} variant="danger">Cancel</Button>}
+            {installingId && (
+              <Button onClick={cancelInstall} icon={X} variant="danger">
+                Cancel
+              </Button>
+            )}
           </div>
           {progress && <ProgressBlock progress={progress} />}
         </Card>
@@ -220,16 +309,48 @@ export function JavaManagerPage() {
             <h2 className="font-display text-lg font-semibold">Runtime guidance</h2>
           </div>
           <div className="grid gap-2 text-sm text-muted">
-            <GuidanceRow label="Legacy servers" value="Java 8" installed={!missingCore.includes(8)} />
-            <GuidanceRow label="Minecraft 1.17" value="Java 16 or newer" installed={runtimes.some((runtime) => runtime.major >= 16 && runtime.status === "valid")} />
-            <GuidanceRow label="Minecraft 1.18-1.20.4" value="Java 17" installed={!missingCore.includes(17)} />
-            <GuidanceRow label="Minecraft 1.20.5+" value="Java 21" installed={!missingCore.includes(21)} />
+            <GuidanceRow
+              label="Legacy servers"
+              value="Java 8"
+              installed={!missingCore.includes(8)}
+            />
+            <GuidanceRow
+              label="Minecraft 1.17"
+              value="Java 16 or newer"
+              installed={runtimes.some(
+                (runtime) => runtime.major >= 16 && runtime.status === "valid"
+              )}
+            />
+            <GuidanceRow
+              label="Minecraft 1.18-1.20.4"
+              value="Java 17"
+              installed={!missingCore.includes(17)}
+            />
+            <GuidanceRow
+              label="Minecraft 1.20.5+"
+              value="Java 21"
+              installed={!missingCore.includes(21)}
+            />
           </div>
         </Card>
       </div>
 
-      <RuntimeSection title="Managed runtimes" runtimes={managed} usage={serverUsage} onValidate={validateRuntime} onRemove={removeRuntime} onReveal={revealRuntime} />
-      <RuntimeSection title="System and manual runtimes" runtimes={system} usage={serverUsage} onValidate={validateRuntime} onRemove={removeRuntime} onReveal={revealRuntime} />
+      <RuntimeSection
+        title="Cached managed runtimes"
+        runtimes={managed}
+        usage={serverUsage}
+        onValidate={validateRuntime}
+        onRemove={removeRuntime}
+        onReveal={revealRuntime}
+      />
+      <RuntimeSection
+        title="System and manual runtimes"
+        runtimes={system}
+        usage={serverUsage}
+        onValidate={validateRuntime}
+        onRemove={removeRuntime}
+        onReveal={revealRuntime}
+      />
     </div>
   );
 }
@@ -255,8 +376,12 @@ function RuntimeSection({
       {runtimes.length === 0 ? (
         <div className="rounded border border-border bg-rail px-4 py-8 text-center">
           <Coffee className="mx-auto mb-3 h-8 w-8 text-copper" aria-hidden="true" />
-          <p className="font-display text-base font-semibold text-white">No runtimes here</p>
-          <p className="mt-1 text-sm text-muted">Scan the system or install a managed runtime.</p>
+          <p className="font-display text-base font-semibold text-white">
+            No runtimes here
+          </p>
+          <p className="mt-1 text-sm text-muted">
+            Scan the system or install a managed runtime.
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -267,25 +392,74 @@ function RuntimeSection({
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-display text-lg font-semibold text-white">Java {runtime.major}</p>
-                      <span className="rounded border border-border bg-rail px-2 py-1 text-xs capitalize text-muted">{runtime.status}</span>
-                      <span className="rounded border border-border bg-rail px-2 py-1 text-xs capitalize text-muted">{runtime.source}</span>
+                      <p className="font-display text-lg font-semibold text-white">
+                        Java {runtime.major}
+                      </p>
+                      <span className="rounded border border-border bg-rail px-2 py-1 text-xs capitalize text-muted">
+                        {runtime.status}
+                      </span>
+                      <span className="rounded border border-border bg-rail px-2 py-1 text-xs capitalize text-muted">
+                        {runtime.source}
+                      </span>
                     </div>
-                    <p className="mt-1 text-sm text-muted">{runtime.distribution} {runtime.version}</p>
+                    <p className="mt-1 text-sm text-muted">
+                      {runtime.distribution} {runtime.version}
+                    </p>
                   </div>
-                  {runtime.status === "valid" && <CheckCircle2 className="h-5 w-5 shrink-0 text-grass" aria-hidden="true" />}
+                  {runtime.status === "valid" && (
+                    <CheckCircle2
+                      className="h-5 w-5 shrink-0 text-grass"
+                      aria-hidden="true"
+                    />
+                  )}
                 </div>
-                <p className="mb-3 truncate font-mono text-xs text-muted">{runtime.executablePath}</p>
+                <p className="mb-3 truncate font-mono text-xs text-muted">
+                  {runtime.executablePath}
+                </p>
                 <div className="mb-3 grid grid-cols-2 gap-2 text-xs text-muted">
-                  <span>Used by {usedBy} server{usedBy === 1 ? "" : "s"}</span>
-                  <span>{runtime.os} / {runtime.arch}</span>
-                  <span>Installed {formatDate(runtime.installedAt ?? runtime.detectedAt)}</span>
+                  <span>
+                    Used by {usedBy} server{usedBy === 1 ? "" : "s"}
+                  </span>
+                  <span>
+                    {runtime.sizeBytes !== null
+                      ? formatBytes(runtime.sizeBytes)
+                      : "Size unknown"}
+                  </span>
+                  <span>
+                    {runtime.os} / {runtime.arch}
+                  </span>
+                  <span>Last used {formatDate(runtime.lastUsedAt)}</span>
+                  <span>
+                    Installed {formatDate(runtime.installedAt ?? runtime.detectedAt)}
+                  </span>
                   <span>Validated {formatDate(runtime.lastValidatedAt)}</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button onClick={() => onValidate(runtime)} icon={ShieldCheck} variant="secondary" size="sm">Validate</Button>
-                  <Button onClick={() => onReveal(runtime)} icon={FolderOpen} variant="secondary" size="sm">Reveal</Button>
-                  <Button onClick={() => onRemove(runtime)} disabled={usedBy > 0} icon={Trash2} variant="danger" size="sm">Remove</Button>
+                  <Button
+                    onClick={() => onValidate(runtime)}
+                    icon={ShieldCheck}
+                    variant="secondary"
+                    size="sm"
+                  >
+                    Validate
+                  </Button>
+                  <Button
+                    onClick={() => onReveal(runtime)}
+                    icon={FolderOpen}
+                    variant="secondary"
+                    size="sm"
+                  >
+                    Reveal
+                  </Button>
+                  <Button
+                    onClick={() => onRemove(runtime)}
+                    disabled={usedBy > 0}
+                    icon={Trash2}
+                    variant="danger"
+                    size="sm"
+                  >
+                    {usedBy > 0 ? "In use" : "Remove unused"}
+                  </Button>
                 </div>
               </Card>
             );
@@ -296,11 +470,23 @@ function RuntimeSection({
   );
 }
 
-function GuidanceRow({ label, value, installed }: { label: string; value: string; installed: boolean }) {
+function GuidanceRow({
+  label,
+  value,
+  installed,
+}: {
+  label: string;
+  value: string;
+  installed: boolean;
+}) {
   return (
     <div className="flex items-center justify-between gap-3 rounded border border-border bg-surface-console px-3 py-2">
       <span>{label}</span>
-      <span className={installed ? "font-semibold text-grass" : "font-semibold text-copper"}>{value}</span>
+      <span
+        className={installed ? "font-semibold text-grass" : "font-semibold text-copper"}
+      >
+        {value}
+      </span>
     </div>
   );
 }
@@ -314,11 +500,22 @@ function ProgressBlock({ progress }: { progress: JavaInstallProgressPayload }) {
         <span className="font-mono text-white">{percent}%</span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-panel">
-        <div className="h-full bg-copper transition-all" style={{ width: `${percent}%` }} />
+        <div
+          className="h-full bg-copper transition-all"
+          style={{ width: `${percent}%` }}
+        />
       </div>
       <div className="mt-2 flex justify-between gap-3 text-xs text-muted">
-        <span>{formatBytes(progress.bytesReceived)}{progress.totalBytes ? ` / ${formatBytes(progress.totalBytes)}` : ""}</span>
-        <span>{formatBytes(progress.speedBytesPerSec)}/s{progress.etaSeconds !== null ? `, ${formatDuration(progress.etaSeconds)} left` : ""}</span>
+        <span>
+          {formatBytes(progress.bytesReceived)}
+          {progress.totalBytes ? ` / ${formatBytes(progress.totalBytes)}` : ""}
+        </span>
+        <span>
+          {formatBytes(progress.speedBytesPerSec)}/s
+          {progress.etaSeconds !== null
+            ? `, ${formatDuration(progress.etaSeconds)} left`
+            : ""}
+        </span>
       </div>
     </div>
   );

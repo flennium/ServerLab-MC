@@ -231,10 +231,13 @@ export interface TemplateCapability {
     | "import-export"
     | "one-click-create"
     | "metadata"
-    | "updates";
+    | "updates"
+    | "modrinth-integration"
+    | "backup-restore-rewrite";
   label: string;
-  status: "planned" | "foundation" | "available";
+  status: "planned" | "foundation" | "in-progress" | "available";
   description: string;
+  details?: string[];
 }
 
 export interface TemplateCapabilityResponse {

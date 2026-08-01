@@ -38,7 +38,14 @@ templateRoutes.get("/capabilities", (_req, res) => {
         id: "import-export",
         label: "Import and export",
         status: "foundation",
-        description: "The API shape is reserved for portable template bundles.",
+        description:
+          "Portable template bundles with validation and metadata preservation.",
+        details: [
+          "Export templates",
+          "Import templates",
+          "Validate bundles",
+          "Preserve metadata",
+        ],
       },
       {
         id: "one-click-create",
@@ -46,6 +53,13 @@ templateRoutes.get("/capabilities", (_req, res) => {
         status: "planned",
         description:
           "Template-driven server creation will reuse the existing software and Java validation flow.",
+        details: [
+          "Template selection",
+          "Software validation",
+          "Java validation",
+          "Server creation",
+          "Ready to start",
+        ],
       },
       {
         id: "metadata",
@@ -60,6 +74,32 @@ templateRoutes.get("/capabilities", (_req, res) => {
         status: "planned",
         description:
           "Update checks will compare installed metadata against trusted template repositories.",
+      },
+      {
+        id: "modrinth-integration",
+        label: "Modrinth integration",
+        status: "planned",
+        description: "Native Modrinth integration for Minecraft server content.",
+        details: [
+          "Search Modrinth directly from ServerLab MC",
+          "Install plugins, mods, datapacks, and modpacks",
+          "Detect Minecraft version compatibility",
+          "Manage installed content and updates",
+          "View dependencies for Paper, Fabric, and Forge content",
+        ],
+      },
+      {
+        id: "backup-restore-rewrite",
+        label: "Server backup and restore rewrite",
+        status: "planned",
+        description: "A complete backup management system for release-grade recovery.",
+        details: [
+          "Manual and scheduled backups",
+          "Backup before updates",
+          "Backup browser",
+          "Restore previous versions",
+          "Compression and size management",
+        ],
       },
     ],
   };
