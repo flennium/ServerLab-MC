@@ -4,33 +4,30 @@ import { ArrowDownCircle, Copy, Pause, Play, Send, Terminal, Trash2 } from "luci
 import { getSocket } from "../../lib/socket.js";
 import { api } from "../../lib/apiClient.js";
 import { formatConsoleLine } from "../../lib/consoleFormat.js";
+import { useConsoleStore } from "../../store/consoleStore.js";
 import { Button, IconButton } from "../ui/Button.js";
 import { Alert } from "../ui/Layout.js";
-import type { ConsoleOutputPayload } from "@serverlab/shared";
-
-interface ConsoleLine {
-  timestamp: string;
-  text: string;
-}
 
 interface ConsoleProps {
   serverId: string;
 }
 
-const MAX_LINES = 1000;
+const EMPTY_LINES: ReturnType<typeof useConsoleStore.getState>["linesByServer"][string] =
+  [];
 
 export function Console({ serverId }: ConsoleProps) {
-  const [lines, setLines] = useState<ConsoleLine[]>([]);
+  const lines = useConsoleStore((state) => state.linesByServer[serverId] ?? EMPTY_LINES);
+  const paused = useConsoleStore((state) => state.pausedByServer[serverId] ?? false);
+  const clearLines = useConsoleStore((state) => state.clearLines);
+  const setPaused = useConsoleStore((state) => state.setPaused);
   const [input, setInput] = useState("");
   const [history, setHistory] = useState<string[]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [paused, setPaused] = useState(false);
   const [sending, setSending] = useState(false);
   const [commandError, setCommandError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const pausedBufferRef = useRef<ConsoleLine[]>([]);
 
   useEffect(() => {
     if (autoScroll) {
@@ -44,32 +41,6 @@ export function Console({ serverId }: ConsoleProps) {
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
     setAutoScroll(atBottom);
   }
-
-  useEffect(() => {
-    let cleanup = () => {};
-
-    getSocket().then((socket) => {
-      const handler = (payload: ConsoleOutputPayload) => {
-        if (payload.serverId !== serverId) return;
-        const nextLine = { timestamp: payload.timestamp, text: payload.line };
-        if (paused) {
-          pausedBufferRef.current = [...pausedBufferRef.current, nextLine].slice(
-            -MAX_LINES
-          );
-          return;
-        }
-        setLines((previous) => {
-          const next = [...previous, nextLine];
-          return next.length > MAX_LINES ? next.slice(-MAX_LINES) : next;
-        });
-      };
-
-      socket.on("console:output", handler);
-      cleanup = () => socket.off("console:output", handler);
-    });
-
-    return () => cleanup();
-  }, [paused, serverId]);
 
   const sendCommand = useCallback(async () => {
     const command = input.trim();
@@ -113,15 +84,7 @@ export function Console({ serverId }: ConsoleProps) {
   }, [input, sending, serverId]);
 
   function togglePaused() {
-    setPaused((current) => {
-      if (current && pausedBufferRef.current.length > 0) {
-        setLines((previous) =>
-          [...previous, ...pausedBufferRef.current].slice(-MAX_LINES)
-        );
-        pausedBufferRef.current = [];
-      }
-      return !current;
-    });
+    setPaused(serverId, !paused);
   }
 
   async function copyConsole() {
@@ -181,7 +144,11 @@ export function Console({ serverId }: ConsoleProps) {
             onClick={copyConsole}
             disabled={lines.length === 0}
           />
-          <IconButton icon={Trash2} label="Clear console" onClick={() => setLines([])} />
+          <IconButton
+            icon={Trash2}
+            label="Clear console"
+            onClick={() => clearLines(serverId)}
+          />
         </div>
       </div>
 
