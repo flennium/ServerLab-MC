@@ -5,16 +5,19 @@
  * Usage: node scripts/dev.mjs
  */
 import { spawn } from "child_process";
+import { createRequire } from "module";
 import { createConnection } from "net";
 import { fileURLToPath } from "url";
 import path from "path";
 import fs from "fs";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "../..");
+const require = createRequire(import.meta.url);
 const HOST = "127.0.0.1";
 const BACKEND_PORT = 3001;
 const RENDERER_PORT = 5173;
 const DATA_DIR = path.join(ROOT, "data");
+const SHARED_SRC_DIR = path.join(ROOT, "packages", "shared", "src");
 
 function appEnv(extra = {}) {
   const env = { ...process.env, ...extra };
@@ -44,16 +47,9 @@ function nodeTool(command, args) {
 }
 
 function electronCommand() {
-  if (process.platform === "win32") {
-    return {
-      command: path.join(ROOT, "node_modules", "electron", "dist", "electron.exe"),
-      args: [path.join(ROOT, "stage")],
-    };
-  }
-
   return {
-    command: "npx",
-    args: ["electron", path.join(ROOT, "stage")],
+    command: require("electron"),
+    args: [path.join(ROOT, "stage")],
   };
 }
 
@@ -69,6 +65,9 @@ function spawnProc(command, args, cwd, label, colorCode, env = process.env) {
 
   proc.stdout.on("data", (data) => process.stdout.write(prefix + data));
   proc.stderr.on("data", (data) => process.stderr.write(prefix + data));
+  proc.on("error", (error) => {
+    console.error(`${prefix}${error.message}`);
+  });
   proc.on("exit", (code) => {
     if (code && code !== 0) console.error(`${prefix}exited with code ${code}`);
   });
@@ -147,6 +146,14 @@ function shutdown(children) {
   }
 }
 
+function removeStaleSharedSourceOutput() {
+  for (const file of fs.readdirSync(SHARED_SRC_DIR)) {
+    if (file.endsWith(".js") || file.endsWith(".js.map")) {
+      fs.rmSync(path.join(SHARED_SRC_DIR, file), { force: true });
+    }
+  }
+}
+
 async function main() {
   console.log("\x1b[1mServerLab MC - dev mode\x1b[0m\n");
 
@@ -157,6 +164,7 @@ async function main() {
 
   fs.mkdirSync(path.join(DATA_DIR, "backups"), { recursive: true });
   fs.mkdirSync(path.join(DATA_DIR, "logs"), { recursive: true });
+  removeStaleSharedSourceOutput();
 
   console.log("Preparing local data directories... ready\n");
 
