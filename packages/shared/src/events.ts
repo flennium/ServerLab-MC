@@ -1,7 +1,13 @@
-// ─── Socket.IO event payload types ───────────────────────────────────────────
-import type { ServerStatus } from "./models.js";
+import type {
+  ServerFramework,
+  ServerStatus,
+  JavaInstallStatus,
+  JavaInstallStage,
+  JavaRuntimeProviderId,
+  SoftwareDownloadStatus,
+  SoftwareInstallStage,
+} from "./models.js";
 
-// server → client events
 export interface ConsoleOutputPayload {
   serverId: string;
   line: string;
@@ -26,25 +32,48 @@ export interface BackupProgressPayload {
   percent: number;
 }
 
-export interface TemplateProgressPayload {
-  templateId: string;
-  stage: string;
+export interface SoftwareDownloadProgressPayload {
+  downloadId: string;
+  provider: ServerFramework;
+  minecraftVersion: string;
+  buildId: string;
+  status: SoftwareDownloadStatus;
+  stage: SoftwareInstallStage;
+  bytesReceived: number;
+  totalBytes: number | null;
   percent: number;
+  speedBytesPerSec: number;
+  etaSeconds: number | null;
+  error?: string;
 }
 
-// client → server events
+export interface JavaInstallProgressPayload {
+  installId: string;
+  provider: JavaRuntimeProviderId;
+  major: number;
+  version: string | null;
+  status: JavaInstallStatus;
+  stage: JavaInstallStage;
+  bytesReceived: number;
+  totalBytes: number | null;
+  percent: number;
+  speedBytesPerSec: number;
+  etaSeconds: number | null;
+  error?: string;
+}
+
 export interface ConsoleCommandPayload {
   serverId: string;
   command: string;
 }
 
-// Typed map consumed by socket.io typed emitters on both sides
 export interface ServerToClientEvents {
   "console:output": (payload: ConsoleOutputPayload) => void;
   "server:status": (payload: ServerStatusPayload) => void;
   "server:stats": (payload: ServerStatsPayload) => void;
   "backup:progress": (payload: BackupProgressPayload) => void;
-  "template:progress": (payload: TemplateProgressPayload) => void;
+  "software:download-progress": (payload: SoftwareDownloadProgressPayload) => void;
+  "java:install-progress": (payload: JavaInstallProgressPayload) => void;
 }
 
 export interface ClientToServerEvents {

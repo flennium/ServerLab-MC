@@ -1,197 +1,350 @@
-import { useEffect, useState } from "react";
-import { useJavaStore } from "../store/javaStore.js";
+import { useEffect, useMemo, useState } from "react";
+import { CheckCircle2, Coffee, Download, FolderOpen, RefreshCw, ShieldCheck, Trash2, X } from "lucide-react";
 import { api } from "../lib/apiClient.js";
 import { getSocket } from "../lib/socket.js";
-import { Skeleton } from "../components/ui/Skeleton.js";
+import { Alert, Card, PageHeader, StatTile } from "../components/ui/Layout.js";
+import { Button, IconButton } from "../components/ui/Button.js";
+import { Field, Select } from "../components/ui/Form.js";
+import type {
+  JavaInstallProgressPayload,
+  JavaInstallResponse,
+  JavaRuntime,
+  JavaRuntimeListResponse,
+  JavaRuntimeProviderId,
+  JavaRuntimeProviderListResponse,
+  ServerListResponse,
+} from "@serverlab/shared";
+
+const INSTALL_TARGETS = [8, 11, 17, 21, 25];
 
 export function JavaManagerPage() {
-  const { versions, loading, fetchVersions, detectVersions } = useJavaStore();
-  const [installing, setInstalling] = useState<number | null>(null);
-  const [installProgress, setInstallProgress] = useState<Record<number, number>>({});
+  const [providers, setProviders] = useState<JavaRuntimeProviderListResponse["providers"]>([]);
+  const [provider, setProvider] = useState<JavaRuntimeProviderId>("adoptium");
+  const [runtimes, setRuntimes] = useState<JavaRuntime[]>([]);
+  const [serverUsage, setServerUsage] = useState<Record<string, number>>({});
+  const [installMajor, setInstallMajor] = useState(21);
+  const [installingId, setInstallingId] = useState<string | null>(null);
+  const [progress, setProgress] = useState<JavaInstallProgressPayload | null>(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [installMsg, setInstallMsg] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const managed = runtimes.filter((runtime) => runtime.source === "managed");
+  const system = runtimes.filter((runtime) => runtime.source !== "managed");
+  const validCount = runtimes.filter((runtime) => runtime.status === "valid").length;
+  const missingCore = INSTALL_TARGETS.filter(
+    (major) => !runtimes.some((runtime) => runtime.major === major && runtime.status === "valid")
+  );
+
+  const providerOptions = useMemo(
+    () => providers.filter((item) => item.enabled && item.supportedMajors.includes(installMajor)),
+    [installMajor, providers]
+  );
 
   useEffect(() => {
-    fetchVersions();
+    load();
+  }, []);
 
-    // Listen for download progress from a future full JDK installer
-    let cleanup = () => {};
-    getSocket().then((socket) => {
-      const handler = ({ templateId, percent }: { templateId: string; percent: number }) => {
-        // JDK installs reuse the template:progress event with templateId = `jdk-${major}`
-        const match = templateId.match(/^jdk-(\d+)$/);
-        if (!match) return;
-        const major = parseInt(match[1], 10);
-        setInstallProgress((p) => ({ ...p, [major]: percent }));
-        if (percent >= 100) {
-          setTimeout(() => {
-            setInstallProgress((p) => { const n = { ...p }; delete n[major]; return n; });
-            fetchVersions();
-            setInstalling(null);
-          }, 1200);
-        }
-      };
-      socket.on("template:progress", handler);
-      cleanup = () => socket.off("template:progress", handler);
-    });
+  useEffect(() => {
+    if (providerOptions.length > 0 && !providerOptions.some((item) => item.id === provider)) {
+      setProvider(providerOptions[0].id);
+    }
+  }, [provider, providerOptions]);
 
-    return () => cleanup();
-  }, [fetchVersions]);
+  useEffect(() => {
+    let cleanup: (() => void) | null = null;
+    getSocket()
+      .then((socket) => {
+        const handler = (payload: JavaInstallProgressPayload) => {
+          if (payload.installId !== installingId) return;
+          setProgress(payload);
+          if (payload.status === "completed") {
+            setInstallingId(null);
+            load();
+          }
+        };
+        socket.on("java:install-progress", handler);
+        cleanup = () => socket.off("java:install-progress", handler);
+      })
+      .catch(() => {});
+    return () => cleanup?.();
+  }, [installingId]);
 
-  async function handleInstall(major: number) {
-    setInstalling(major);
+  async function load() {
+    setLoading(true);
     setError(null);
-    setInstallMsg(null);
     try {
-      const res = await api.post<{ message: string }>("/api/java/install", { major });
-      setInstallMsg(res.message);
-      // If no socket progress comes, clear after 3s
-      setTimeout(() => {
-        setInstalling((cur) => (cur === major ? null : cur));
-      }, 3000);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Install failed");
-      setInstalling(null);
+      const [providerData, runtimeData, serverData] = await Promise.all([
+        api.get<JavaRuntimeProviderListResponse>("/api/java/providers"),
+        api.get<JavaRuntimeListResponse>("/api/java/runtimes"),
+        api.get<ServerListResponse>("/api/servers"),
+      ]);
+      setProviders(providerData.providers);
+      setRuntimes(runtimeData.runtimes);
+      const usage: Record<string, number> = {};
+      for (const server of serverData.servers) {
+        if (server.javaRuntimeId) usage[server.javaRuntimeId] = (usage[server.javaRuntimeId] ?? 0) + 1;
+      }
+      setServerUsage(usage);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Failed to load Java runtimes");
+    } finally {
+      setLoading(false);
     }
   }
 
-  const RECOMMENDED = [
-    { major: 8,  label: "Java 8",  desc: "Legacy — Minecraft 1.8–1.16" },
-    { major: 17, label: "Java 17", desc: "Recommended — 1.17–1.20" },
-    { major: 21, label: "Java 21", desc: "Latest — 1.21+" },
-  ];
+  async function detect() {
+    setLoading(true);
+    setMessage(null);
+    setError(null);
+    try {
+      await api.post("/api/java/detect");
+      await load();
+      setMessage("System Java runtimes scanned.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Java detection failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function install() {
+    const requestId = crypto.randomUUID();
+    setInstallingId(requestId);
+    setProgress(null);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await api.post<JavaInstallResponse>("/api/java/installations", {
+        major: installMajor,
+        provider,
+        requestId,
+      });
+      if (result.runtime) setMessage(`Java ${result.runtime.major} installed.`);
+      await load();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Java installation failed");
+      setInstallingId(null);
+    }
+  }
+
+  async function cancelInstall() {
+    if (!installingId) return;
+    await api.post(`/api/java/installations/${installingId}/cancel`);
+    setInstallingId(null);
+  }
+
+  async function validateRuntime(runtime: JavaRuntime) {
+    setError(null);
+    try {
+      await api.post(`/api/java/runtimes/${runtime.id}/validate`);
+      await load();
+      setMessage(`Java ${runtime.major} validated.`);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Runtime validation failed");
+    }
+  }
+
+  async function removeRuntime(runtime: JavaRuntime) {
+    setError(null);
+    try {
+      await api.delete(`/api/java/runtimes/${runtime.id}`);
+      await load();
+      setMessage(`Java ${runtime.major} removed.`);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Runtime removal failed");
+    }
+  }
+
+  async function revealRuntime(runtime: JavaRuntime) {
+    await window.serverlab?.openPath?.(runtime.path);
+  }
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Java Manager</h1>
-          <p className="mt-1 text-sm text-muted">
-            Manage JDK installations used to run your servers.
-          </p>
-        </div>
-        <button
-          onClick={detectVersions}
-          disabled={loading}
-          className="rounded bg-surface-3 px-4 py-2 text-sm font-medium hover:bg-border disabled:opacity-50 transition-colors"
-        >
-          {loading ? "Scanning…" : "↻ Scan system"}
-        </button>
+      <PageHeader
+        eyebrow="Runtime center"
+        title="Java Runtime Center"
+        description="Manage the Java runtimes ServerLab uses to create and start Minecraft servers."
+        actions={
+          <Button onClick={detect} disabled={loading} icon={RefreshCw} variant="secondary">
+            {loading ? "Scanning..." : "Scan system"}
+          </Button>
+        }
+      />
+
+      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile label="Valid runtimes" value={validCount} tone="good" />
+        <StatTile label="Managed" value={managed.length} />
+        <StatTile label="System" value={system.length} tone="info" />
+        <StatTile label="Missing targets" value={missingCore.length} tone={missingCore.length ? "warn" : "good"} />
       </div>
 
       {error && (
-        <div className="mb-4 flex items-center justify-between rounded border border-danger/30 bg-danger/10 px-4 py-2 text-sm text-danger">
+        <Alert tone="danger" className="mb-4" action={<IconButton icon={X} label="Dismiss Java error" onClick={() => setError(null)} />}>
           {error}
-          <button onClick={() => setError(null)} className="text-muted hover:text-white">✕</button>
-        </div>
+        </Alert>
       )}
-      {installMsg && (
-        <div className="mb-4 rounded border border-accent/30 bg-accent/10 px-4 py-2 text-sm text-accent">
-          {installMsg}
+      {message && <Alert tone="success" className="mb-4">{message}</Alert>}
+
+      <div className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-[0.85fr_1.15fr]">
+        <Card className="p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <Download className="h-4 w-4 text-copper" aria-hidden="true" />
+            <h2 className="font-display text-lg font-semibold">Install managed runtime</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Java major">
+              <Select value={installMajor} onChange={(event) => setInstallMajor(Number(event.target.value))}>
+                {INSTALL_TARGETS.map((major) => <option key={major} value={major}>Java {major}</option>)}
+              </Select>
+            </Field>
+            <Field label="Provider">
+              <Select value={provider} onChange={(event) => setProvider(event.target.value as JavaRuntimeProviderId)}>
+                {providerOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+              </Select>
+            </Field>
+          </div>
+          <div className="mt-4 flex gap-2">
+            <Button onClick={install} disabled={Boolean(installingId)} icon={Download} variant="primary">
+              {installingId ? "Installing..." : `Install Java ${installMajor}`}
+            </Button>
+            {installingId && <Button onClick={cancelInstall} icon={X} variant="danger">Cancel</Button>}
+          </div>
+          {progress && <ProgressBlock progress={progress} />}
+        </Card>
+
+        <Card className="p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-copper" aria-hidden="true" />
+            <h2 className="font-display text-lg font-semibold">Runtime guidance</h2>
+          </div>
+          <div className="grid gap-2 text-sm text-muted">
+            <GuidanceRow label="Legacy servers" value="Java 8" installed={!missingCore.includes(8)} />
+            <GuidanceRow label="Minecraft 1.17" value="Java 16 or newer" installed={runtimes.some((runtime) => runtime.major >= 16 && runtime.status === "valid")} />
+            <GuidanceRow label="Minecraft 1.18-1.20.4" value="Java 17" installed={!missingCore.includes(17)} />
+            <GuidanceRow label="Minecraft 1.20.5+" value="Java 21" installed={!missingCore.includes(21)} />
+          </div>
+        </Card>
+      </div>
+
+      <RuntimeSection title="Managed runtimes" runtimes={managed} usage={serverUsage} onValidate={validateRuntime} onRemove={removeRuntime} onReveal={revealRuntime} />
+      <RuntimeSection title="System and manual runtimes" runtimes={system} usage={serverUsage} onValidate={validateRuntime} onRemove={removeRuntime} onReveal={revealRuntime} />
+    </div>
+  );
+}
+
+function RuntimeSection({
+  title,
+  runtimes,
+  usage,
+  onValidate,
+  onRemove,
+  onReveal,
+}: {
+  title: string;
+  runtimes: JavaRuntime[];
+  usage: Record<string, number>;
+  onValidate: (runtime: JavaRuntime) => void;
+  onRemove: (runtime: JavaRuntime) => void;
+  onReveal: (runtime: JavaRuntime) => void;
+}) {
+  return (
+    <section className="mb-5">
+      <h2 className="mb-3 font-display text-lg font-semibold">{title}</h2>
+      {runtimes.length === 0 ? (
+        <div className="rounded border border-border bg-rail px-4 py-8 text-center">
+          <Coffee className="mx-auto mb-3 h-8 w-8 text-copper" aria-hidden="true" />
+          <p className="font-display text-base font-semibold text-white">No runtimes here</p>
+          <p className="mt-1 text-sm text-muted">Scan the system or install a managed runtime.</p>
         </div>
-      )}
-
-      {/* Detected versions */}
-      <section className="mb-8">
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted">
-          Detected on this machine
-        </h2>
-        {loading ? (
-          <div className="flex flex-col gap-2">
-            {[1, 2].map((i) => <Skeleton key={i} className="h-14 rounded-lg" />)}
-          </div>
-        ) : versions.length === 0 ? (
-          <div className="rounded-lg border border-border bg-surface-2 px-4 py-5 text-sm text-muted text-center">
-            No JDKs detected — click "Scan system" or download one below.
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {versions.map((v) => (
-              <div
-                key={v.id}
-                className="flex items-center justify-between rounded-lg border border-border bg-surface-2 px-4 py-3"
-              >
-                <div className="min-w-0">
-                  <span className="font-semibold">Java {v.major}</span>
-                  <span className="ml-3 font-mono text-xs text-muted truncate">
-                    {v.path}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {v.vendor && (
-                    <span className="rounded-full bg-surface-3 px-2 py-0.5 text-xs text-muted capitalize">
-                      {v.vendor}
-                    </span>
-                  )}
-                  <span className={`rounded-full px-2 py-0.5 text-xs ${v.detected ? "bg-accent/20 text-accent" : "bg-surface-3 text-muted"}`}>
-                    {v.detected ? "Detected" : "Manual"}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Download cards */}
-      <section>
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted">
-          Download via Adoptium
-        </h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {RECOMMENDED.map(({ major, label, desc }) => {
-            const alreadyHave = versions.some((v) => v.major === major);
-            const progress = installProgress[major];
-            const isInstalling = installing === major;
-
+      ) : (
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+          {runtimes.map((runtime) => {
+            const usedBy = usage[runtime.id] ?? 0;
             return (
-              <div
-                key={major}
-                className="flex flex-col items-center gap-3 rounded-lg border border-border bg-surface-2 p-5"
-              >
-                <div className="text-4xl">☕</div>
-                <div className="text-center">
-                  <p className="font-semibold">{label}</p>
-                  <p className="mt-0.5 text-xs text-muted">{desc}</p>
-                </div>
-
-                {/* Progress bar during install */}
-                {isInstalling && progress !== undefined && (
-                  <div className="w-full">
-                    <div className="flex justify-between mb-1 text-xs text-muted">
-                      <span>Downloading…</span>
-                      <span>{progress}%</span>
+              <Card key={runtime.id} className="p-4">
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-display text-lg font-semibold text-white">Java {runtime.major}</p>
+                      <span className="rounded border border-border bg-rail px-2 py-1 text-xs capitalize text-muted">{runtime.status}</span>
+                      <span className="rounded border border-border bg-rail px-2 py-1 text-xs capitalize text-muted">{runtime.source}</span>
                     </div>
-                    <div className="h-1.5 w-full rounded-full bg-surface-3 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-accent transition-all duration-300"
-                        style={{ width: `${progress}%` }}
-                      />
-                    </div>
+                    <p className="mt-1 text-sm text-muted">{runtime.distribution} {runtime.version}</p>
                   </div>
-                )}
-
-                {alreadyHave ? (
-                  <span className="rounded-full bg-accent/20 px-3 py-1 text-xs text-accent">
-                    ✓ Installed
-                  </span>
-                ) : (
-                  <button
-                    onClick={() => handleInstall(major)}
-                    disabled={isInstalling || !!installing}
-                    className="w-full rounded bg-accent py-2 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50 transition-colors"
-                  >
-                    {isInstalling ? "Queued…" : "Download & Install"}
-                  </button>
-                )}
-              </div>
+                  {runtime.status === "valid" && <CheckCircle2 className="h-5 w-5 shrink-0 text-grass" aria-hidden="true" />}
+                </div>
+                <p className="mb-3 truncate font-mono text-xs text-muted">{runtime.executablePath}</p>
+                <div className="mb-3 grid grid-cols-2 gap-2 text-xs text-muted">
+                  <span>Used by {usedBy} server{usedBy === 1 ? "" : "s"}</span>
+                  <span>{runtime.os} / {runtime.arch}</span>
+                  <span>Installed {formatDate(runtime.installedAt ?? runtime.detectedAt)}</span>
+                  <span>Validated {formatDate(runtime.lastValidatedAt)}</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={() => onValidate(runtime)} icon={ShieldCheck} variant="secondary" size="sm">Validate</Button>
+                  <Button onClick={() => onReveal(runtime)} icon={FolderOpen} variant="secondary" size="sm">Reveal</Button>
+                  <Button onClick={() => onRemove(runtime)} disabled={usedBy > 0} icon={Trash2} variant="danger" size="sm">Remove</Button>
+                </div>
+              </Card>
             );
           })}
         </div>
-        <p className="mt-3 text-xs text-muted">
-          Full auto-extract and path registration ships in v2.1 — downloads are queued via Adoptium API.
-        </p>
-      </section>
+      )}
+    </section>
+  );
+}
+
+function GuidanceRow({ label, value, installed }: { label: string; value: string; installed: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded border border-border bg-surface-console px-3 py-2">
+      <span>{label}</span>
+      <span className={installed ? "font-semibold text-grass" : "font-semibold text-copper"}>{value}</span>
     </div>
   );
+}
+
+function ProgressBlock({ progress }: { progress: JavaInstallProgressPayload }) {
+  const percent = Math.round(progress.percent);
+  return (
+    <div className="mt-4 rounded border border-border bg-rail p-3">
+      <div className="mb-2 flex justify-between text-xs text-muted">
+        <span className="capitalize">{progress.stage.replace(/-/g, " ")}</span>
+        <span className="font-mono text-white">{percent}%</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-panel">
+        <div className="h-full bg-copper transition-all" style={{ width: `${percent}%` }} />
+      </div>
+      <div className="mt-2 flex justify-between gap-3 text-xs text-muted">
+        <span>{formatBytes(progress.bytesReceived)}{progress.totalBytes ? ` / ${formatBytes(progress.totalBytes)}` : ""}</span>
+        <span>{formatBytes(progress.speedBytesPerSec)}/s{progress.etaSeconds !== null ? `, ${formatDuration(progress.etaSeconds)} left` : ""}</span>
+      </div>
+    </div>
+  );
+}
+
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let amount = value;
+  let unit = 0;
+  while (amount >= 1024 && unit < units.length - 1) {
+    amount /= 1024;
+    unit += 1;
+  }
+  return `${amount.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m ${seconds % 60}s`;
+}
+
+function formatDate(value: Date | string | null): string {
+  if (!value) return "never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "unknown";
+  return date.toLocaleDateString();
 }

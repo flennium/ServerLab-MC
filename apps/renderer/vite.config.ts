@@ -4,10 +4,12 @@ import path from "path";
 
 export default defineConfig({
   plugins: [react()],
+  // Relative assets are required when Electron loads the renderer from file://.
+  base: "./",
   resolve: {
     alias: {
       "@serverlab/shared": path.resolve(
-        __dirname,
+        import.meta.dirname,
         "../../packages/shared/src/index.ts"
       ),
     },
@@ -19,5 +21,22 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/@codemirror") || id.includes("node_modules/@uiw")) {
+            return "editor";
+          }
+          if (id.includes("node_modules/recharts") || id.includes("node_modules/d3")) {
+            return "charts";
+          }
+          if (id.includes("node_modules/framer-motion")) {
+            return "motion";
+          }
+          return undefined;
+        },
+      },
+    },
   },
 });

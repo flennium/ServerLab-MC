@@ -2,7 +2,7 @@
 module.exports = {
   appId: "dev.serverlab.mc",
   productName: "ServerLab MC",
-  copyright: "Copyright © 2025 ServerLab MC",
+  copyright: "Copyright (c) 2026 ServerLab MC",
 
   // Stage dir is a clean folder containing only main.js, preload.js, package.json
   // This is what gets packed into the asar archive
@@ -59,7 +59,7 @@ module.exports = {
     shortcutName: "ServerLab MC",
     installerIcon: "build-resources/icon.ico",
     uninstallerIcon: "build-resources/icon.ico",
-    license: null,
+    license: "LICENSE",
   },
 
   publish: {

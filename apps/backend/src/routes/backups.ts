@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
-import { createBackup, restoreBackup } from "../services/BackupService.js";
+import { restoreBackup } from "../services/BackupService.js";
 
 export const backupRoutes = Router();
 
