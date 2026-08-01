@@ -1,4 +1,4 @@
-// ─── Prisma schema — ServerLab MC ─────────────────────────────────────────────
+// Prisma schema for ServerLab MC local app data.
 
 generator client {
   provider = "prisma-client-js"
@@ -16,6 +16,9 @@ model Server {
   version     String
   software    String   // paper | purpur | spigot | fabric
   javaPath    String
+  javaRuntimeId String?
+  javaOverrideMode String @default("automatic")
+  allowUnsupportedJava Boolean @default(false)
   ramMinMb    Int      @default(1024)
   ramMaxMb    Int      @default(4096)
   port        Int      @default(25565)
@@ -26,6 +29,7 @@ model Server {
   updatedAt   DateTime @updatedAt
 
   backups     Backup[]
+  javaRuntime JavaRuntime? @relation(fields: [javaRuntimeId], references: [id], onDelete: SetNull)
 
   @@map("servers")
 }
@@ -63,4 +67,85 @@ model JavaVersion {
   detected Boolean @default(true)
 
   @@map("java_versions")
+}
+
+model JavaRuntime {
+  id                String   @id @default(uuid())
+  provider          String?
+  distribution      String
+  major             Int
+  version           String
+  os                String
+  arch              String
+  source            String
+  path              String
+  executablePath    String
+  status            String   @default("valid")
+  checksum          String?
+  detectedAt        DateTime?
+  installedAt       DateTime?
+  lastValidatedAt   DateTime?
+  lastUsedAt        DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  servers           Server[]
+
+  @@unique([executablePath])
+  @@map("java_runtimes")
+}
+
+model JavaInstallJob {
+  id                String   @id
+  provider          String
+  major             Int
+  version           String?
+  status            String   @default("queued")
+  stage             String   @default("resolving-provider")
+  bytesReceived     Int      @default(0)
+  totalBytes        Int?
+  speedBytesPerSec  Int      @default(0)
+  etaSeconds        Int?
+  error             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("java_install_jobs")
+}
+
+model SoftwareArtifact {
+  id               String   @id @default(uuid())
+  provider         String
+  minecraftVersion String
+  buildId          String
+  filename         String
+  sizeBytes        Int      @default(0)
+  sha256           String?
+  cachedPath       String
+  status           String   @default("cached")
+  downloadedAt     DateTime?
+  lastUsedAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([provider, minecraftVersion, buildId])
+  @@map("software_artifacts")
+}
+
+model SoftwareDownload {
+  id               String   @id
+  provider         String
+  minecraftVersion String
+  buildId          String
+  status           String   @default("queued")
+  bytesReceived    Int      @default(0)
+  totalBytes       Int?
+  speedBytesPerSec Int      @default(0)
+  etaSeconds       Int?
+  stage            String   @default("resolving-provider")
+  error            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("software_downloads")
 }

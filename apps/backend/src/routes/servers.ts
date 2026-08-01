@@ -3,8 +3,15 @@ import { prisma } from "../lib/prisma.js";
 import { serverManager } from "../services/ServerManager.js";
 import { FileManager } from "../services/FileManager.js";
 import { createBackup } from "../services/BackupService.js";
+import { softwareDownloadService } from "../services/software/SoftwareDownloadService.js";
+import { serverSoftwareInstaller } from "../services/software/ServerSoftwareInstaller.js";
+import { javaRuntimeRegistry } from "../services/java/JavaRuntimeRegistry.js";
+import { javaRuntimeValidator } from "../services/java/JavaRuntimeValidator.js";
+import { javaRecommendationService } from "../services/java/JavaRecommendationService.js";
 import { logger } from "../lib/logger.js";
+import { badRequest } from "../middleware/error.js";
 import type {
+  AssignServerJavaRuntimeDto,
   CreateServerDto,
   UpdateServerDto,
   SendCommandDto,
@@ -12,6 +19,101 @@ import type {
 } from "@serverlab/shared";
 
 export const serverRoutes = Router();
+
+function requireText(value: unknown, field: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw badRequest(`${field} is required`);
+  }
+  return value.trim();
+}
+
+function optionalInt(value: unknown, field: string, min: number, max: number): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw badRequest(`${field} must be between ${min} and ${max}`);
+  }
+  return parsed;
+}
+
+function validateCreateServer(body: CreateServerDto): void {
+  requireText(body.name, "name");
+  requireText(body.path, "path");
+  requireText(body.version, "version");
+  requireText(body.software, "software");
+  if (!body.softwareSource) requireText(body.javaPath, "javaPath");
+  optionalInt(body.ramMinMb, "ramMinMb", 128, 262144);
+  optionalInt(body.ramMaxMb, "ramMaxMb", 128, 262144);
+  optionalInt(body.port, "port", 1, 65535);
+  if (body.ramMinMb && body.ramMaxMb && body.ramMinMb > body.ramMaxMb) {
+    throw badRequest("ramMinMb cannot be greater than ramMaxMb");
+  }
+}
+
+async function resolveJavaSelection(input: {
+  version: string;
+  software: string;
+  javaRuntimeId?: string | null;
+  javaPath: string;
+  javaOverrideMode?: string;
+  allowUnsupportedJava?: boolean;
+  strict: boolean;
+}): Promise<{
+  javaRuntimeId: string | null;
+  javaPath: string;
+  javaOverrideMode: string;
+  allowUnsupportedJava: boolean;
+}> {
+  const javaOverrideMode = input.javaOverrideMode ?? (input.javaRuntimeId ? "automatic" : "manual");
+  const allowUnsupportedJava = input.allowUnsupportedJava ?? false;
+
+  if (javaOverrideMode === "manual") {
+    await javaRuntimeValidator.validateExecutable(input.javaPath);
+    return {
+      javaRuntimeId: null,
+      javaPath: input.javaPath,
+      javaOverrideMode,
+      allowUnsupportedJava,
+    };
+  }
+
+  let runtime = input.javaRuntimeId ? await javaRuntimeRegistry.getRuntime(input.javaRuntimeId) : null;
+  const recommendation = await javaRecommendationService.recommend({
+    minecraftVersion: input.version,
+    software: input.software,
+  });
+  if (!runtime) runtime = recommendation.compatibleRuntime;
+  if (!runtime) {
+    if (input.strict) {
+      throw new Error(`Java ${recommendation.requiredMajor} is required. Install or select a compatible runtime.`);
+    }
+    return {
+      javaRuntimeId: null,
+      javaPath: input.javaPath,
+      javaOverrideMode: "manual",
+      allowUnsupportedJava,
+    };
+  }
+
+  const validated = await javaRuntimeValidator.validateRuntime(runtime);
+  if (
+    validated.status !== "valid" ||
+    !javaRecommendationService.isCompatible(
+      validated.major,
+      recommendation.requiredMajor,
+      allowUnsupportedJava
+    )
+  ) {
+    throw new Error(`Selected Java runtime is not compatible. Java ${recommendation.requiredMajor} is required.`);
+  }
+
+  return {
+    javaRuntimeId: validated.id,
+    javaPath: validated.executablePath,
+    javaOverrideMode: "automatic",
+    allowUnsupportedJava,
+  };
+}
 
 // GET /api/servers
 serverRoutes.get("/", async (_req, res, next) => {
@@ -27,13 +129,56 @@ serverRoutes.get("/", async (_req, res, next) => {
 serverRoutes.post("/", async (req, res, next) => {
   try {
     const body = req.body as CreateServerDto;
+    validateCreateServer(body);
+    let version = body.version;
+    let software = body.software;
+
+    if (body.softwareSource) {
+      if (!body.eulaAccepted) {
+        throw badRequest("Minecraft EULA acceptance is required");
+      }
+
+      const requestId = body.softwareSource.requestId;
+      const { artifact } = await softwareDownloadService.ensureArtifact({
+        provider: body.softwareSource.provider,
+        minecraftVersion: body.softwareSource.minecraftVersion,
+        buildId: body.softwareSource.buildId,
+        requestId,
+      });
+      if (requestId) await softwareDownloadService.markStage(requestId, "installing-server-files");
+      await serverSoftwareInstaller.install({
+        artifact,
+        serverPath: body.path,
+        eulaAccepted: body.eulaAccepted,
+      });
+      if (requestId) {
+        await softwareDownloadService.markStage(requestId, "writing-eula");
+        await softwareDownloadService.markStage(requestId, "done");
+      }
+      version = body.softwareSource.minecraftVersion;
+      software = body.softwareSource.provider;
+    }
+
+    const javaSelection = await resolveJavaSelection({
+      version,
+      software,
+      javaRuntimeId: body.javaRuntimeId,
+      javaPath: body.javaPath,
+      javaOverrideMode: body.javaOverrideMode,
+      allowUnsupportedJava: body.allowUnsupportedJava,
+      strict: Boolean(body.softwareSource),
+    });
+
     const server = await prisma.server.create({
       data: {
         name: body.name,
         path: body.path,
-        version: body.version,
-        software: body.software,
-        javaPath: body.javaPath,
+        version,
+        software,
+        javaPath: javaSelection.javaPath,
+        javaRuntimeId: javaSelection.javaRuntimeId,
+        javaOverrideMode: javaSelection.javaOverrideMode,
+        allowUnsupportedJava: javaSelection.allowUnsupportedJava,
         ramMinMb: body.ramMinMb ?? 1024,
         ramMaxMb: body.ramMaxMb ?? 4096,
         port: body.port ?? 25565,
@@ -63,9 +208,38 @@ serverRoutes.get("/:id", async (req, res, next) => {
 serverRoutes.patch("/:id", async (req, res, next) => {
   try {
     const body = req.body as UpdateServerDto;
+    optionalInt(body.ramMinMb, "ramMinMb", 128, 262144);
+    optionalInt(body.ramMaxMb, "ramMaxMb", 128, 262144);
+    optionalInt(body.port, "port", 1, 65535);
+    if (body.ramMinMb && body.ramMaxMb && body.ramMinMb > body.ramMaxMb) {
+      throw badRequest("ramMinMb cannot be greater than ramMaxMb");
+    }
     const server = await prisma.server.update({
       where: { id: req.params.id },
       data: body,
+    });
+    res.json({ server });
+  } catch (err) {
+    next(err);
+  }
+});
+
+serverRoutes.patch("/:id/java-runtime", async (req, res, next) => {
+  try {
+    const existing = await prisma.server.findUniqueOrThrow({ where: { id: req.params.id } });
+    const body = req.body as AssignServerJavaRuntimeDto;
+    const selection = await resolveJavaSelection({
+      version: existing.version,
+      software: existing.software,
+      javaRuntimeId: body.javaRuntimeId,
+      javaPath: body.javaPath ?? existing.javaPath,
+      javaOverrideMode: body.javaOverrideMode,
+      allowUnsupportedJava: body.allowUnsupportedJava,
+      strict: true,
+    });
+    const server = await prisma.server.update({
+      where: { id: req.params.id },
+      data: selection,
     });
     res.json({ server });
   } catch (err) {
@@ -82,7 +256,7 @@ serverRoutes.delete("/:id", async (req, res, next) => {
     }
     // Auto-backup before destroy
     await createBackup(id, "manual").catch((e) =>
-      logger.warn({ e }, "Pre-delete backup failed — continuing with delete")
+      logger.warn({ e }, "Pre-delete backup failed; continuing with delete")
     );
     await prisma.server.delete({ where: { id } });
     res.json({ message: "Server deleted" });
@@ -90,8 +264,6 @@ serverRoutes.delete("/:id", async (req, res, next) => {
     next(err);
   }
 });
-
-// ─── Process control ──────────────────────────────────────────────────────────
 
 serverRoutes.post("/:id/start", async (req, res, next) => {
   try {
@@ -130,8 +302,6 @@ serverRoutes.post("/:id/command", async (req, res, next) => {
     next(err);
   }
 });
-
-// ─── File manager ─────────────────────────────────────────────────────────────
 
 async function getFileManager(serverId: string): Promise<FileManager> {
   const server = await prisma.server.findUniqueOrThrow({
@@ -211,8 +381,6 @@ serverRoutes.patch("/:id/files/rename", async (req, res, next) => {
     next(err);
   }
 });
-
-// ─── Backups ──────────────────────────────────────────────────────────────────
 
 // GET /api/servers/:id/backups
 serverRoutes.get("/:id/backups", async (req, res, next) => {

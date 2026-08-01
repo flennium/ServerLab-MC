@@ -5,26 +5,38 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // ServerLab MC dark palette
+        carbon: "#101214",
+        panel: "#171A1E",
+        rail: "#22272E",
+        copper: {
+          DEFAULT: "#D9823B",
+          hover: "#F09A4A",
+          muted: "#5A3A25",
+        },
+        grass: "#4CAF50",
+        redstone: "#EF4444",
+        lapis: "#4D7CFE",
+        glowstone: "#F6C85F",
         surface: {
-          DEFAULT: "#0f0f0f",
-          1: "#161616",
-          2: "#1e1e1e",
-          3: "#272727",
-          console: "#0a0a0a",
+          DEFAULT: "#101214",
+          1: "#13161A",
+          2: "#171A1E",
+          3: "#22272E",
+          console: "#080A0D",
         },
-        border: "#2e2e2e",
+        border: "#303741",
         accent: {
-          DEFAULT: "#22c55e",
-          hover: "#16a34a",
+          DEFAULT: "#D9823B",
+          hover: "#F09A4A",
         },
-        danger: "#ef4444",
-        warning: "#f59e0b",
-        muted: "#6b7280",
-        info: "#5555FF",
+        danger: "#EF4444",
+        warning: "#F6C85F",
+        muted: "#8B949E",
+        info: "#4D7CFE",
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
+        sans: ["IBM Plex Sans", "Inter", "system-ui", "sans-serif"],
+        display: ["Space Grotesk", "IBM Plex Sans", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "Fira Code", "monospace"],
       },
       borderRadius: {

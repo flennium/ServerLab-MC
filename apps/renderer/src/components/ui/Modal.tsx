@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { X } from "lucide-react";
+import { IconButton } from "./Button.js";
 
 interface ModalProps {
   title: string;
@@ -10,10 +12,9 @@ interface ModalProps {
 export function Modal({ title, onClose, children }: ModalProps) {
   return (
     <AnimatePresence>
-      {/* Backdrop */}
       <motion.div
         key="backdrop"
-        className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+        className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -21,7 +22,6 @@ export function Modal({ title, onClose, children }: ModalProps) {
         aria-hidden="true"
       />
 
-      {/* Panel */}
       <motion.div
         key="panel"
         role="dialog"
@@ -34,22 +34,16 @@ export function Modal({ title, onClose, children }: ModalProps) {
         transition={{ duration: 0.15 }}
       >
         <div
-          className="w-full max-w-lg rounded-xl border border-border bg-surface-2 shadow-2xl"
-          onClick={(e) => e.stopPropagation()}
+          className="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-lg border border-border bg-panel shadow-2xl"
+          onClick={(event) => event.stopPropagation()}
         >
           <div className="flex items-center justify-between border-b border-border px-5 py-4">
-            <h2 id="modal-title" className="font-semibold">
+            <h2 id="modal-title" className="font-display font-semibold">
               {title}
             </h2>
-            <button
-              onClick={onClose}
-              className="text-muted hover:text-white transition-colors"
-              aria-label="Close modal"
-            >
-              ✕
-            </button>
+            <IconButton icon={X} label="Close modal" onClick={onClose} />
           </div>
-          <div className="p-5">{children}</div>
+          <div className="max-h-[calc(92vh-4rem)] overflow-y-auto p-5">{children}</div>
         </div>
       </motion.div>
     </AnimatePresence>

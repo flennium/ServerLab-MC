@@ -5,7 +5,6 @@ import { spawn, ChildProcess } from "child_process";
 import { autoUpdater } from "electron-updater";
 import crypto from "crypto";
 
-// ─── Startup token ────────────────────────────────────────────────────────────
 const BACKEND_TOKEN = crypto.randomBytes(32).toString("hex");
 const BACKEND_PORT = 3001;
 
@@ -14,21 +13,27 @@ let backendProcess: ChildProcess | null = null;
 
 const isDev = !app.isPackaged;
 
-/**
- * The single source of truth for where all persistent app data lives.
- *
- * Dev:        <project>/data/   (keeps dev data out of the source tree)
- * Production: %APPDATA%\ServerLab MC\   (standard Windows userData path)
- *
- * Structure:
- *   <DATA_DIR>/
- *     serverlab.db         ← SQLite database
- *     backups/             ← zip archives
- *     logs/                ← app-level logs
- */
+function getDevRoot(): string {
+  const candidates = [
+    path.join(__dirname, ".."),
+    path.join(__dirname, "../../.."),
+  ];
+
+  for (const candidate of candidates) {
+    if (
+      fs.existsSync(path.join(candidate, "package.json")) &&
+      fs.existsSync(path.join(candidate, "apps", "backend"))
+    ) {
+      return candidate;
+    }
+  }
+
+  return path.join(__dirname, "../../..");
+}
+
 function getDataDir(): string {
   if (isDev) {
-    const devDir = path.join(__dirname, "../../../data");
+    const devDir = path.join(getDevRoot(), "data");
     fs.mkdirSync(devDir, { recursive: true });
     return devDir;
   }
@@ -36,14 +41,55 @@ function getDataDir(): string {
   return app.getPath("userData");
 }
 
-// ─── Backend lifecycle ────────────────────────────────────────────────────────
+function pathInside(candidate: string, root: string): boolean {
+  const resolvedCandidate = path.resolve(candidate);
+  const resolvedRoot = path.resolve(root);
+  const relative = path.relative(resolvedRoot, resolvedCandidate);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function allowedOpenRoots(): string[] {
+  const roots = [getDataDir()];
+  const programFiles = [process.env.ProgramFiles, process.env["ProgramFiles(x86)"]].filter(Boolean) as string[];
+
+  for (const root of programFiles) {
+    roots.push(path.join(root, "Java"));
+    roots.push(path.join(root, "Eclipse Adoptium"));
+    roots.push(path.join(root, "Microsoft"));
+  }
+
+  return roots;
+}
+
+function getPrismaQueryEnginePath(): string {
+  const clientDir = isDev
+    ? path.join(getDevRoot(), "node_modules/.prisma/client")
+    : path.join(
+        process.resourcesPath,
+        "backend",
+        "node_modules",
+        ".prisma",
+        "client"
+      );
+
+  return path.join(clientDir, "query_engine-windows.dll.node");
+}
+
+function getDatabaseUrl(dbPath: string): string {
+  if (isDev) {
+    return "file:../../../data/serverlab.db";
+  }
+
+  return `file:${dbPath}`;
+}
 
 function startBackend(): void {
   const dataDir = getDataDir();
 
-  // Ensure sub-directories exist before the backend starts
   fs.mkdirSync(path.join(dataDir, "backups"), { recursive: true });
   fs.mkdirSync(path.join(dataDir, "logs"), { recursive: true });
+  fs.mkdirSync(path.join(dataDir, "java-runtimes"), { recursive: true });
+  fs.mkdirSync(path.join(dataDir, "software-cache"), { recursive: true });
 
   const dbPath = path.join(dataDir, "serverlab.db");
 
@@ -51,18 +97,14 @@ function startBackend(): void {
   let args: string[];
 
   if (isDev) {
-    // Dev: use tsx to run TypeScript directly
-    command = "npx";
-    args = [
-      "tsx",
-      path.join(__dirname, "../../backend/src/index.ts"),
-    ];
+    if (process.platform === "win32") {
+      command = "cmd.exe";
+      args = ["/d", "/s", "/c", "npx tsx src/index.ts"];
+    } else {
+      command = "npx";
+      args = ["tsx", "src/index.ts"];
+    }
   } else {
-    // Production: run the pre-bundled index.js with Node.
-    // Electron ships its own Node runtime at process.execPath,
-    // but that's the Electron binary. We use a separate node.exe
-    // that electron-builder extracts to resources, falling back to
-    // the system node if not found.
     const bundledNode = path.join(process.resourcesPath, "node", "node.exe");
     const systemNode = "node";
     command = fs.existsSync(bundledNode) ? bundledNode : systemNode;
@@ -78,18 +120,10 @@ function startBackend(): void {
       BACKEND_TOKEN,
       NODE_ENV: isDev ? "development" : "production",
       DATA_DIR: dataDir,
-      DATABASE_URL: `file:${dbPath}`,
-      // Tell Prisma where to find its query engine in production
-      PRISMA_QUERY_ENGINE_LIBRARY: isDev
-        ? ""
-        : path.join(
-            process.resourcesPath,
-            "backend",
-            "node_modules",
-            ".prisma",
-            "client"
-          ),
+      DATABASE_URL: getDatabaseUrl(dbPath),
+      PRISMA_QUERY_ENGINE_LIBRARY: getPrismaQueryEnginePath(),
     },
+    cwd: isDev ? path.join(getDevRoot(), "apps/backend") : undefined,
     stdio: ["pipe", "pipe", "pipe"],
     detached: false,
   });
@@ -114,18 +148,9 @@ function stopBackend(): void {
   }
 }
 
-// ─── DB migrations (production first-launch) ─────────────────────────────────
-
 async function runMigrations(): Promise<void> {
   const dataDir = getDataDir();
   const dbPath = path.join(dataDir, "serverlab.db");
-  const migrationsPath = path.join(
-    process.resourcesPath,
-    "backend",
-    "dist",
-    "prisma",
-    "migrations"
-  );
   const schemaPath = path.join(
     process.resourcesPath,
     "backend",
@@ -159,22 +184,24 @@ async function runMigrations(): Promise<void> {
     proc.stdout?.on("data", (d: Buffer) => console.log("[migrate]", d.toString().trim()));
     proc.stderr?.on("data", (d: Buffer) => console.log("[migrate:err]", d.toString().trim()));
     proc.on("exit", () => resolve());
-    proc.on("error", () => resolve()); // Don't block app start if migration fails
+    proc.on("error", () => resolve());
   });
 }
 
-// ─── Window creation ──────────────────────────────────────────────────────────
-
 function createWindow(): void {
+  const preloadPath = app.isPackaged
+    ? path.join(app.getAppPath(), "preload.js")
+    : path.join(__dirname, "preload.js");
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 900,
     minHeight: 600,
     backgroundColor: "#0f0f0f",
-    titleBarStyle: "hiddenInset",
+    titleBarStyle: "hidden",
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -191,19 +218,26 @@ function createWindow(): void {
   }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    // Open external links in the system browser, not inside Electron
     if (url.startsWith("https://") || url.startsWith("http://")) {
       shell.openExternal(url);
     }
     return { action: "deny" };
   });
 
+  mainWindow.webContents.on("did-fail-load", (_e, errorCode, errorDesc, url) => {
+    console.error(`[renderer] Failed to load: ${url} - ${errorCode} ${errorDesc}`);
+  });
+
+  mainWindow.webContents.on("console-message", (_e, level, message, line, sourceId) => {
+    if (isDev) {
+      console.log(`[renderer:console] ${message} (${sourceId}:${line})`);
+    }
+  });
+
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
 }
-
-// ─── IPC handlers (renderer → main) ──────────────────────────────────────────
 
 ipcMain.handle("backend:config", () => ({
   origin: `http://127.0.0.1:${BACKEND_PORT}`,
@@ -218,16 +252,18 @@ ipcMain.handle("dialog:openDirectory", async () => {
   return result.canceled ? null : result.filePaths[0];
 });
 
-ipcMain.handle("shell:openPath", (_event, filePath: string) => {
-  shell.openPath(filePath);
+ipcMain.handle("shell:openPath", async (_event, filePath: string) => {
+  const resolved = path.resolve(filePath);
+  const allowed = allowedOpenRoots().some((root) => pathInside(resolved, root));
+  if (!allowed) {
+    throw new Error("Path is outside ServerLab-managed locations");
+  }
+  await shell.openPath(resolved);
 });
 
 ipcMain.handle("app:version", () => app.getVersion());
 
-// ─── App lifecycle ────────────────────────────────────────────────────────────
-
 app.whenReady().then(async () => {
-  // Run DB migrations on first launch (production only)
   if (!isDev) {
     await runMigrations();
   }
@@ -239,8 +275,6 @@ app.whenReady().then(async () => {
   });
 
   if (!isDev) {
-    // Auto-update check — wrapped in try/catch so a missing update server
-    // never crashes the app
     try {
       autoUpdater.checkForUpdatesAndNotify();
     } catch {
@@ -258,7 +292,6 @@ app.on("before-quit", () => {
   stopBackend();
 });
 
-// Prevent navigation to arbitrary URLs (security hardening)
 app.on("web-contents-created", (_e, contents) => {
   contents.on("will-navigate", (event, url) => {
     const allowedOrigins = ["http://localhost:5173", "file://"];

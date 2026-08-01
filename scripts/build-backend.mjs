@@ -2,8 +2,8 @@
  * Bundles the backend into a single CommonJS file using esbuild.
  *
  * Prisma is tricky because:
- *  1. It uses a native .node binary (query engine) — must be external
- *  2. It loads schema.prisma at runtime via __dirname — must be copied
+ *  1. It uses a native .node binary (query engine), so it must be external.
+ *  2. It loads schema.prisma at runtime via __dirname, so it must be copied.
  *
  * Strategy:
  *  - Bundle all JS/TS into dist/index.js (externalize only @prisma/client
@@ -20,7 +20,7 @@ const ROOT = path.resolve(fileURLToPath(import.meta.url), "../..");
 const BACKEND = path.join(ROOT, "apps/backend");
 const OUT = path.join(BACKEND, "dist");
 
-console.log("⚙  Bundling backend with esbuild…");
+console.log("Bundling backend with esbuild...");
 
 // Clean output dir
 fs.rmSync(OUT, { recursive: true, force: true });
@@ -33,7 +33,7 @@ await build({
   target: "node20",
   format: "cjs",
   outfile: path.join(OUT, "index.js"),
-  // Prisma client and native modules must stay external — they load
+  // Prisma client and native modules load platform-specific binaries.
   // platform-specific .node files that esbuild cannot bundle
   external: [
     "@prisma/client",
@@ -42,10 +42,8 @@ await build({
     "*.node",
     // systeminformation has native bindings on some platforms
     "systeminformation",
-    // tree-kill uses platform-specific binaries
-    "tree-kill",
   ],
-  // Don't inline node_modules for these — they'll be in extraResources
+  // These packages are copied through electron-builder extraResources.
   packages: "bundle",
   sourcemap: true,
   minify: false, // keep readable for debugging
@@ -72,9 +70,9 @@ fs.copyFileSync(
 const migrationsDir = path.join(BACKEND, "prisma/migrations");
 if (fs.existsSync(migrationsDir)) {
   fs.cpSync(migrationsDir, path.join(prismaDir, "migrations"), { recursive: true });
-  console.log("  ✓ Copied prisma migrations");
+  console.log("  OK copied prisma migrations");
 }
 
-console.log("  ✓ Backend bundled →", path.join(OUT, "index.js"));
-console.log("  ✓ Prisma schema copied →", path.join(prismaDir, "schema.prisma"));
+console.log("  OK backend bundled:", path.join(OUT, "index.js"));
+console.log("  OK Prisma schema copied:", path.join(prismaDir, "schema.prisma"));
 console.log("Done.");

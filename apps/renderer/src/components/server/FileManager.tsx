@@ -1,8 +1,24 @@
 import { useState, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import clsx from "clsx";
+import {
+  ChevronRight,
+  FileCode2,
+  FileText,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  Home,
+  Pencil,
+  RefreshCw,
+  Trash2,
+  X,
+} from "lucide-react";
 import { api } from "../../lib/apiClient.js";
 import { ConfirmModal } from "../ui/ConfirmModal.js";
+import { Alert } from "../ui/Layout.js";
+import { Button, IconButton } from "../ui/Button.js";
+import { TextInput } from "../ui/Form.js";
 import type { FileEntry, FileListResponse } from "@serverlab/shared";
 
 interface FileManagerProps {
@@ -37,8 +53,8 @@ export function FileManager({ serverId, onOpenFile }: FileManagerProps) {
         setEntries(entries);
         setCurrentPath(path);
         setSelected(null);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load directory");
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Failed to load directory");
       } finally {
         setLoading(false);
       }
@@ -46,25 +62,28 @@ export function FileManager({ serverId, onOpenFile }: FileManagerProps) {
     [serverId]
   );
 
-  useEffect(() => { load(""); }, [load]);
+  useEffect(() => {
+    load("");
+  }, [load]);
 
   function breadcrumbs() {
     const parts = currentPath.split("/").filter(Boolean);
     return [
       { label: "root", path: "" },
-      ...parts.map((p, i) => ({ label: p, path: parts.slice(0, i + 1).join("/") })),
+      ...parts.map((part, index) => ({
+        label: part,
+        path: parts.slice(0, index + 1).join("/"),
+      })),
     ];
   }
 
   async function handleDelete(entry: FileEntry) {
     try {
-      await api.delete(
-        `/api/servers/${serverId}/files?path=${encodeURIComponent(entry.path)}`
-      );
+      await api.delete(`/api/servers/${serverId}/files?path=${encodeURIComponent(entry.path)}`);
       setPendingDelete(null);
       load(currentPath);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Delete failed");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Delete failed");
       setPendingDelete(null);
     }
   }
@@ -81,8 +100,8 @@ export function FileManager({ serverId, onOpenFile }: FileManagerProps) {
       });
       setRenaming(null);
       load(currentPath);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Rename failed");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Rename failed");
       setRenaming(null);
     }
   }
@@ -98,190 +117,184 @@ export function FileManager({ serverId, onOpenFile }: FileManagerProps) {
       setNewFolderMode(false);
       setNewFolderName("");
       load(currentPath);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Create folder failed");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Create folder failed");
     }
   }
 
-  const EDITABLE_EXTS = [".yml", ".yaml", ".json", ".properties", ".txt", ".conf", ".toml", ".ini"];
+  const editableExts = [".yml", ".yaml", ".json", ".properties", ".txt", ".conf", ".toml", ".ini"];
   const isEditable = (name: string) =>
-    EDITABLE_EXTS.some((ext) => name.toLowerCase().endsWith(ext));
+    editableExts.some((extension) => name.toLowerCase().endsWith(extension));
 
   return (
     <>
-      <div className="flex flex-col gap-0 rounded-lg border border-border bg-surface-console overflow-hidden">
-        {/* Toolbar */}
-        <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-          {/* Breadcrumb */}
-          <div className="flex items-center gap-1 text-xs text-muted flex-1 min-w-0 overflow-x-auto">
-            {breadcrumbs().map((crumb, i, arr) => (
-              <span key={crumb.path} className="flex items-center gap-1 shrink-0">
+      <div className="flex min-h-[460px] flex-col overflow-hidden rounded-lg border border-border bg-panel">
+        <div className="flex items-center gap-2 border-b border-border bg-carbon px-3 py-2">
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-xs text-muted">
+            {breadcrumbs().map((crumb, index, crumbs) => (
+              <span key={crumb.path || "root"} className="flex shrink-0 items-center gap-1">
                 <button
                   onClick={() => load(crumb.path)}
                   className={clsx(
-                    "hover:text-white transition-colors",
-                    i === arr.length - 1 ? "text-white font-medium" : "text-muted"
+                    "inline-flex items-center gap-1 rounded px-1.5 py-1 transition-colors hover:bg-rail hover:text-white",
+                    index === crumbs.length - 1 && "text-white"
                   )}
                 >
+                  {index === 0 && <Home className="h-3.5 w-3.5" aria-hidden="true" />}
                   {crumb.label}
                 </button>
-                {i < arr.length - 1 && <span className="text-border">/</span>}
+                {index < crumbs.length - 1 && (
+                  <ChevronRight className="h-3.5 w-3.5 text-border" aria-hidden="true" />
+                )}
               </span>
             ))}
           </div>
 
-          <button
+          <Button
             onClick={() => setNewFolderMode(true)}
-            className="rounded bg-surface-3 px-2 py-1 text-xs hover:bg-border transition-colors shrink-0"
+            icon={FolderPlus}
+            variant="secondary"
+            size="sm"
           >
-            + Folder
-          </button>
-          <button
-            onClick={() => load(currentPath)}
-            className="rounded bg-surface-3 px-2 py-1 text-xs hover:bg-border transition-colors shrink-0"
-            title="Refresh"
-          >
-            ↻
-          </button>
+            Folder
+          </Button>
+          <IconButton icon={RefreshCw} label="Refresh files" onClick={() => load(currentPath)} />
         </div>
 
-        {/* New folder input */}
         <AnimatePresence>
           {newFolderMode && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="flex items-center gap-2 px-3 py-2 border-b border-border bg-surface-2 overflow-hidden"
+              className="overflow-hidden border-b border-border bg-surface-console"
             >
-              <input
-                autoFocus
-                type="text"
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleCreateFolder();
-                  if (e.key === "Escape") setNewFolderMode(false);
-                }}
-                placeholder="folder-name"
-                className="flex-1 rounded border border-border bg-surface-3 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-accent"
-              />
-              <button onClick={handleCreateFolder} className="rounded bg-accent px-2 py-1 text-xs text-white hover:bg-accent-hover">
-                Create
-              </button>
-              <button onClick={() => setNewFolderMode(false)} className="text-xs text-muted hover:text-white">
-                Cancel
-              </button>
+              <div className="flex items-center gap-2 px-3 py-3">
+                <TextInput
+                  autoFocus
+                  type="text"
+                  value={newFolderName}
+                  onChange={(event) => setNewFolderName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") handleCreateFolder();
+                    if (event.key === "Escape") setNewFolderMode(false);
+                  }}
+                  placeholder="folder-name"
+                  className="h-8 flex-1 py-1 text-xs"
+                />
+                <Button onClick={handleCreateFolder} variant="primary" size="sm">
+                  Create
+                </Button>
+                <IconButton icon={X} label="Cancel folder creation" onClick={() => setNewFolderMode(false)} />
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Error banner */}
         {error && (
-          <div className="flex items-center justify-between bg-danger/10 border-b border-danger/20 px-3 py-2 text-xs text-danger">
+          <Alert
+            tone="danger"
+            className="m-3"
+            action={<IconButton icon={X} label="Dismiss file error" onClick={() => setError(null)} />}
+          >
             {error}
-            <button onClick={() => setError(null)} className="ml-2 text-muted hover:text-white">✕</button>
-          </div>
+          </Alert>
         )}
 
-        {/* File list */}
-        <div className="overflow-y-auto" style={{ minHeight: 240, maxHeight: 420 }}>
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {loading && (
             <div className="flex flex-col gap-1 p-2">
-              {[1,2,3,4,5].map(i => (
-                <div key={i} className="h-7 animate-pulse rounded bg-surface-3" />
+              {[1, 2, 3, 4, 5].map((index) => (
+                <div key={index} className="h-9 animate-pulse rounded bg-rail" />
               ))}
             </div>
           )}
 
           {!loading && entries.length === 0 && !error && (
-            <p className="px-4 py-8 text-center text-xs text-muted">Empty directory</p>
+            <p className="px-4 py-10 text-center text-sm text-muted">Empty directory</p>
           )}
 
-          {!loading && entries.map((entry) => (
-            <div
-              key={entry.path}
-              onClick={() => setSelected(entry.path)}
-              onDoubleClick={() => {
-                if (entry.isDirectory) load(entry.path);
-                else if (isEditable(entry.name)) onOpenFile(entry.path, entry.name);
-              }}
-              className={clsx(
-                // ✅ `group` class is here so group-hover works on action buttons
-                "group flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer select-none",
-                "hover:bg-surface-2 transition-colors",
-                selected === entry.path && "bg-surface-2"
-              )}
-            >
-              {/* Icon */}
-              <span className="shrink-0 w-4 text-center text-sm" aria-hidden="true">
-                {entry.isDirectory ? "📁" : getFileIcon(entry.name)}
-              </span>
-
-              {/* Name / rename input */}
-              {renaming === entry.path ? (
-                <input
-                  autoFocus
-                  type="text"
-                  value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  onKeyDown={async (e) => {
-                    if (e.key === "Enter" && renameValue.trim()) {
-                      await handleRename(entry, renameValue.trim());
-                    }
-                    if (e.key === "Escape") setRenaming(null);
-                  }}
-                  onBlur={() => setRenaming(null)}
-                  onClick={(e) => e.stopPropagation()}
-                  className="flex-1 rounded border border-accent bg-surface-3 px-1.5 py-0.5 text-xs font-mono focus:outline-none"
-                />
-              ) : (
-                <span className="flex-1 truncate font-mono text-xs">{entry.name}</span>
-              )}
-
-              {/* Size */}
-              {!entry.isDirectory && entry.sizeBytes != null && (
-                <span className="text-xs text-muted shrink-0 w-14 text-right">
-                  {formatBytes(entry.sizeBytes)}
-                </span>
-              )}
-
-              {/* ✅ Row actions — now visible because parent has `group` class */}
+          {!loading &&
+            entries.map((entry) => (
               <div
-                className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                onClick={(e) => e.stopPropagation()}
+                key={entry.path}
+                onClick={() => setSelected(entry.path)}
+                onDoubleClick={() => {
+                  if (entry.isDirectory) load(entry.path);
+                  else if (isEditable(entry.name)) onOpenFile(entry.path, entry.name);
+                }}
+                className={clsx(
+                  "group grid cursor-pointer select-none grid-cols-[1fr_auto] items-center gap-3 px-3 py-2 text-sm transition-colors",
+                  "hover:bg-rail",
+                  selected === entry.path && "bg-rail"
+                )}
               >
-                {isEditable(entry.name) && !entry.isDirectory && (
-                  <ActionBtn
-                    title="Edit"
-                    onClick={() => onOpenFile(entry.path, entry.name)}
+                <div className="flex min-w-0 items-center gap-2">
+                  <FileGlyph entry={entry} />
+                  {renaming === entry.path ? (
+                    <TextInput
+                      autoFocus
+                      type="text"
+                      value={renameValue}
+                      onChange={(event) => setRenameValue(event.target.value)}
+                      onKeyDown={async (event) => {
+                        if (event.key === "Enter" && renameValue.trim()) {
+                          await handleRename(entry, renameValue.trim());
+                        }
+                        if (event.key === "Escape") setRenaming(null);
+                      }}
+                      onBlur={() => setRenaming(null)}
+                      onClick={(event) => event.stopPropagation()}
+                      className="h-7 flex-1 py-1 font-mono text-xs"
+                    />
+                  ) : (
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-white">
+                      {entry.name}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {!entry.isDirectory && entry.sizeBytes != null && (
+                    <span className="hidden w-16 shrink-0 text-right font-mono text-xs text-muted sm:inline">
+                      {formatBytes(entry.sizeBytes)}
+                    </span>
+                  )}
+                  <div
+                    className="flex shrink-0 gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+                    onClick={(event) => event.stopPropagation()}
                   >
-                    ✎
-                  </ActionBtn>
-                )}
-                {entry.isDirectory && (
-                  <ActionBtn title="Open" onClick={() => load(entry.path)}>→</ActionBtn>
-                )}
-                <ActionBtn
-                  title="Rename"
-                  onClick={() => { setRenaming(entry.path); setRenameValue(entry.name); }}
-                >
-                  ✏
-                </ActionBtn>
-                <ActionBtn
-                  title="Delete"
-                  danger
-                  onClick={() => setPendingDelete({ entry })}
-                >
-                  🗑
-                </ActionBtn>
+                    {isEditable(entry.name) && !entry.isDirectory && (
+                      <IconButton
+                        icon={Pencil}
+                        label="Edit file"
+                        onClick={() => onOpenFile(entry.path, entry.name)}
+                      />
+                    )}
+                    {entry.isDirectory && (
+                      <IconButton icon={FolderOpen} label="Open folder" onClick={() => load(entry.path)} />
+                    )}
+                    <IconButton
+                      icon={Pencil}
+                      label="Rename"
+                      onClick={() => {
+                        setRenaming(entry.path);
+                        setRenameValue(entry.name);
+                      }}
+                    />
+                    <IconButton
+                      icon={Trash2}
+                      label="Delete"
+                      variant="danger"
+                      onClick={() => setPendingDelete({ entry })}
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
         </div>
       </div>
 
-      {/* Delete confirmation */}
       {pendingDelete && (
         <ConfirmModal
           title={`Delete "${pendingDelete.entry.name}"?`}
@@ -300,49 +313,17 @@ export function FileManager({ serverId, onOpenFile }: FileManagerProps) {
   );
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+function FileGlyph({ entry }: { entry: FileEntry }) {
+  if (entry.isDirectory) {
+    return <Folder className="h-4 w-4 shrink-0 text-copper" aria-hidden="true" />;
+  }
 
-function ActionBtn({
-  children,
-  title,
-  danger,
-  onClick,
-}: {
-  children: React.ReactNode;
-  title: string;
-  danger?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      title={title}
-      onClick={onClick}
-      className={clsx(
-        "rounded px-1.5 py-0.5 text-xs transition-colors",
-        danger
-          ? "text-muted hover:text-danger hover:bg-surface-3"
-          : "text-muted hover:text-white hover:bg-surface-3"
-      )}
-    >
-      {children}
-    </button>
+  const ext = entry.name.split(".").pop()?.toLowerCase();
+  const codeLike = ["yml", "yaml", "json", "properties", "conf", "ini", "toml", "js", "ts"].includes(
+    ext ?? ""
   );
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function getFileIcon(name: string): string {
-  const ext = name.split(".").pop()?.toLowerCase();
-  const icons: Record<string, string> = {
-    yml: "📄", yaml: "📄",
-    json: "📋",
-    properties: "⚙", conf: "⚙", ini: "⚙", toml: "⚙",
-    log: "📜",
-    jar: "☕",
-    zip: "📦",
-    txt: "📝",
-  };
-  return icons[ext ?? ""] ?? "📄";
+  const Icon = codeLike ? FileCode2 : FileText;
+  return <Icon className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />;
 }
 
 function formatBytes(bytes: number): string {

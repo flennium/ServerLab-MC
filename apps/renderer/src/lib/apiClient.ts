@@ -18,7 +18,7 @@ async function getConfig(): Promise<BackendConfig> {
   if (typeof window !== "undefined" && window.serverlab) {
     configCache = await window.serverlab.getBackendConfig();
   } else {
-    // Standalone Vite dev server — no Electron
+    // Standalone Vite dev server, no Electron.
     configCache = { origin: "http://127.0.0.1:3001", token: "" };
   }
 

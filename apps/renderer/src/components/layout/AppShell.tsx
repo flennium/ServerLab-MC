@@ -7,10 +7,10 @@ interface AppShellProps {
 
 export function AppShell({ children }: AppShellProps) {
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-surface">
+    <div className="operator-grid flex h-screen w-screen overflow-hidden bg-carbon text-white">
       <Sidebar />
-      <main className="flex-1 overflow-auto bg-surface-1 p-6">
-        {children}
+      <main className="min-w-0 flex-1 overflow-auto bg-gradient-to-b from-surface-1/95 to-carbon/95 px-4 py-4 sm:px-6 lg:px-8">
+        <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col py-2">{children}</div>
       </main>
     </div>
   );

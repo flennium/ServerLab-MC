@@ -1,3 +1,6 @@
+/* Load fonts via CSS for Electron file:// compatibility. */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -8,8 +11,18 @@
   }
 
   body {
-    @apply bg-surface text-white antialiased;
-    font-family: "Inter", system-ui, sans-serif;
+    @apply bg-carbon text-white antialiased;
+    font-family: "IBM Plex Sans", "Inter", system-ui, sans-serif;
+    min-width: 320px;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  ::selection {
+    @apply bg-copper/30 text-white;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-copper/70 ring-offset-2 ring-offset-carbon;
   }
 
   ::-webkit-scrollbar {
@@ -35,5 +48,12 @@
     font-family: "JetBrains Mono", "Fira Code", monospace;
     font-size: 0.8125rem;
     line-height: 1.6;
+  }
+
+  .operator-grid {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    background-size: 24px 24px;
   }
 }

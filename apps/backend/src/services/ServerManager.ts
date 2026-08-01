@@ -1,5 +1,4 @@
 import { spawn, ChildProcess } from "child_process";
-import path from "path";
 import treeKill from "tree-kill";
 import { prisma } from "../lib/prisma.js";
 import { logger } from "../lib/logger.js";
@@ -10,6 +9,10 @@ import {
   updateTps,
   updatePlayers,
 } from "./MonitorService.js";
+import { parseStartupArgs } from "./ProcessArgs.js";
+import { javaRuntimeRegistry } from "./java/JavaRuntimeRegistry.js";
+import { javaRuntimeValidator } from "./java/JavaRuntimeValidator.js";
+import { javaRecommendationService } from "./java/JavaRecommendationService.js";
 import type { ServerStatus } from "@serverlab/shared";
 
 interface RunningServer {
@@ -37,11 +40,52 @@ class ServerManager {
     ];
 
     if (server.startupArgs) {
-      args.push(...server.startupArgs.split(" ").filter(Boolean));
+      args.push(...parseStartupArgs(server.startupArgs));
     }
 
     args.push("-jar", "server.jar", "nogui");
     return { cmd: server.javaPath, args };
+  }
+
+  private async resolveJavaCommand(server: {
+    id: string;
+    javaPath: string;
+    javaRuntimeId: string | null;
+    javaOverrideMode: string;
+    allowUnsupportedJava: boolean;
+    version: string;
+    software: string;
+  }): Promise<string> {
+    if (server.javaOverrideMode === "manual" || !server.javaRuntimeId) {
+      await javaRuntimeValidator.validateExecutable(server.javaPath);
+      return server.javaPath;
+    }
+
+    const runtime = await javaRuntimeRegistry.getRuntime(server.javaRuntimeId);
+    if (!runtime) throw new Error("Selected Java runtime is missing. Choose or install a runtime.");
+    const validated = await javaRuntimeValidator.validateRuntime(runtime);
+    if (validated.status !== "valid") {
+      throw new Error("Selected Java runtime is missing or corrupted. Validate, repair, or choose another runtime.");
+    }
+
+    const recommendation = await javaRecommendationService.recommend({
+      minecraftVersion: server.version,
+      software: server.software,
+    });
+    if (
+      !javaRecommendationService.isCompatible(
+        validated.major,
+        recommendation.requiredMajor,
+        server.allowUnsupportedJava
+      )
+    ) {
+      throw new Error(
+        `This server needs Java ${recommendation.requiredMajor}. Selected runtime is Java ${validated.major}.`
+      );
+    }
+
+    await javaRuntimeRegistry.touchUsed(validated.id);
+    return validated.executablePath;
   }
 
   private async setStatus(serverId: string, status: ServerStatus) {
@@ -58,18 +102,15 @@ class ServerManager {
       timestamp: new Date().toISOString(),
     });
 
-    // Detect "Done" → flip to running
     if (DONE_REGEX.test(line)) {
       this.setStatus(serverId, "running").catch(logger.error);
     }
 
-    // Parse TPS from `/tps` command output
     const tpsMatch = line.match(TPS_REGEX);
     if (tpsMatch) {
       updateTps(serverId, parseFloat(tpsMatch[1]));
     }
 
-    // Parse player count from `/list` command output
     const playersMatch = line.match(PLAYERS_REGEX);
     if (playersMatch) {
       updatePlayers(serverId, parseInt(playersMatch[1], 10));
@@ -85,7 +126,6 @@ class ServerManager {
       where: { id: serverId },
     });
 
-    // Port collision guard
     for (const [id] of this.running) {
       const s = await prisma.server.findUnique({ where: { id } });
       if (s && s.port === server.port && id !== serverId) {
@@ -95,9 +135,10 @@ class ServerManager {
       }
     }
 
-    await this.setStatus(serverId, "starting");
+    const { args } = this.buildCommand(server);
+    const cmd = await this.resolveJavaCommand(server);
 
-    const { cmd, args } = this.buildCommand(server);
+    await this.setStatus(serverId, "starting");
 
     const proc = spawn(cmd, args, {
       cwd: server.path,

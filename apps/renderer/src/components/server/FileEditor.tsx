@@ -4,7 +4,10 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import { yaml } from "@codemirror/lang-yaml";
 import { json } from "@codemirror/lang-json";
 import { javascript } from "@codemirror/lang-javascript";
+import { Save, X } from "lucide-react";
 import { api } from "../../lib/apiClient.js";
+import { Alert } from "../ui/Layout.js";
+import { Button, IconButton } from "../ui/Button.js";
 import type { FileContentResponse } from "@serverlab/shared";
 
 interface FileEditorProps {
@@ -27,8 +30,6 @@ function getExtensions(fileName: string) {
     case "mjs":
     case "cjs":
       return [javascript()];
-    // .properties, .toml, .conf, .ini — plain text, no specific extension available
-    // but we still open them — just no extra language highlighting
     default:
       return [];
   }
@@ -44,6 +45,7 @@ export function FileEditor({ serverId, filePath, fileName, onClose }: FileEditor
 
   useEffect(() => {
     setLoading(true);
+    setError(null);
     api
       .get<FileContentResponse>(
         `/api/servers/${serverId}/files/content?path=${encodeURIComponent(filePath)}`
@@ -52,8 +54,8 @@ export function FileEditor({ serverId, filePath, fileName, onClose }: FileEditor
         setContent(content);
         setOriginal(content);
       })
-      .catch((e) =>
-        setError(e instanceof Error ? e.message : "Failed to load file")
+      .catch((error) =>
+        setError(error instanceof Error ? error.message : "Failed to load file")
       )
       .finally(() => setLoading(false));
   }, [serverId, filePath]);
@@ -72,18 +74,17 @@ export function FileEditor({ serverId, filePath, fileName, onClose }: FileEditor
       setOriginal(content);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Save failed");
     } finally {
       setSaving(false);
     }
   }, [content, serverId, filePath]);
 
-  // Ctrl+S to save
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
-        e.preventDefault();
+    function onKey(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key === "s") {
+        event.preventDefault();
         handleSave();
       }
     }
@@ -92,49 +93,31 @@ export function FileEditor({ serverId, filePath, fileName, onClose }: FileEditor
   }, [handleSave]);
 
   return (
-    <div className="flex flex-col rounded-lg border border-border overflow-hidden bg-surface-console">
-      {/* Header bar */}
-      <div className="flex items-center gap-3 border-b border-border px-3 py-2">
-        <span className="font-mono text-xs text-muted truncate flex-1">
-          {filePath}
-        </span>
-        {isDirty && (
-          <span className="text-xs text-warning shrink-0">● unsaved</span>
-        )}
-        {saved && (
-          <span className="text-xs text-accent shrink-0">✓ saved</span>
-        )}
-        <button
-          onClick={handleSave}
-          disabled={saving || !isDirty}
-          className="rounded bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-40 transition-colors shrink-0"
-        >
-          {saving ? "Saving…" : "Save"}
-        </button>
-        <button
-          onClick={onClose}
-          className="text-muted hover:text-white transition-colors text-sm shrink-0"
-          aria-label="Close editor"
-        >
-          ✕
-        </button>
+    <div className="flex min-h-[460px] flex-col overflow-hidden rounded-lg border border-border bg-panel">
+      <div className="flex items-center gap-3 border-b border-border bg-carbon px-3 py-2">
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-mono text-xs text-white">{filePath}</p>
+          <p className="mt-0.5 text-xs text-muted">{fileName}</p>
+        </div>
+        {isDirty && <span className="shrink-0 text-xs font-semibold text-glowstone">Unsaved</span>}
+        {saved && <span className="shrink-0 text-xs font-semibold text-grass">Saved</span>}
+        <Button onClick={handleSave} disabled={saving || !isDirty} icon={Save} variant="primary" size="sm">
+          {saving ? "Saving..." : "Save"}
+        </Button>
+        <IconButton icon={X} label="Close editor" onClick={onClose} />
       </div>
 
-      {/* Editor */}
-      <div className="overflow-hidden">
-        {loading && (
-          <p className="px-4 py-6 text-xs text-muted text-center">Loading…</p>
-        )}
-        {error && (
-          <p className="px-4 py-3 text-xs text-danger">{error}</p>
-        )}
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {loading && <p className="px-4 py-8 text-center text-sm text-muted">Loading file...</p>}
+        {error && <Alert tone="danger" className="m-3">{error}</Alert>}
         {!loading && content !== null && (
           <CodeMirror
             value={content}
-            height="400px"
+            height="100%"
+            minHeight="420px"
             theme={oneDark}
             extensions={getExtensions(fileName)}
-            onChange={(val) => setContent(val)}
+            onChange={(value) => setContent(value)}
             basicSetup={{
               lineNumbers: true,
               foldGutter: true,
@@ -145,9 +128,8 @@ export function FileEditor({ serverId, filePath, fileName, onClose }: FileEditor
         )}
       </div>
 
-      {/* Footer hint */}
-      <div className="border-t border-border px-3 py-1.5 text-xs text-muted">
-        Ctrl+S to save · {fileName}
+      <div className="border-t border-border bg-carbon px-3 py-2 font-mono text-xs text-muted">
+        Ctrl+S saves this file
       </div>
     </div>
   );
