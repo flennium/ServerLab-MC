@@ -15,15 +15,11 @@ templateRoutes.get("/", async (_req, res, next) => {
   }
 });
 
-// POST /api/templates/:id/install
-// Full GitHub download + extract logic lives in TemplateInstaller (v3)
-templateRoutes.post("/:id/install", async (req, res, next) => {
+templateRoutes.post("/:id/install", async (_req, res, next) => {
   try {
-    const template = await prisma.template.findUniqueOrThrow({
-      where: { id: req.params.id },
+    res.status(501).json({
+      error: "Template installation is not available in this beta",
     });
-    // TODO: kick off TemplateInstaller and stream progress via Socket.IO
-    res.status(202).json({ message: "Template install queued", template });
   } catch (err) {
     next(err);
   }

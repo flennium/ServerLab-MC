@@ -1,4 +1,4 @@
-import type { JavaRecommendationResponse, ServerSoftware } from "@serverlab/shared";
+import { APP_USER_AGENT, type JavaRecommendationResponse, type ServerSoftware } from "@serverlab/shared";
 import { javaRuntimeRegistry } from "./JavaRuntimeRegistry.js";
 
 interface PaperVersionMetadata {
@@ -61,7 +61,7 @@ export class JavaRecommendationService {
     try {
       const response = await fetch(
         `https://fill.papermc.io/v3/projects/paper/versions/${encodeURIComponent(minecraftVersion)}`,
-        { headers: { Accept: "application/json", "User-Agent": "ServerLabMC/2.1.0" } }
+        { headers: { Accept: "application/json", "User-Agent": APP_USER_AGENT } }
       );
       if (!response.ok) return null;
       const data = (await response.json()) as PaperVersionMetadata;

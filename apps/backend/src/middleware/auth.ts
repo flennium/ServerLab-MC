@@ -16,7 +16,7 @@ export function authMiddleware(
     return next();
   }
 
-  // In dev without Electron the token may be absent — allow through
+  // Standalone backend development can run without Electron's startup token.
   if (!BACKEND_TOKEN) {
     return next();
   }

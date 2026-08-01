@@ -3,9 +3,9 @@
  *
  * electron-builder expects:
  *   stage/
- *     main.js          ← compiled Electron main
- *     preload.js       ← compiled preload
- *     package.json     ← with "main": "main.js"
+ *     main.js          compiled Electron main
+ *     preload.js       compiled preload
+ *     package.json     with "main": "main.js"
  *
  * Everything else (renderer, backend) goes into extraResources
  * and is accessible at process.resourcesPath at runtime.
@@ -47,5 +47,5 @@ fs.writeFileSync(
   JSON.stringify(stagePkg, null, 2)
 );
 
-console.log("✓ Electron stage ready at", STAGE);
+console.log("OK Electron stage ready at", STAGE);
 console.log("  Files:", fs.readdirSync(STAGE).join(", "));

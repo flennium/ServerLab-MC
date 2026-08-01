@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { ArrowRight, Boxes, Folder, Plus, Server as ServerIcon } from "lucide-react";
 import { useServerStore } from "../store/serverStore.js";
 import { StatusBadge } from "../components/ui/StatusBadge.js";
@@ -7,6 +6,7 @@ import { ServerRowSkeleton } from "../components/ui/Skeleton.js";
 import { CreateServerModal } from "../components/server/CreateServerModal.js";
 import { Alert, Card, EmptyState, PageHeader } from "../components/ui/Layout.js";
 import { Button } from "../components/ui/Button.js";
+import { toHashPath } from "../lib/router.js";
 
 export function ServersPage() {
   const { servers, fetchServers } = useServerStore();
@@ -81,9 +81,9 @@ export function ServersPage() {
           </div>
           <div className="divide-y divide-border">
             {servers.map((server) => (
-              <Link
+              <a
                 key={server.id}
-                to={`/servers/${server.id}`}
+                href={toHashPath(`/servers/${encodeURIComponent(server.id)}`)}
                 className="grid gap-3 px-4 py-4 transition-colors hover:bg-rail lg:grid-cols-[minmax(220px,1.4fr)_minmax(160px,0.8fr)_120px_110px_120px] lg:items-center lg:gap-4"
               >
                 <div className="min-w-0">
@@ -112,7 +112,7 @@ export function ServersPage() {
                   Open
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </div>
-              </Link>
+              </a>
             ))}
           </div>
         </Card>

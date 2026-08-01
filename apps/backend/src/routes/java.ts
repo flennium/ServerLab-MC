@@ -7,13 +7,20 @@ import { javaRuntimeRegistry } from "../services/java/JavaRuntimeRegistry.js";
 import { javaRuntimeValidator } from "../services/java/JavaRuntimeValidator.js";
 import { javaRecommendationService } from "../services/java/JavaRecommendationService.js";
 import { javaInstallService } from "../services/java/JavaInstallService.js";
+import { badRequest, HttpError } from "../middleware/error.js";
 
 export const javaRoutes = Router();
 
 function providerId(value: unknown): JavaRuntimeProviderId | undefined {
   if (value === undefined || value === null || value === "") return undefined;
   if (value === "adoptium" || value === "microsoft") return value;
-  throw new Error("Unknown Java runtime provider");
+  throw badRequest("Unknown Java runtime provider");
+}
+
+function packageType(value: unknown): "jre" | "jdk" {
+  if (value === undefined || value === null || value === "") return "jre";
+  if (value === "jre" || value === "jdk") return value;
+  throw badRequest("packageType must be jre or jdk");
 }
 
 javaRoutes.get("/", async (_req, res, next) => {
@@ -60,8 +67,7 @@ javaRoutes.get("/recommendation", async (req, res, next) => {
     const minecraftVersion = String(req.query.minecraftVersion ?? "");
     const software = String(req.query.software ?? "paper") as ServerSoftware;
     if (!minecraftVersion) {
-      res.status(400).json({ error: "minecraftVersion is required" });
-      return;
+      throw badRequest("minecraftVersion is required");
     }
     const recommendation = await javaRecommendationService.recommend({
       minecraftVersion,
@@ -76,14 +82,14 @@ javaRoutes.get("/recommendation", async (req, res, next) => {
 javaRoutes.post("/installations", async (req, res, next) => {
   try {
     const body = req.body as InstallJdkDto;
-    if (!body.major || !Number.isFinite(Number(body.major))) {
-      res.status(400).json({ error: "major is required" });
-      return;
+    const major = Number(body.major);
+    if (!Number.isInteger(major) || major < 8 || major > 25) {
+      throw badRequest("major must be a supported Java version");
     }
     const result = await javaInstallService.install({
-      major: Number(body.major),
+      major,
       provider: providerId(body.provider),
-      packageType: body.packageType ?? "jre",
+      packageType: packageType(body.packageType),
       requestId: body.requestId,
     });
     res.json(result);
@@ -105,8 +111,7 @@ javaRoutes.post("/runtimes/:id/validate", async (req, res, next) => {
   try {
     const runtime = await javaRuntimeRegistry.getRuntime(req.params.id);
     if (!runtime) {
-      res.status(404).json({ error: "Java runtime not found" });
-      return;
+      throw new HttpError(404, "Java runtime not found");
     }
     const validated = await javaRuntimeValidator.validateRuntime(runtime);
     res.json({ runtime: validated });
@@ -127,10 +132,14 @@ javaRoutes.delete("/runtimes/:id", async (req, res, next) => {
 javaRoutes.post("/install", async (req, res, next) => {
   try {
     const body = req.body as InstallJdkDto;
+    const major = Number(body.major);
+    if (!Number.isInteger(major) || major < 8 || major > 25) {
+      throw badRequest("major must be a supported Java version");
+    }
     const result = await javaInstallService.install({
-      major: Number(body.major),
+      major,
       provider: providerId(body.provider),
-      packageType: body.packageType ?? "jre",
+      packageType: packageType(body.packageType),
       requestId: body.requestId,
     });
     res.json({ message: `Java ${body.major} installed`, ...result });

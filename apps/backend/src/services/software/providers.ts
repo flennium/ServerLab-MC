@@ -1,13 +1,13 @@
 import fs from "fs/promises";
 import crypto from "crypto";
-import type { ServerFramework, SoftwareBuild, SoftwareProviderInfo } from "@serverlab/shared";
+import { APP_USER_AGENT, type ServerFramework, type SoftwareBuild, type SoftwareProviderInfo } from "@serverlab/shared";
 import type {
   ResolveArtifactRequest,
   SoftwareArtifactMeta,
   SoftwareProvider,
 } from "./types.js";
 
-const USER_AGENT = "ServerLabMC/2.1.0 (+https://serverlab.local)";
+const USER_AGENT = APP_USER_AGENT;
 
 async function fetchJson<T>(url: string, allowedHosts: string[]): Promise<T> {
   assertAllowedHttpsUrl(url, allowedHosts);

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowRight, Boxes, Play, Plus, Server, Square, TriangleAlert } from "lucide-react";
 import { useServerStore } from "../store/serverStore.js";
@@ -8,6 +7,7 @@ import { StatusBadge } from "../components/ui/StatusBadge.js";
 import { ServerCardSkeleton } from "../components/ui/Skeleton.js";
 import { Alert, Card, EmptyState, PageHeader, StatTile } from "../components/ui/Layout.js";
 import { Button } from "../components/ui/Button.js";
+import { toHashPath } from "../lib/router.js";
 import type { Server as ServerModel } from "@serverlab/shared";
 
 export function DashboardPage() {
@@ -58,13 +58,13 @@ export function DashboardPage() {
         title="Dashboard"
         description="Live status for the local Minecraft servers on this machine."
         actions={
-          <Link
-            to="/servers"
+          <a
+            href={toHashPath("/servers")}
             className="inline-flex h-10 items-center gap-2 rounded border border-copper bg-copper px-4 text-sm font-semibold text-carbon transition-colors hover:bg-copper-hover"
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
             New server
-          </Link>
+          </a>
         }
       />
 
@@ -105,13 +105,13 @@ export function DashboardPage() {
           title="No servers configured"
           description="Create a local Minecraft server profile to start monitoring console output, files, backups, and runtime stats."
           action={
-            <Link
-              to="/servers"
+            <a
+              href={toHashPath("/servers")}
               className="inline-flex h-10 items-center gap-2 rounded border border-copper bg-copper px-4 text-sm font-semibold text-carbon transition-colors hover:bg-copper-hover"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               Create server
-            </Link>
+            </a>
           }
         />
       ) : (
@@ -193,13 +193,13 @@ function ServerOverviewCard({
             Start
           </Button>
         )}
-        <Link
-          to={`/servers/${server.id}`}
+        <a
+          href={toHashPath(`/servers/${encodeURIComponent(server.id)}`)}
           className="inline-flex h-8 items-center gap-1.5 rounded border border-border bg-rail px-3 text-xs font-semibold text-white transition-colors hover:border-copper/60 hover:bg-surface-3"
         >
           Open
           <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-        </Link>
+        </a>
       </div>
     </Card>
   );

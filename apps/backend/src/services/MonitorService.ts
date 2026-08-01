@@ -17,7 +17,7 @@ export function updatePlayers(serverId: string, count: number) {
   playerMap.set(serverId, count);
 }
 
-// PID → serverId mapping so we can attribute CPU/RAM to the right server
+// Map OS process IDs to ServerLab servers for CPU/RAM attribution.
 const pidMap = new Map<number, string>();
 
 export function trackPid(serverId: string, pid: number) {

@@ -1,11 +1,11 @@
-import type { JavaPackageType, JavaRuntimeProviderId, JavaRuntimeProviderInfo } from "@serverlab/shared";
+import { APP_USER_AGENT, type JavaPackageType, type JavaRuntimeProviderId, type JavaRuntimeProviderInfo } from "@serverlab/shared";
 import type {
   JavaRuntimeProvider,
   JavaRuntimeProviderRequest,
   ResolvedJavaRuntime,
 } from "./types.js";
 
-const USER_AGENT = "ServerLabMC/2.1.0 (+https://serverlab.local)";
+const USER_AGENT = APP_USER_AGENT;
 
 function assertHttps(url: string): URL {
   const parsed = new URL(url);

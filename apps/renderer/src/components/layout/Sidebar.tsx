@@ -1,7 +1,8 @@
-import { NavLink } from "react-router-dom";
 import clsx from "clsx";
 import { Activity, Blocks, Coffee, LayoutDashboard, Settings, Server } from "lucide-react";
 import { useServerStore } from "../../store/serverStore.js";
+import { APP_VERSION } from "@serverlab/shared";
+import { toHashPath, useHashRoute } from "../../lib/router.js";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -13,6 +14,7 @@ const navItems = [
 export function Sidebar() {
   const servers = useServerStore((state) => state.servers);
   const running = servers.filter((server) => server.status === "running").length;
+  const route = useHashRoute();
 
   return (
     <aside className="flex h-full w-20 shrink-0 flex-col border-r border-border bg-carbon/95 sm:w-64">
@@ -30,22 +32,20 @@ export function Sidebar() {
 
       <nav className="flex flex-col gap-1 px-3 py-4" aria-label="Main navigation">
         {navItems.map(({ to, label, icon: Icon }) => (
-          <NavLink
+          <a
             key={to}
-            to={to}
-            className={({ isActive }) =>
-              clsx(
-                "group flex h-11 items-center justify-center gap-3 rounded-lg border px-3 text-sm font-semibold transition-colors sm:justify-start",
-                isActive
-                  ? "border-copper/45 bg-copper/15 text-copper"
-                  : "border-transparent text-muted hover:border-border hover:bg-rail hover:text-white"
-              )
-            }
+            href={toHashPath(to)}
+            className={clsx(
+              "group flex h-11 items-center justify-center gap-3 rounded-lg border px-3 text-sm font-semibold transition-colors sm:justify-start",
+              route === to || (to === "/servers" && route.startsWith("/servers/"))
+                ? "border-copper/45 bg-copper/15 text-copper"
+                : "border-transparent text-muted hover:border-border hover:bg-rail hover:text-white"
+            )}
             title={label}
           >
             <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span className="hidden truncate sm:inline">{label}</span>
-          </NavLink>
+          </a>
         ))}
       </nav>
 
@@ -61,7 +61,7 @@ export function Sidebar() {
             {running} of {servers.length} servers running
           </p>
         </div>
-        <p className="mt-3 hidden font-mono text-[0.68rem] text-muted sm:block">v2.1.0</p>
+        <p className="mt-3 hidden font-mono text-[0.68rem] text-muted sm:block">v{APP_VERSION}</p>
       </div>
     </aside>
   );

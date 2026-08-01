@@ -1,24 +1,31 @@
-import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
+import { Suspense, lazy } from "react";
 import { AppShell } from "./components/layout/AppShell.js";
-import { DashboardPage } from "./pages/DashboardPage.js";
-import { ServersPage } from "./pages/ServersPage.tsx";
-import { ServerDetailPage } from "./pages/ServerDetailPage.tsx";
-import { JavaManagerPage } from "./pages/JavaManagerPage.tsx";
-import { SettingsPage } from "./pages/SettingsPage.tsx";
+import { Skeleton } from "./components/ui/Skeleton.js";
+import { serverRouteId, useHashRoute } from "./lib/router.js";
+
+const DashboardPage = lazy(() => import("./pages/DashboardPage.js").then((module) => ({ default: module.DashboardPage })));
+const ServersPage = lazy(() => import("./pages/ServersPage.js").then((module) => ({ default: module.ServersPage })));
+const ServerDetailPage = lazy(() => import("./pages/ServerDetailPage.js").then((module) => ({ default: module.ServerDetailPage })));
+const JavaManagerPage = lazy(() => import("./pages/JavaManagerPage.js").then((module) => ({ default: module.JavaManagerPage })));
+const SettingsPage = lazy(() => import("./pages/SettingsPage.js").then((module) => ({ default: module.SettingsPage })));
 
 export function App() {
+  const route = useHashRoute();
+  const effectiveRoute = route === "/" ? "/dashboard" : route;
+  const serverId = serverRouteId(effectiveRoute);
+
   return (
-    <HashRouter>
-      <AppShell>
-        <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/servers" element={<ServersPage />} />
-          <Route path="/servers/:id" element={<ServerDetailPage />} />
-          <Route path="/java" element={<JavaManagerPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
-      </AppShell>
-    </HashRouter>
+    <AppShell>
+      <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+        {effectiveRoute === "/dashboard" && <DashboardPage />}
+        {effectiveRoute === "/servers" && <ServersPage />}
+        {serverId && <ServerDetailPage serverId={serverId} />}
+        {effectiveRoute === "/java" && <JavaManagerPage />}
+        {effectiveRoute === "/settings" && <SettingsPage />}
+        {!["/dashboard", "/servers", "/java", "/settings"].includes(effectiveRoute) && !serverId && (
+          <DashboardPage />
+        )}
+      </Suspense>
+    </AppShell>
   );
 }

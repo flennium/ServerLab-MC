@@ -6,9 +6,7 @@ import { Button } from "../components/ui/Button.js";
 import { Alert, Card, PageHeader } from "../components/ui/Layout.js";
 import { LabelValue } from "../components/ui/Form.js";
 import { api } from "../lib/apiClient.js";
-import type { SoftwareArtifact, SoftwareArtifactListResponse } from "@serverlab/shared";
-
-const APP_VERSION = "2.1.0";
+import { APP_VERSION, type SoftwareArtifact, type SoftwareArtifactListResponse } from "@serverlab/shared";
 
 function getPlatformLabel(): string {
   if (typeof window !== "undefined" && window.serverlab) {
@@ -38,15 +36,8 @@ export function SettingsPage() {
     setOpeningFolder(true);
     try {
       if (window.serverlab?.openPath) {
-        const res = await fetch("http://127.0.0.1:3001/health")
-          .then(() => fetch("http://127.0.0.1:3001/api/data-path"))
-          .catch(() => null);
-
-        const dataPath = res?.ok ? ((await res.json()) as { path: string }).path : null;
-
-        if (dataPath) {
-          await window.serverlab.openPath(dataPath);
-        }
+        const { path } = await api.get<{ path: string }>("/api/data-path");
+        await window.serverlab.openPath(path);
       }
     } finally {
       setOpeningFolder(false);

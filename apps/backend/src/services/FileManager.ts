@@ -2,22 +2,22 @@ import fs from "fs/promises";
 import path from "path";
 import type { FileEntry } from "@serverlab/shared";
 
-/**
- * All file operations are sandboxed to the owning server's root directory.
- * Any attempt to traverse outside is rejected with a 403-style error.
- */
 export class FileManager {
-  constructor(private readonly serverRoot: string) {}
+  private readonly resolvedRoot: string;
 
-  /** Resolve and validate that `relativePath` stays inside `serverRoot`. */
+  constructor(private readonly serverRoot: string) {
+    this.resolvedRoot = path.resolve(serverRoot);
+  }
+
   private resolve(relativePath: string): string {
     const normalized = path.normalize(relativePath);
     const absolute = path.isAbsolute(normalized)
       ? normalized
       : path.join(this.serverRoot, normalized);
     const resolved = path.resolve(absolute);
+    const relative = path.relative(this.resolvedRoot, resolved);
 
-    if (!resolved.startsWith(path.resolve(this.serverRoot))) {
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
       throw new Error(
         `Path traversal detected: "${relativePath}" escapes server root`
       );

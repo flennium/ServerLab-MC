@@ -2,6 +2,8 @@
 
 ServerLab MC is a local-first desktop dashboard for creating, running, and maintaining Minecraft servers. It combines an Electron shell, a local Node/Express backend, and a React operator console so server files, console output, backups, Java runtimes, and server software downloads can be managed from one place.
 
+Current release target: `3.0.0-beta.1`.
+
 ## Features
 
 - Create local Minecraft servers with framework, version, build, RAM, port, and EULA handling.
@@ -66,13 +68,14 @@ npm run build
 npm run package
 npm run lint
 npm test
+npm run release:check
 ```
 
 Notes:
 
 - `npm run build` compiles shared types, renderer, Electron, backend, and the Electron stage folder.
 - `npm run package` builds the app and runs electron-builder.
-- `npm test` currently expects project tests to exist. If no test files are present, Vitest exits with code 1.
+- `npm run release:check` runs linting, tests, build, and packaging.
 
 ## Local Data
 
@@ -137,6 +140,8 @@ Before publishing a release:
 7. Update versions and release notes.
 8. Create a tagged GitHub release.
 
+For release history, see [CHANGELOG.md](CHANGELOG.md).
+
 ## Troubleshooting
 
 If the app shows connection errors for `127.0.0.1:3001`, the backend is not running or the port is occupied. Stop stale dev processes and restart:
@@ -150,17 +155,8 @@ If Vite reports port `5173` is in use, close the old dev server or stop the owni
 
 If Prisma generation fails because `query_engine-windows.dll.node` is locked, stop Electron/backend processes and rerun the build.
 
-## Contributing
-
-Keep changes scoped and testable. Prefer shared types in `packages/shared` for API contracts, backend-owned validation for security-sensitive behavior, and renderer UI that consumes backend state instead of duplicating business rules.
-
-Do not commit:
-
-- local databases
-- generated Java runtimes
-- server software cache
-- packaged release output
-- temporary build artifacts
+- [Contributing Guide](CONTRIBUTING.md) — Guidelines for developers who want to contribute to ServerLab MC.
+- [Security Policy](SECURITY.md) — Security practices, vulnerability reporting, and responsible disclosure process.
 
 ## License
 
