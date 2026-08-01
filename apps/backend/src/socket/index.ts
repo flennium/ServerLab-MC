@@ -25,13 +25,25 @@ export function registerSocketHandlers(
   io.on("connection", (socket) => {
     logger.info({ socketId: socket.id }, "Client connected");
 
-    socket.on("console:command", ({ serverId, command }) => {
-      try {
-        serverManager.sendCommand(serverId, command);
-      } catch (err) {
-        logger.warn({ err, serverId }, "console:command failed");
+    socket.on(
+      "console:command",
+      (
+        { serverId, command },
+        ack?: (result: { ok: boolean; error?: string }) => void
+      ) => {
+        try {
+          if (!command?.trim()) throw new Error("Command is required");
+          serverManager.sendCommand(serverId, command);
+          ack?.({ ok: true });
+        } catch (err) {
+          logger.warn({ err, serverId }, "console:command failed");
+          ack?.({
+            ok: false,
+            error: err instanceof Error ? err.message : "Command failed",
+          });
+        }
       }
-    });
+    );
 
     socket.on("disconnect", (reason) => {
       logger.info({ socketId: socket.id, reason }, "Client disconnected");

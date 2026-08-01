@@ -1,5 +1,28 @@
 # Changelog
 
+## 3.0.0-beta.2
+
+### Added
+
+- Desktop window controls for minimize, maximize/restore, and close in the custom title bar.
+- Delete progress events and UI status feedback while servers are being removed.
+- Template capability API and Settings visibility for the template system foundation.
+- Console formatting tests for Minecraft and ANSI color handling.
+- README roadmap for future plugin management and template work.
+
+### Changed
+
+- Improved the server settings Java runtime panel with selected runtime details, compatibility guidance, and invalid-selection blocking.
+- Improved console responsiveness, scrolling controls, command feedback, copy support, and large-log handling.
+- Kept renderer chunk warnings tied to real split output instead of broadly increasing the limit.
+
+### Fixed
+
+- Console commands now use Socket.IO acknowledgements with REST fallback and visible errors.
+- ANSI escape codes and Minecraft formatting codes render as safe React segments instead of raw HTML.
+- Server deletion now removes server folder contents before metadata cleanup and handles missing folders gracefully.
+- External navigation is restricted to HTTPS links.
+
 ## 3.0.0-beta.1
 
 This beta prepares ServerLab MC for a broader production release.
@@ -37,4 +60,3 @@ This beta prepares ServerLab MC for a broader production release.
 - Spigot remains unavailable until a legal BuildTools workflow is implemented.
 - Java/software provider coverage will continue expanding after beta feedback.
 - The packaged app targets Windows first.
-

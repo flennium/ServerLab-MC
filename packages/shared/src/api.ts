@@ -61,6 +61,13 @@ export interface ServerResponse {
   server: Server;
 }
 
+export interface DeleteServerResponse {
+  message: string;
+  serverId: string;
+  deletedPath: string;
+  backupCreated: boolean;
+}
+
 // Server software manager
 export interface SoftwareProviderInfo {
   id: ServerFramework;
@@ -215,6 +222,25 @@ export interface AssignServerJavaRuntimeDto {
 // Templates
 export interface TemplateListResponse {
   templates: Template[];
+}
+
+export interface TemplateCapability {
+  id:
+    | "browser"
+    | "community-repositories"
+    | "import-export"
+    | "one-click-create"
+    | "metadata"
+    | "updates";
+  label: string;
+  status: "planned" | "foundation" | "available";
+  description: string;
+}
+
+export interface TemplateCapabilityResponse {
+  capabilities: TemplateCapability[];
+  importFormats: string[];
+  exportFormats: string[];
 }
 
 // Generic error/success

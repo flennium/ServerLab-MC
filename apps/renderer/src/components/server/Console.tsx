@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { ArrowDownCircle, Send, Terminal, Trash2 } from "lucide-react";
+import clsx from "clsx";
+import { ArrowDownCircle, Copy, Pause, Play, Send, Terminal, Trash2 } from "lucide-react";
 import { getSocket } from "../../lib/socket.js";
 import { api } from "../../lib/apiClient.js";
+import { formatConsoleLine } from "../../lib/consoleFormat.js";
 import { Button, IconButton } from "../ui/Button.js";
+import { Alert } from "../ui/Layout.js";
 import type { ConsoleOutputPayload } from "@serverlab/shared";
 
 interface ConsoleLine {
@@ -10,62 +13,11 @@ interface ConsoleLine {
   text: string;
 }
 
-function parseMinecraftColors(line: string): string {
-  const normalized = line.replace(/\u00c2\u00a7/g, "\u00a7");
-  const colorMap: Record<string, string> = {
-    "\u00a70": "#000000",
-    "\u00a71": "#0000AA",
-    "\u00a72": "#00AA00",
-    "\u00a73": "#00AAAA",
-    "\u00a74": "#AA0000",
-    "\u00a75": "#AA00AA",
-    "\u00a76": "#FFAA00",
-    "\u00a77": "#AAAAAA",
-    "\u00a78": "#555555",
-    "\u00a79": "#5555FF",
-    "\u00a7a": "#55FF55",
-    "\u00a7b": "#55FFFF",
-    "\u00a7c": "#FF5555",
-    "\u00a7d": "#FF55FF",
-    "\u00a7e": "#FFFF55",
-    "\u00a7f": "#FFFFFF",
-  };
-
-  let html = "";
-  let i = 0;
-  let openSpan = false;
-
-  while (i < normalized.length) {
-    if (normalized[i] === "\u00a7" && i + 1 < normalized.length) {
-      const code = normalized.slice(i, i + 2).toLowerCase();
-      if (openSpan) {
-        html += "</span>";
-        openSpan = false;
-      }
-      if (colorMap[code]) {
-        html += `<span style="color:${colorMap[code]}">`;
-        openSpan = true;
-      }
-      i += 2;
-    } else {
-      const ch = normalized[i];
-      if (ch === "<") html += "&lt;";
-      else if (ch === ">") html += "&gt;";
-      else if (ch === "&") html += "&amp;";
-      else html += ch;
-      i++;
-    }
-  }
-
-  if (openSpan) html += "</span>";
-  return html;
-}
-
 interface ConsoleProps {
   serverId: string;
 }
 
-const MAX_LINES = 500;
+const MAX_LINES = 1000;
 
 export function Console({ serverId }: ConsoleProps) {
   const [lines, setLines] = useState<ConsoleLine[]>([]);
@@ -73,8 +25,12 @@ export function Console({ serverId }: ConsoleProps) {
   const [history, setHistory] = useState<string[]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [paused, setPaused] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [commandError, setCommandError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pausedBufferRef = useRef<ConsoleLine[]>([]);
 
   useEffect(() => {
     if (autoScroll) {
@@ -95,8 +51,15 @@ export function Console({ serverId }: ConsoleProps) {
     getSocket().then((socket) => {
       const handler = (payload: ConsoleOutputPayload) => {
         if (payload.serverId !== serverId) return;
+        const nextLine = { timestamp: payload.timestamp, text: payload.line };
+        if (paused) {
+          pausedBufferRef.current = [...pausedBufferRef.current, nextLine].slice(
+            -MAX_LINES
+          );
+          return;
+        }
         setLines((previous) => {
-          const next = [...previous, { timestamp: payload.timestamp, text: payload.line }];
+          const next = [...previous, nextLine];
           return next.length > MAX_LINES ? next.slice(-MAX_LINES) : next;
         });
       };
@@ -106,20 +69,67 @@ export function Console({ serverId }: ConsoleProps) {
     });
 
     return () => cleanup();
-  }, [serverId]);
+  }, [paused, serverId]);
 
   const sendCommand = useCallback(async () => {
     const command = input.trim();
-    if (!command) return;
+    if (!command || sending) return;
     setHistory((previous) => [command, ...previous.slice(0, 49)]);
     setHistoryIdx(-1);
     setInput("");
+    setSending(true);
+    setCommandError(null);
     try {
-      await api.post(`/api/servers/${serverId}/command`, { command });
-    } catch {
-      // Command failures are reported by the server console stream.
+      const socket = await getSocket();
+      await new Promise<void>((resolve, reject) => {
+        const timeout = window.setTimeout(
+          () => reject(new Error("Console command timed out")),
+          4000
+        );
+        socket.emit("console:command", { serverId, command }, (result) => {
+          window.clearTimeout(timeout);
+          if (!result.ok) {
+            reject(new Error(result.error ?? "Command failed"));
+            return;
+          }
+          resolve();
+        });
+      });
+    } catch (error) {
+      try {
+        await api.post(`/api/servers/${serverId}/command`, { command });
+      } catch (fallbackError) {
+        setCommandError(
+          fallbackError instanceof Error
+            ? fallbackError.message
+            : error instanceof Error
+              ? error.message
+              : "Command failed"
+        );
+      }
+    } finally {
+      setSending(false);
     }
-  }, [input, serverId]);
+  }, [input, sending, serverId]);
+
+  function togglePaused() {
+    setPaused((current) => {
+      if (current && pausedBufferRef.current.length > 0) {
+        setLines((previous) =>
+          [...previous, ...pausedBufferRef.current].slice(-MAX_LINES)
+        );
+        pausedBufferRef.current = [];
+      }
+      return !current;
+    });
+  }
+
+  async function copyConsole() {
+    const text = lines
+      .map((line) => `[${new Date(line.timestamp).toLocaleTimeString()}] ${line.text}`)
+      .join("\n");
+    await navigator.clipboard?.writeText(text);
+  }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") {
@@ -133,12 +143,12 @@ export function Console({ serverId }: ConsoleProps) {
       event.preventDefault();
       const idx = Math.max(historyIdx - 1, -1);
       setHistoryIdx(idx);
-      setInput(idx === -1 ? "" : history[idx] ?? "");
+      setInput(idx === -1 ? "" : (history[idx] ?? ""));
     }
   }
 
   return (
-    <div className="flex min-h-[520px] flex-col overflow-hidden rounded-lg border border-border bg-surface-console shadow-2xl">
+    <div className="flex h-[calc(100vh-17rem)] min-h-[420px] flex-col overflow-hidden rounded-lg border border-border bg-surface-console shadow-2xl">
       <div className="flex items-center justify-between gap-3 border-b border-border bg-carbon px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <Terminal className="h-4 w-4 text-copper" aria-hidden="true" />
@@ -160,27 +170,63 @@ export function Console({ serverId }: ConsoleProps) {
               Resume
             </Button>
           )}
+          <IconButton
+            icon={paused ? Play : Pause}
+            label={paused ? "Resume console output" : "Pause console output"}
+            onClick={togglePaused}
+          />
+          <IconButton
+            icon={Copy}
+            label="Copy console"
+            onClick={copyConsole}
+            disabled={lines.length === 0}
+          />
           <IconButton icon={Trash2} label="Clear console" onClick={() => setLines([])} />
         </div>
       </div>
 
+      {commandError && (
+        <Alert tone="danger" className="m-3 mb-0">
+          {commandError}
+        </Alert>
+      )}
+
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-3 console-font"
+        className="console-font min-h-0 flex-1 overflow-y-auto px-4 py-3 text-[13px]"
         role="log"
         aria-live="polite"
         aria-label="Server console output"
       >
         {lines.length === 0 && (
-          <p className="text-xs text-muted">Console output appears here after the server starts.</p>
+          <p className="text-xs text-muted">
+            Console output appears here after the server starts.
+          </p>
         )}
         {lines.map((line, index) => (
-          <div key={`${line.timestamp}-${index}`} className="whitespace-pre-wrap break-all leading-relaxed">
+          <div
+            key={`${line.timestamp}-${index}`}
+            className="grid grid-cols-[4.75rem_minmax(0,1fr)] gap-3 whitespace-pre-wrap break-words leading-relaxed"
+          >
             <span className="mr-3 select-none text-muted/60">
               {new Date(line.timestamp).toLocaleTimeString()}
             </span>
-            <span dangerouslySetInnerHTML={{ __html: parseMinecraftColors(line.text) }} />
+            <span>
+              {formatConsoleLine(line.text).map((segment, segmentIndex) => (
+                <span
+                  key={segmentIndex}
+                  className={clsx(
+                    segment.bold && "font-bold",
+                    segment.italic && "italic",
+                    segment.underline && "underline"
+                  )}
+                  style={segment.color ? { color: segment.color } : undefined}
+                >
+                  {segment.text}
+                </span>
+              ))}
+            </span>
           </div>
         ))}
         <div ref={bottomRef} />
@@ -195,6 +241,7 @@ export function Console({ serverId }: ConsoleProps) {
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={handleKeyDown}
+          disabled={sending}
           placeholder="Type a command and press Enter"
           className="console-font min-w-0 flex-1 bg-transparent py-3 pr-3 text-white placeholder:text-muted focus:outline-none"
           aria-label="Console command input"
@@ -203,11 +250,12 @@ export function Console({ serverId }: ConsoleProps) {
         />
         <button
           onClick={sendCommand}
+          disabled={sending || !input.trim()}
           className="inline-flex items-center gap-2 border-l border-border px-4 text-xs font-semibold text-muted transition-colors hover:bg-rail hover:text-white"
           aria-label="Send command"
         >
           <Send className="h-4 w-4" aria-hidden="true" />
-          Send
+          {sending ? "Sending" : "Send"}
         </button>
       </div>
     </div>

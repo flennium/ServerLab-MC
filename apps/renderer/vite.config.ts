@@ -21,11 +21,14 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
-    chunkSizeWarningLimit: 600,
+    chunkSizeWarningLimit: 550,
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes("node_modules/@codemirror") || id.includes("node_modules/@uiw")) {
+          if (
+            id.includes("node_modules/@codemirror") ||
+            id.includes("node_modules/@uiw")
+          ) {
             return "editor";
           }
           if (id.includes("node_modules/recharts") || id.includes("node_modules/d3")) {

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import fs from "fs/promises";
 import { prisma } from "../lib/prisma.js";
 import { serverManager } from "../services/ServerManager.js";
 import { FileManager } from "../services/FileManager.js";
@@ -16,9 +17,14 @@ import type {
   UpdateServerDto,
   SendCommandDto,
   WriteFileDto,
+  ServerDeleteProgressPayload,
 } from "@serverlab/shared";
 
 export const serverRoutes = Router();
+
+function emitDeleteProgress(payload: ServerDeleteProgressPayload): void {
+  serverManager.emitDeleteProgress(payload);
+}
 
 function requireText(value: unknown, field: string): string {
   if (typeof value !== "string" || !value.trim()) {
@@ -27,7 +33,12 @@ function requireText(value: unknown, field: string): string {
   return value.trim();
 }
 
-function optionalInt(value: unknown, field: string, min: number, max: number): number | undefined {
+function optionalInt(
+  value: unknown,
+  field: string,
+  min: number,
+  max: number
+): number | undefined {
   if (value === undefined || value === null || value === "") return undefined;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
@@ -64,7 +75,8 @@ async function resolveJavaSelection(input: {
   javaOverrideMode: string;
   allowUnsupportedJava: boolean;
 }> {
-  const javaOverrideMode = input.javaOverrideMode ?? (input.javaRuntimeId ? "automatic" : "manual");
+  const javaOverrideMode =
+    input.javaOverrideMode ?? (input.javaRuntimeId ? "automatic" : "manual");
   const allowUnsupportedJava = input.allowUnsupportedJava ?? false;
 
   if (javaOverrideMode === "manual") {
@@ -77,7 +89,9 @@ async function resolveJavaSelection(input: {
     };
   }
 
-  let runtime = input.javaRuntimeId ? await javaRuntimeRegistry.getRuntime(input.javaRuntimeId) : null;
+  let runtime = input.javaRuntimeId
+    ? await javaRuntimeRegistry.getRuntime(input.javaRuntimeId)
+    : null;
   const recommendation = await javaRecommendationService.recommend({
     minecraftVersion: input.version,
     software: input.software,
@@ -85,7 +99,9 @@ async function resolveJavaSelection(input: {
   if (!runtime) runtime = recommendation.compatibleRuntime;
   if (!runtime) {
     if (input.strict) {
-      throw new Error(`Java ${recommendation.requiredMajor} is required. Install or select a compatible runtime.`);
+      throw new Error(
+        `Java ${recommendation.requiredMajor} is required. Install or select a compatible runtime.`
+      );
     }
     return {
       javaRuntimeId: null,
@@ -104,7 +120,9 @@ async function resolveJavaSelection(input: {
       allowUnsupportedJava
     )
   ) {
-    throw new Error(`Selected Java runtime is not compatible. Java ${recommendation.requiredMajor} is required.`);
+    throw new Error(
+      `Selected Java runtime is not compatible. Java ${recommendation.requiredMajor} is required.`
+    );
   }
 
   return {
@@ -145,7 +163,8 @@ serverRoutes.post("/", async (req, res, next) => {
         buildId: body.softwareSource.buildId,
         requestId,
       });
-      if (requestId) await softwareDownloadService.markStage(requestId, "installing-server-files");
+      if (requestId)
+        await softwareDownloadService.markStage(requestId, "installing-server-files");
       await serverSoftwareInstaller.install({
         artifact,
         serverPath: body.path,
@@ -226,7 +245,9 @@ serverRoutes.patch("/:id", async (req, res, next) => {
 
 serverRoutes.patch("/:id/java-runtime", async (req, res, next) => {
   try {
-    const existing = await prisma.server.findUniqueOrThrow({ where: { id: req.params.id } });
+    const existing = await prisma.server.findUniqueOrThrow({
+      where: { id: req.params.id },
+    });
     const body = req.body as AssignServerJavaRuntimeDto;
     const selection = await resolveJavaSelection({
       version: existing.version,
@@ -251,16 +272,83 @@ serverRoutes.patch("/:id/java-runtime", async (req, res, next) => {
 serverRoutes.delete("/:id", async (req, res, next) => {
   try {
     const { id } = req.params;
+    const server = await prisma.server.findUniqueOrThrow({ where: { id } });
+    let backupCreated = false;
+
     if (serverManager.isRunning(id)) {
+      emitDeleteProgress({
+        serverId: id,
+        status: "running",
+        stage: "stopping-server",
+        message: "Stopping the running server",
+        percent: 10,
+      });
       await serverManager.stop(id);
     }
-    // Auto-backup before destroy
-    await createBackup(id, "manual").catch((e) =>
-      logger.warn({ e }, "Pre-delete backup failed; continuing with delete")
-    );
-    await prisma.server.delete({ where: { id } });
-    res.json({ message: "Server deleted" });
+
+    emitDeleteProgress({
+      serverId: id,
+      status: "running",
+      stage: "creating-backup",
+      message: "Creating a safety backup",
+      percent: 30,
+    });
+    try {
+      await createBackup(id, "manual");
+      backupCreated = true;
+    } catch (e) {
+      logger.warn({ e }, "Pre-delete backup failed; continuing with delete");
+    }
+
+    emitDeleteProgress({
+      serverId: id,
+      status: "running",
+      stage: "deleting-files",
+      message: "Deleting server folder",
+      percent: 60,
+    });
+    await fs.rm(server.path, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 250,
+    });
+
+    emitDeleteProgress({
+      serverId: id,
+      status: "running",
+      stage: "removing-metadata",
+      message: "Removing server records",
+      percent: 85,
+    });
+    await prisma.$transaction([
+      prisma.backup.deleteMany({ where: { serverId: id } }),
+      prisma.server.delete({ where: { id } }),
+    ]);
+
+    emitDeleteProgress({
+      serverId: id,
+      status: "completed",
+      stage: "done",
+      message: "Server deleted",
+      percent: 100,
+    });
+    res.json({
+      message: "Server deleted",
+      serverId: id,
+      deletedPath: server.path,
+      backupCreated,
+    });
   } catch (err) {
+    const id = req.params.id;
+    emitDeleteProgress({
+      serverId: id,
+      status: "failed",
+      stage: "failed",
+      message: "Delete failed",
+      percent: 100,
+      error: err instanceof Error ? err.message : "Delete failed",
+    });
     next(err);
   }
 });
@@ -296,6 +384,7 @@ serverRoutes.post("/:id/restart", async (req, res, next) => {
 serverRoutes.post("/:id/command", async (req, res, next) => {
   try {
     const { command } = req.body as SendCommandDto;
+    if (!command?.trim()) throw badRequest("command is required");
     serverManager.sendCommand(req.params.id, command);
     res.json({ message: "Command sent" });
   } catch (err) {

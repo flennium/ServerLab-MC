@@ -3,17 +3,12 @@ import treeKill from "tree-kill";
 import { prisma } from "../lib/prisma.js";
 import { logger } from "../lib/logger.js";
 import { io } from "../index.js";
-import {
-  trackPid,
-  untrackPid,
-  updateTps,
-  updatePlayers,
-} from "./MonitorService.js";
+import { trackPid, untrackPid, updateTps, updatePlayers } from "./MonitorService.js";
 import { parseStartupArgs } from "./ProcessArgs.js";
 import { javaRuntimeRegistry } from "./java/JavaRuntimeRegistry.js";
 import { javaRuntimeValidator } from "./java/JavaRuntimeValidator.js";
 import { javaRecommendationService } from "./java/JavaRecommendationService.js";
-import type { ServerStatus } from "@serverlab/shared";
+import type { ServerDeleteProgressPayload, ServerStatus } from "@serverlab/shared";
 
 interface RunningServer {
   process: ChildProcess;
@@ -34,10 +29,7 @@ class ServerManager {
     ramMaxMb: number;
     startupArgs: string | null;
   }): { cmd: string; args: string[] } {
-    const args: string[] = [
-      `-Xms${server.ramMinMb}m`,
-      `-Xmx${server.ramMaxMb}m`,
-    ];
+    const args: string[] = [`-Xms${server.ramMinMb}m`, `-Xmx${server.ramMaxMb}m`];
 
     if (server.startupArgs) {
       args.push(...parseStartupArgs(server.startupArgs));
@@ -62,10 +54,13 @@ class ServerManager {
     }
 
     const runtime = await javaRuntimeRegistry.getRuntime(server.javaRuntimeId);
-    if (!runtime) throw new Error("Selected Java runtime is missing. Choose or install a runtime.");
+    if (!runtime)
+      throw new Error("Selected Java runtime is missing. Choose or install a runtime.");
     const validated = await javaRuntimeValidator.validateRuntime(runtime);
     if (validated.status !== "valid") {
-      throw new Error("Selected Java runtime is missing or corrupted. Validate, repair, or choose another runtime.");
+      throw new Error(
+        "Selected Java runtime is missing or corrupted. Validate, repair, or choose another runtime."
+      );
     }
 
     const recommendation = await javaRecommendationService.recommend({
@@ -129,9 +124,7 @@ class ServerManager {
     for (const [id] of this.running) {
       const s = await prisma.server.findUnique({ where: { id } });
       if (s && s.port === server.port && id !== serverId) {
-        throw new Error(
-          `Port ${server.port} is already in use by server "${s.name}"`
-        );
+        throw new Error(`Port ${server.port} is already in use by server "${s.name}"`);
       }
     }
 
@@ -222,6 +215,10 @@ class ServerManager {
     const entry = this.running.get(serverId);
     if (!entry) throw new Error(`Server ${serverId} is not running`);
     entry.process.stdin?.write(`${command}\n`);
+  }
+
+  emitDeleteProgress(payload: ServerDeleteProgressPayload): void {
+    io.emit("server:delete-progress", payload);
   }
 
   isRunning(serverId: string): boolean {
