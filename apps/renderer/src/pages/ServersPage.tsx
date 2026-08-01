@@ -1,9 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { ArrowRight, Boxes, Folder, Plus, Server as ServerIcon } from "lucide-react";
 import { useServerStore } from "../store/serverStore.js";
 import { StatusBadge } from "../components/ui/StatusBadge.js";
 import { ServerRowSkeleton } from "../components/ui/Skeleton.js";
 import { CreateServerModal } from "../components/server/CreateServerModal.js";
+import { Alert, Card, EmptyState, PageHeader } from "../components/ui/Layout.js";
+import { Button } from "../components/ui/Button.js";
 
 export function ServersPage() {
   const { servers, fetchServers } = useServerStore();
@@ -11,66 +14,118 @@ export function ServersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  function load() {
+  const load = useCallback(() => {
     setLoading(true);
+    setError(null);
     fetchServers()
-      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load"))
+      .catch((error) => setError(error instanceof Error ? error.message : "Failed to load"))
       .finally(() => setLoading(false));
-  }
+  }, [fetchServers]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Servers</h1>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="rounded bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover transition-colors"
-        >
-          + New Server
-        </button>
-      </div>
+      <PageHeader
+        eyebrow="Server inventory"
+        title="Servers"
+        description="Manage every local server profile, runtime target, port, and control surface."
+        actions={
+          <Button onClick={() => setShowCreate(true)} icon={Plus} variant="primary">
+            New server
+          </Button>
+        }
+      />
 
       {error && (
-        <div className="mb-4 rounded border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger flex items-center justify-between">
+        <Alert
+          tone="danger"
+          className="mb-4"
+          action={
+            <Button onClick={load} size="sm" variant="danger">
+              Retry
+            </Button>
+          }
+        >
           {error}
-          <button onClick={load} className="underline hover:no-underline">Retry</button>
-        </div>
+        </Alert>
       )}
 
-      <div className="flex flex-col gap-2">
-        {loading ? (
-          [1, 2, 3].map((i) => <ServerRowSkeleton key={i} />)
-        ) : servers.length === 0 ? (
-          <div className="rounded-lg border border-border bg-surface-2 p-10 text-center">
-            <p className="text-4xl mb-3">⬡</p>
-            <p className="mb-1 font-medium">No servers yet</p>
-            <p className="text-sm text-muted">Click "+ New Server" to create your first one.</p>
+      {loading ? (
+        <div className="flex flex-col gap-2">
+          <ServerRowSkeleton />
+          <ServerRowSkeleton />
+          <ServerRowSkeleton />
+        </div>
+      ) : servers.length === 0 ? (
+        <EmptyState
+          icon={<Boxes className="h-10 w-10" aria-hidden="true" />}
+          title="No server profiles"
+          description="Create a server profile to connect a folder, runtime settings, console, files, monitoring, and backups."
+          action={
+            <Button onClick={() => setShowCreate(true)} icon={Plus} variant="primary">
+              Create server
+            </Button>
+          }
+        />
+      ) : (
+        <Card className="overflow-hidden">
+          <div className="hidden grid-cols-[minmax(220px,1.4fr)_minmax(160px,0.8fr)_120px_110px_120px] gap-4 border-b border-border px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-muted lg:grid">
+            <span>Server</span>
+            <span>Runtime</span>
+            <span>Port</span>
+            <span>Status</span>
+            <span className="text-right">Open</span>
           </div>
-        ) : (
-          servers.map((server) => (
-            <Link
-              key={server.id}
-              to={`/servers/${server.id}`}
-              className="flex items-center justify-between rounded-lg border border-border bg-surface-2 px-4 py-3 hover:bg-surface-3 transition-colors group"
-            >
-              <div className="min-w-0">
-                <span className="font-medium">{server.name}</span>
-                <span className="ml-3 text-xs text-muted capitalize">
-                  {server.software} {server.version} · Port {server.port}
-                </span>
-              </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <StatusBadge status={server.status} />
-                <span className="text-muted text-xs group-hover:text-white transition-colors">→</span>
-              </div>
-            </Link>
-          ))
-        )}
-      </div>
+          <div className="divide-y divide-border">
+            {servers.map((server) => (
+              <Link
+                key={server.id}
+                to={`/servers/${server.id}`}
+                className="grid gap-3 px-4 py-4 transition-colors hover:bg-rail lg:grid-cols-[minmax(220px,1.4fr)_minmax(160px,0.8fr)_120px_110px_120px] lg:items-center lg:gap-4"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <ServerIcon className="h-4 w-4 shrink-0 text-copper" aria-hidden="true" />
+                    <span className="truncate font-display font-semibold text-white">
+                      {server.name}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted">
+                    <Folder className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span className="truncate font-mono">{server.path}</span>
+                  </div>
+                </div>
 
-      {showCreate && <CreateServerModal onClose={() => { setShowCreate(false); load(); }} />}
+                <div className="text-sm capitalize text-white">
+                  {server.software} {server.version}
+                  <p className="mt-0.5 font-mono text-xs text-muted">
+                    {server.ramMinMb}-{server.ramMaxMb} MB
+                  </p>
+                </div>
+
+                <div className="font-mono text-sm text-white">{server.port}</div>
+                <StatusBadge status={server.status} className="w-fit" />
+                <div className="flex items-center justify-end gap-2 text-sm font-semibold text-copper">
+                  Open
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </div>
+              </Link>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {showCreate && (
+        <CreateServerModal
+          onClose={() => {
+            setShowCreate(false);
+            load();
+          }}
+        />
+      )}
     </div>
   );
 }

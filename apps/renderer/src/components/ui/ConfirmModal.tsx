@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
+import { Button } from "./Button.js";
 
 interface ConfirmModalProps {
   title: string;
@@ -41,34 +42,24 @@ export function ConfirmModal({
           aria-modal="true"
           aria-labelledby="confirm-title"
           aria-describedby="confirm-desc"
-          className="w-full max-w-sm rounded-xl border border-border bg-surface-2 shadow-2xl"
-          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-sm rounded-lg border border-border bg-panel shadow-2xl"
+          onClick={(event) => event.stopPropagation()}
         >
-          <div className="px-5 pt-5 pb-4">
-            <h2 id="confirm-title" className="font-semibold">
+          <div className="px-5 pb-4 pt-5">
+            <h2 id="confirm-title" className="font-display font-semibold">
               {title}
             </h2>
-            <p id="confirm-desc" className="mt-2 text-sm text-muted leading-relaxed">
+            <p id="confirm-desc" className="mt-2 text-sm leading-relaxed text-muted">
               {message}
             </p>
           </div>
           <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
-            <button
-              onClick={onCancel}
-              className="rounded bg-surface-3 px-4 py-2 text-sm font-medium hover:bg-border transition-colors"
-            >
+            <Button onClick={onCancel} variant="secondary">
               Cancel
-            </button>
-            <button
-              onClick={onConfirm}
-              className={`rounded px-4 py-2 text-sm font-medium text-white transition-colors ${
-                danger
-                  ? "bg-danger hover:bg-red-600"
-                  : "bg-accent hover:bg-accent-hover"
-              }`}
-            >
+            </Button>
+            <Button onClick={onConfirm} variant={danger ? "danger" : "primary"}>
               {confirmLabel}
-            </button>
+            </Button>
           </div>
         </div>
       </motion.div>

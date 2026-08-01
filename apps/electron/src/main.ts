@@ -14,6 +14,24 @@ let backendProcess: ChildProcess | null = null;
 
 const isDev = !app.isPackaged;
 
+function getDevRoot(): string {
+  const candidates = [
+    path.join(__dirname, ".."),
+    path.join(__dirname, "../../.."),
+  ];
+
+  for (const candidate of candidates) {
+    if (
+      fs.existsSync(path.join(candidate, "package.json")) &&
+      fs.existsSync(path.join(candidate, "apps", "backend"))
+    ) {
+      return candidate;
+    }
+  }
+
+  return path.join(__dirname, "../../..");
+}
+
 /**
  * The single source of truth for where all persistent app data lives.
  *
@@ -28,12 +46,34 @@ const isDev = !app.isPackaged;
  */
 function getDataDir(): string {
   if (isDev) {
-    const devDir = path.join(__dirname, "../../../data");
+    const devDir = path.join(getDevRoot(), "data");
     fs.mkdirSync(devDir, { recursive: true });
     return devDir;
   }
   // app.getPath("userData") = %APPDATA%\ServerLab MC on Windows
   return app.getPath("userData");
+}
+
+function getPrismaQueryEnginePath(): string {
+  const clientDir = isDev
+    ? path.join(getDevRoot(), "node_modules/.prisma/client")
+    : path.join(
+        process.resourcesPath,
+        "backend",
+        "node_modules",
+        ".prisma",
+        "client"
+      );
+
+  return path.join(clientDir, "query_engine-windows.dll.node");
+}
+
+function getDatabaseUrl(dbPath: string): string {
+  if (isDev) {
+    return "file:../../../data/serverlab.db";
+  }
+
+  return `file:${dbPath}`;
 }
 
 // ─── Backend lifecycle ────────────────────────────────────────────────────────
@@ -52,11 +92,13 @@ function startBackend(): void {
 
   if (isDev) {
     // Dev: use tsx to run TypeScript directly
-    command = "npx";
-    args = [
-      "tsx",
-      path.join(__dirname, "../../backend/src/index.ts"),
-    ];
+    if (process.platform === "win32") {
+      command = "cmd.exe";
+      args = ["/d", "/s", "/c", "npx tsx src/index.ts"];
+    } else {
+      command = "npx";
+      args = ["tsx", "src/index.ts"];
+    }
   } else {
     // Production: run the pre-bundled index.js with Node.
     // Electron ships its own Node runtime at process.execPath,
@@ -78,18 +120,10 @@ function startBackend(): void {
       BACKEND_TOKEN,
       NODE_ENV: isDev ? "development" : "production",
       DATA_DIR: dataDir,
-      DATABASE_URL: `file:${dbPath}`,
-      // Tell Prisma where to find its query engine in production
-      PRISMA_QUERY_ENGINE_LIBRARY: isDev
-        ? ""
-        : path.join(
-            process.resourcesPath,
-            "backend",
-            "node_modules",
-            ".prisma",
-            "client"
-          ),
+      DATABASE_URL: getDatabaseUrl(dbPath),
+      PRISMA_QUERY_ENGINE_LIBRARY: getPrismaQueryEnginePath(),
     },
+    cwd: isDev ? path.join(getDevRoot(), "apps/backend") : undefined,
     stdio: ["pipe", "pipe", "pipe"],
     detached: false,
   });
@@ -119,13 +153,6 @@ function stopBackend(): void {
 async function runMigrations(): Promise<void> {
   const dataDir = getDataDir();
   const dbPath = path.join(dataDir, "serverlab.db");
-  const migrationsPath = path.join(
-    process.resourcesPath,
-    "backend",
-    "dist",
-    "prisma",
-    "migrations"
-  );
   const schemaPath = path.join(
     process.resourcesPath,
     "backend",
@@ -166,18 +193,24 @@ async function runMigrations(): Promise<void> {
 // ─── Window creation ──────────────────────────────────────────────────────────
 
 function createWindow(): void {
+  // In production the asar is extracted to a temp path when accessed via __dirname.
+  // app.getAppPath() always returns the real path to the app directory.
+  const preloadPath = app.isPackaged
+    ? path.join(app.getAppPath(), "preload.js")
+    : path.join(__dirname, "preload.js");
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 900,
     minHeight: 600,
     backgroundColor: "#0f0f0f",
-    titleBarStyle: "hiddenInset",
+    titleBarStyle: "hidden",
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      sandbox: false, // must be false when using contextBridge with preload
     },
   });
 
@@ -188,14 +221,25 @@ function createWindow(): void {
     mainWindow.loadFile(
       path.join(process.resourcesPath, "renderer", "index.html")
     );
+    // Open DevTools in production temporarily for debugging
+    // Remove this before final release
+    mainWindow.webContents.openDevTools();
   }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    // Open external links in the system browser, not inside Electron
     if (url.startsWith("https://") || url.startsWith("http://")) {
       shell.openExternal(url);
     }
     return { action: "deny" };
+  });
+
+  // Log load failures for debugging
+  mainWindow.webContents.on("did-fail-load", (_e, errorCode, errorDesc, url) => {
+    console.error(`[renderer] Failed to load: ${url} — ${errorCode} ${errorDesc}`);
+  });
+
+  mainWindow.webContents.on("console-message", (_e, level, message, line, sourceId) => {
+    console.log(`[renderer:console] ${message} (${sourceId}:${line})`);
   });
 
   mainWindow.on("closed", () => {

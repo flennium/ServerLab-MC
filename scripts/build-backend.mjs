@@ -42,8 +42,6 @@ await build({
     "*.node",
     // systeminformation has native bindings on some platforms
     "systeminformation",
-    // tree-kill uses platform-specific binaries
-    "tree-kill",
   ],
   // Don't inline node_modules for these — they'll be in extraResources
   packages: "bundle",

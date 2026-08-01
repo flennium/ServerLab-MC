@@ -1,102 +1,207 @@
 /**
- * ServerLab MC — unified dev launcher
- * Starts backend → waits → starts Vite → waits → compiles Electron → launches Electron.
+ * ServerLab MC unified dev launcher.
+ * Starts backend, waits, starts Vite, waits, compiles Electron, launches Electron.
  *
- * Usage:  node scripts/dev.mjs
+ * Usage: node scripts/dev.mjs
  */
 import { spawn } from "child_process";
 import { createConnection } from "net";
 import { fileURLToPath } from "url";
 import path from "path";
+import fs from "fs";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "../..");
+const HOST = "127.0.0.1";
+const BACKEND_PORT = 3001;
+const RENDERER_PORT = 5173;
+const DATA_DIR = path.join(ROOT, "data");
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+function appEnv(extra = {}) {
+  const env = { ...process.env, ...extra };
+  delete env.ELECTRON_RUN_AS_NODE;
+  return env;
+}
 
-function spawnProc(cmd, args, cwd, label, colorCode) {
+const BACKEND_ENV = {
+  ...appEnv(),
+  PORT: String(BACKEND_PORT),
+  DATA_DIR,
+  DATABASE_URL: "file:../../../data/serverlab.db",
+  NODE_ENV: "development",
+};
+
+function nodeTool(command, args) {
+  if (command !== "npx") {
+    return { command, args };
+  }
+
+  const nodeRoot = path.dirname(process.execPath);
+  const npxCli = path.join(nodeRoot, "node_modules", "npm", "bin", "npx-cli.js");
+  return {
+    command: process.execPath,
+    args: [npxCli, ...args],
+  };
+}
+
+function electronCommand() {
+  if (process.platform === "win32") {
+    return {
+      command: path.join(ROOT, "node_modules", "electron", "dist", "electron.exe"),
+      args: [path.join(ROOT, "stage")],
+    };
+  }
+
+  return {
+    command: "npx",
+    args: ["electron", path.join(ROOT, "stage")],
+  };
+}
+
+function spawnProc(command, args, cwd, label, colorCode, env = process.env) {
   const prefix = `\x1b[${colorCode}m[${label}]\x1b[0m `;
-  const proc = spawn(cmd, args, { cwd, shell: true, stdio: ["ignore", "pipe", "pipe"] });
-  proc.stdout.on("data", (d) => process.stdout.write(prefix + d));
-  proc.stderr.on("data", (d) => process.stderr.write(prefix + d));
+  const tool = nodeTool(command, args);
+  const proc = spawn(tool.command, tool.args, {
+    cwd,
+    env,
+    shell: false,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  proc.stdout.on("data", (data) => process.stdout.write(prefix + data));
+  proc.stderr.on("data", (data) => process.stderr.write(prefix + data));
   proc.on("exit", (code) => {
     if (code && code !== 0) console.error(`${prefix}exited with code ${code}`);
   });
   return proc;
 }
 
-function waitForPort(port, host = "127.0.0.1", timeoutMs = 30_000) {
+function canConnect(port, host = HOST) {
+  return new Promise((resolve) => {
+    const sock = createConnection({ port, host });
+    sock.setTimeout(600);
+    sock.on("connect", () => {
+      sock.destroy();
+      resolve(true);
+    });
+    sock.on("error", () => {
+      sock.destroy();
+      resolve(false);
+    });
+    sock.on("timeout", () => {
+      sock.destroy();
+      resolve(false);
+    });
+  });
+}
+
+async function assertPortFree(port, label) {
+  if (!(await canConnect(port))) return;
+
+  throw new Error(
+    `${label} port ${port} is already in use.\n` +
+      `Close the old ServerLab/dev process or run:\n` +
+      `  Get-NetTCPConnection -LocalPort ${port} | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force }\n`
+  );
+}
+
+function waitForPort(port, host = HOST, timeoutMs = 30_000) {
   return new Promise((resolve, reject) => {
     const deadline = Date.now() + timeoutMs;
-    function attempt() {
-      const sock = createConnection({ port, host });
-      sock.setTimeout(600);
-      sock.on("connect", () => { sock.destroy(); resolve(); });
-      sock.on("error", () => {
-        sock.destroy();
-        if (Date.now() > deadline) return reject(new Error(`Timed out waiting for ${host}:${port}`));
-        setTimeout(attempt, 600);
-      });
-      sock.on("timeout", () => { sock.destroy(); setTimeout(attempt, 600); });
+
+    async function attempt() {
+      if (await canConnect(port, host)) {
+        resolve();
+        return;
+      }
+
+      if (Date.now() > deadline) {
+        reject(new Error(`Timed out waiting for ${host}:${port}`));
+        return;
+      }
+
+      setTimeout(attempt, 600);
     }
+
     attempt();
   });
 }
 
-function execSync(cmd, args, cwd) {
+function execSync(command, args, cwd, env = process.env) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, args, { cwd, shell: true, stdio: "inherit" });
-    proc.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`${cmd} exited ${code}`))));
+    const tool = nodeTool(command, args);
+    const proc = spawn(tool.command, tool.args, {
+      cwd,
+      env,
+      shell: false,
+      stdio: "inherit",
+    });
+    proc.on("exit", (code) =>
+      code === 0 ? resolve() : reject(new Error(`${command} exited ${code}`))
+    );
   });
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+function shutdown(children) {
+  for (const child of children) {
+    if (child && !child.killed) child.kill("SIGTERM");
+  }
+}
 
 async function main() {
-  console.log("\x1b[1m⬡  ServerLab MC — dev mode\x1b[0m\n");
+  console.log("\x1b[1mServerLab MC - dev mode\x1b[0m\n");
 
-  // 1. Backend
-  const backend = spawnProc("npx", ["tsx", "src/index.ts"], path.join(ROOT, "apps/backend"), "backend", 32);
-  process.stdout.write("⏳ Waiting for backend (port 3001)… ");
-  await waitForPort(3001);
-  console.log("✅\n");
+  await assertPortFree(BACKEND_PORT, "Backend");
+  await assertPortFree(RENDERER_PORT, "Renderer");
 
-  // 2. Vite renderer
-  const renderer = spawnProc("npx", ["vite"], path.join(ROOT, "apps/renderer"), "renderer", 34);
-  process.stdout.write("⏳ Waiting for Vite (port 5173)… ");
-  await waitForPort(5173);
-  console.log("✅\n");
+  const children = [];
 
-  // 3. Compile Electron main process
-  process.stdout.write("🔨 Compiling Electron main process… ");
-  await execSync("npx", ["tsc"], path.join(ROOT, "apps/electron"));
-  console.log("✅\n");
+  fs.mkdirSync(path.join(DATA_DIR, "backups"), { recursive: true });
+  fs.mkdirSync(path.join(DATA_DIR, "logs"), { recursive: true });
 
-  // 4. Launch Electron
-  console.log("🚀 Launching Electron…\n");
-  const electron = spawnProc(
+  console.log("Preparing local data directories... ready\n");
+
+  const renderer = spawnProc(
     "npx",
-    ["electron", path.join(ROOT, "apps/electron/dist/main.js")],
-    ROOT,
-    "electron",
-    35
+    ["vite", "--host", HOST],
+    path.join(ROOT, "apps/renderer"),
+    "renderer",
+    34,
+    appEnv()
   );
+  children.push(renderer);
 
-  // Kill everything when the Electron window closes
+  process.stdout.write(`Waiting for Vite (${HOST}:${RENDERER_PORT})... `);
+  await waitForPort(RENDERER_PORT);
+  console.log("ready\n");
+
+  process.stdout.write("Compiling Electron main process... ");
+  await execSync("npx", ["tsc"], path.join(ROOT, "apps/electron"));
+  await execSync("node", ["scripts/build-electron-stage.mjs"], ROOT);
+  console.log("ready\n");
+
+  console.log("Launching Electron...\n");
+  const electronTool = electronCommand();
+  const electron = spawnProc(electronTool.command, electronTool.args, ROOT, "electron", 35, appEnv());
+  children.push(electron);
+
+  process.stdout.write(`Waiting for Electron backend (${HOST}:${BACKEND_PORT})... `);
+  await waitForPort(BACKEND_PORT);
+  console.log("ready\n");
+
   electron.on("exit", () => {
-    console.log("\n[launcher] Electron closed — shutting down all processes");
-    backend.kill("SIGTERM");
-    renderer.kill("SIGTERM");
+    console.log("\n[launcher] Electron closed - shutting down all processes");
+    shutdown(children);
     process.exit(0);
   });
 
-  // Pass CTRL+C through to children
   process.on("SIGINT", () => {
-    console.log("\n[launcher] SIGINT — shutting down");
-    electron.kill("SIGTERM");
-    backend.kill("SIGTERM");
-    renderer.kill("SIGTERM");
+    console.log("\n[launcher] SIGINT - shutting down");
+    shutdown(children);
     process.exit(0);
   });
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err.message ?? err);
+  process.exit(1);
+});

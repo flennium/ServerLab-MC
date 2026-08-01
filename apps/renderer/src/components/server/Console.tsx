@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { ArrowDownCircle, Send, Terminal, Trash2 } from "lucide-react";
 import { getSocket } from "../../lib/socket.js";
 import { api } from "../../lib/apiClient.js";
+import { Button, IconButton } from "../ui/Button.js";
 import type { ConsoleOutputPayload } from "@serverlab/shared";
 
 interface ConsoleLine {
@@ -8,30 +10,45 @@ interface ConsoleLine {
   text: string;
 }
 
-/** Parse Minecraft §-colour codes into escaped HTML spans */
 function parseMinecraftColors(line: string): string {
-  const COLOR_MAP: Record<string, string> = {
-    "§0": "#000000", "§1": "#0000AA", "§2": "#00AA00", "§3": "#00AAAA",
-    "§4": "#AA0000", "§5": "#AA00AA", "§6": "#FFAA00", "§7": "#AAAAAA",
-    "§8": "#555555", "§9": "#5555FF", "§a": "#55FF55", "§b": "#55FFFF",
-    "§c": "#FF5555", "§d": "#FF55FF", "§e": "#FFFF55", "§f": "#FFFFFF",
+  const normalized = line.replace(/\u00c2\u00a7/g, "\u00a7");
+  const colorMap: Record<string, string> = {
+    "\u00a70": "#000000",
+    "\u00a71": "#0000AA",
+    "\u00a72": "#00AA00",
+    "\u00a73": "#00AAAA",
+    "\u00a74": "#AA0000",
+    "\u00a75": "#AA00AA",
+    "\u00a76": "#FFAA00",
+    "\u00a77": "#AAAAAA",
+    "\u00a78": "#555555",
+    "\u00a79": "#5555FF",
+    "\u00a7a": "#55FF55",
+    "\u00a7b": "#55FFFF",
+    "\u00a7c": "#FF5555",
+    "\u00a7d": "#FF55FF",
+    "\u00a7e": "#FFFF55",
+    "\u00a7f": "#FFFFFF",
   };
 
   let html = "";
   let i = 0;
   let openSpan = false;
 
-  while (i < line.length) {
-    if (line[i] === "§" && i + 1 < line.length) {
-      const code = line.slice(i, i + 2).toLowerCase();
-      if (openSpan) { html += "</span>"; openSpan = false; }
-      if (COLOR_MAP[code]) {
-        html += `<span style="color:${COLOR_MAP[code]}">`;
+  while (i < normalized.length) {
+    if (normalized[i] === "\u00a7" && i + 1 < normalized.length) {
+      const code = normalized.slice(i, i + 2).toLowerCase();
+      if (openSpan) {
+        html += "</span>";
+        openSpan = false;
+      }
+      if (colorMap[code]) {
+        html += `<span style="color:${colorMap[code]}">`;
         openSpan = true;
       }
       i += 2;
     } else {
-      const ch = line[i];
+      const ch = normalized[i];
       if (ch === "<") html += "&lt;";
       else if (ch === ">") html += "&gt;";
       else if (ch === "&") html += "&amp;";
@@ -39,6 +56,7 @@ function parseMinecraftColors(line: string): string {
       i++;
     }
   }
+
   if (openSpan) html += "</span>";
   return html;
 }
@@ -57,16 +75,13 @@ export function Console({ serverId }: ConsoleProps) {
   const [autoScroll, setAutoScroll] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-scroll only when autoScroll is enabled
   useEffect(() => {
     if (autoScroll) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [lines, autoScroll]);
 
-  // Pause auto-scroll when user scrolls up
   function handleScroll() {
     const el = scrollRef.current;
     if (!el) return;
@@ -74,21 +89,19 @@ export function Console({ serverId }: ConsoleProps) {
     setAutoScroll(atBottom);
   }
 
-  // Subscribe to Socket.IO console output for this server
   useEffect(() => {
     let cleanup = () => {};
 
     getSocket().then((socket) => {
       const handler = (payload: ConsoleOutputPayload) => {
         if (payload.serverId !== serverId) return;
-        setLines((prev) => {
-          const next = [...prev, { timestamp: payload.timestamp, text: payload.line }];
+        setLines((previous) => {
+          const next = [...previous, { timestamp: payload.timestamp, text: payload.line }];
           return next.length > MAX_LINES ? next.slice(-MAX_LINES) : next;
         });
       };
 
       socket.on("console:output", handler);
-      // ✅ Proper cleanup — prevents listener leak on re-render
       cleanup = () => socket.off("console:output", handler);
     });
 
@@ -96,108 +109,104 @@ export function Console({ serverId }: ConsoleProps) {
   }, [serverId]);
 
   const sendCommand = useCallback(async () => {
-    const cmd = input.trim();
-    if (!cmd) return;
-    setHistory((h) => [cmd, ...h.slice(0, 49)]);
+    const command = input.trim();
+    if (!command) return;
+    setHistory((previous) => [command, ...previous.slice(0, 49)]);
     setHistoryIdx(-1);
     setInput("");
     try {
-      await api.post(`/api/servers/${serverId}/command`, { command: cmd });
+      await api.post(`/api/servers/${serverId}/command`, { command });
     } catch {
-      // errors surface in the console stream
+      // Command failures are reported by the server console stream.
     }
   }, [input, serverId]);
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter") {
+  function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
       sendCommand();
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
       const idx = Math.min(historyIdx + 1, history.length - 1);
       setHistoryIdx(idx);
       setInput(history[idx] ?? "");
-    } else if (e.key === "ArrowDown") {
-      e.preventDefault();
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
       const idx = Math.max(historyIdx - 1, -1);
       setHistoryIdx(idx);
-      setInput(idx === -1 ? "" : (history[idx] ?? ""));
+      setInput(idx === -1 ? "" : history[idx] ?? "");
     }
   }
 
   return (
-    <div className="flex flex-col rounded-lg border border-border bg-surface-console overflow-hidden">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
-        <span className="text-xs text-muted">Console</span>
+    <div className="flex min-h-[520px] flex-col overflow-hidden rounded-lg border border-border bg-surface-console shadow-2xl">
+      <div className="flex items-center justify-between gap-3 border-b border-border bg-carbon px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Terminal className="h-4 w-4 text-copper" aria-hidden="true" />
+          <span className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+            Server console
+          </span>
+        </div>
         <div className="flex items-center gap-2">
           {!autoScroll && (
-            <button
+            <Button
               onClick={() => {
                 setAutoScroll(true);
                 bottomRef.current?.scrollIntoView({ behavior: "smooth" });
               }}
-              className="rounded bg-surface-3 px-2 py-0.5 text-xs text-warning hover:bg-border transition-colors"
+              icon={ArrowDownCircle}
+              variant="quiet"
+              size="sm"
             >
-              ↓ Resume scroll
-            </button>
+              Resume
+            </Button>
           )}
-          <button
-            onClick={() => setLines([])}
-            className="rounded bg-surface-3 px-2 py-0.5 text-xs text-muted hover:text-white hover:bg-border transition-colors"
-            title="Clear console"
-          >
-            Clear
-          </button>
+          <IconButton icon={Trash2} label="Clear console" onClick={() => setLines([])} />
         </div>
       </div>
 
-      {/* Output area */}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="overflow-y-auto px-4 py-3 console-font"
-        style={{ height: "380px" }}
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-3 console-font"
         role="log"
         aria-live="polite"
         aria-label="Server console output"
       >
         {lines.length === 0 && (
-          <p className="text-muted text-xs">
-            Console output will appear here once the server starts.
-          </p>
+          <p className="text-xs text-muted">Console output appears here after the server starts.</p>
         )}
-        {lines.map((line, i) => (
-          <div key={i} className="leading-relaxed whitespace-pre-wrap break-all">
-            <span
-              dangerouslySetInnerHTML={{ __html: parseMinecraftColors(line.text) }}
-            />
+        {lines.map((line, index) => (
+          <div key={`${line.timestamp}-${index}`} className="whitespace-pre-wrap break-all leading-relaxed">
+            <span className="mr-3 select-none text-muted/60">
+              {new Date(line.timestamp).toLocaleTimeString()}
+            </span>
+            <span dangerouslySetInnerHTML={{ __html: parseMinecraftColors(line.text) }} />
           </div>
         ))}
         <div ref={bottomRef} />
       </div>
 
-      {/* Input row */}
-      <div className="flex border-t border-border">
-        <span className="flex items-center px-3 text-accent console-font select-none" aria-hidden="true">
+      <div className="flex border-t border-border bg-carbon">
+        <span className="flex items-center px-3 font-mono text-copper" aria-hidden="true">
           &gt;
         </span>
         <input
-          ref={inputRef}
           type="text"
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(event) => setInput(event.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type a command and press Enter…"
-          className="flex-1 bg-transparent py-2 pr-3 text-sm console-font text-white placeholder:text-muted focus:outline-none"
+          placeholder="Type a command and press Enter"
+          className="console-font min-w-0 flex-1 bg-transparent py-3 pr-3 text-white placeholder:text-muted focus:outline-none"
           aria-label="Console command input"
           spellCheck={false}
           autoComplete="off"
         />
         <button
           onClick={sendCommand}
-          className="px-4 text-xs font-medium text-muted hover:text-white transition-colors"
+          className="inline-flex items-center gap-2 border-l border-border px-4 text-xs font-semibold text-muted transition-colors hover:bg-rail hover:text-white"
           aria-label="Send command"
         >
+          <Send className="h-4 w-4" aria-hidden="true" />
           Send
         </button>
       </div>

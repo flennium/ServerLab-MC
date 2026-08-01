@@ -1,3 +1,4 @@
+import { Activity, Gauge } from "lucide-react";
 import { useStatsStore } from "../../store/statsStore.js";
 import {
   AreaChart,
@@ -7,6 +8,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import { Card, EmptyState, StatTile } from "../ui/Layout.js";
 
 interface PerformanceMonitorProps {
   serverId: string;
@@ -20,166 +22,110 @@ export function PerformanceMonitor({ serverId, ramMaxMb }: PerformanceMonitorPro
 
   if (!latest) {
     return (
-      <div className="rounded-lg border border-border bg-surface-2 p-5 text-center text-sm text-muted">
-        Waiting for server stats… (server must be running)
-      </div>
+      <EmptyState
+        icon={<Activity className="h-10 w-10" aria-hidden="true" />}
+        title="Waiting for live stats"
+        description="Start the server to stream CPU, RAM, TPS, and player counts into this monitor."
+      />
     );
   }
 
-  // Build chart data array from history
-  const chartData = stats.cpu.map((cpu, i) => ({
+  const chartData = stats.cpu.map((cpu, index) => ({
     cpu,
-    ramMb: stats.ramMb[i] ?? 0,
-    tps: stats.tps[i] ?? 20,
+    ramMb: stats.ramMb[index] ?? 0,
+    tps: stats.tps[index] ?? 20,
   }));
 
   return (
     <div className="flex flex-col gap-4">
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <KpiCard
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile
           label="CPU"
           value={`${latest.cpu}%`}
-          color={latest.cpu > 80 ? "text-danger" : "text-accent"}
+          tone={latest.cpu > 80 ? "danger" : "good"}
         />
-        <KpiCard
+        <StatTile
           label="RAM"
-          value={`${latest.ramMb} MB`}
-          sub={`/ ${ramMaxMb} MB`}
-          color={
-            latest.ramMb / ramMaxMb > 0.9 ? "text-danger" : "text-white"
-          }
+          value={`${latest.ramMb}`}
+          detail={`/ ${ramMaxMb} MB`}
+          tone={latest.ramMb / ramMaxMb > 0.9 ? "danger" : "info"}
         />
-        <KpiCard
+        <StatTile
           label="TPS"
           value={latest.tps.toFixed(2)}
-          color={latest.tps < 18 ? "text-warning" : "text-accent"}
+          tone={latest.tps < 18 ? "warn" : "good"}
         />
-        <KpiCard
-          label="Players"
-          value={String(latest.players)}
-          color="text-white"
-        />
+        <StatTile label="Players" value={latest.players} tone="neutral" />
       </div>
 
-      {/* CPU chart */}
-      <ChartCard title="CPU %">
-        <ResponsiveContainer width="100%" height={90}>
-          <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-            <defs>
-              <linearGradient id="cpuGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <XAxis hide />
-            <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} />
-            <Tooltip
-              contentStyle={{ background: "#1e1e1e", border: "1px solid #2e2e2e", fontSize: 11 }}
-              formatter={(v) => [`${v}%`, "CPU"]}
-            />
-            <Area
-              type="monotone"
-              dataKey="cpu"
-              stroke="#22c55e"
-              fill="url(#cpuGrad)"
-              strokeWidth={1.5}
-              dot={false}
-              isAnimationActive={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </ChartCard>
-
-      <ChartCard title="RAM (MB)">
-        <ResponsiveContainer width="100%" height={90}>
-          <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-            <defs>
-              <linearGradient id="ramGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#5555FF" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#5555FF" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <XAxis hide />
-            <YAxis domain={[0, ramMaxMb]} tick={{ fontSize: 10 }} />
-            <Tooltip
-              contentStyle={{ background: "#1e1e1e", border: "1px solid #2e2e2e", fontSize: 11 }}
-              formatter={(v) => [`${v} MB`, "RAM"]}
-            />
-            <Area
-              type="monotone"
-              dataKey="ramMb"
-              stroke="#5555FF"
-              fill="url(#ramGrad)"
-              strokeWidth={1.5}
-              dot={false}
-              isAnimationActive={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </ChartCard>
-
-      {/* TPS chart */}
-      <ChartCard title="TPS">
-        <ResponsiveContainer width="100%" height={90}>
-          <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-            <defs>
-              <linearGradient id="tpsGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#FFAA00" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#FFAA00" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <XAxis hide />
-            <YAxis domain={[0, 20]} tick={{ fontSize: 10 }} />
-            <Tooltip
-              contentStyle={{ background: "#1e1e1e", border: "1px solid #2e2e2e", fontSize: 11 }}
-              formatter={(v) => [typeof v === "number" ? v.toFixed(2) : v, "TPS"]}
-            />
-            <Area
-              type="monotone"
-              dataKey="tps"
-              stroke="#FFAA00"
-              fill="url(#tpsGrad)"
-              strokeWidth={1.5}
-              dot={false}
-              isAnimationActive={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </ChartCard>
+      <ChartCard title="CPU load" color="#4CAF50" dataKey="cpu" domain={[0, 100]} suffix="%" data={chartData} />
+      <ChartCard
+        title="Memory allocation"
+        color="#4D7CFE"
+        dataKey="ramMb"
+        domain={[0, ramMaxMb]}
+        suffix=" MB"
+        data={chartData}
+      />
+      <ChartCard title="Server TPS" color="#F6C85F" dataKey="tps" domain={[0, 20]} suffix="" data={chartData} />
     </div>
   );
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function KpiCard({
-  label,
-  value,
-  sub,
+function ChartCard({
+  title,
   color,
+  dataKey,
+  domain,
+  suffix,
+  data,
 }: {
-  label: string;
-  value: string;
-  sub?: string;
+  title: string;
   color: string;
+  dataKey: "cpu" | "ramMb" | "tps";
+  domain: [number, number];
+  suffix: string;
+  data: Array<{ cpu: number; ramMb: number; tps: number }>;
 }) {
-  return (
-    <div className="rounded-lg border border-border bg-surface-2 px-4 py-3">
-      <p className="text-xs text-muted">{label}</p>
-      <p className={`mt-0.5 text-xl font-bold tabular-nums ${color}`}>
-        {value}
-        {sub && <span className="ml-1 text-sm font-normal text-muted">{sub}</span>}
-      </p>
-    </div>
-  );
-}
+  const gradientId = `${dataKey}Gradient`;
 
-function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-border bg-surface-2 px-4 pt-3 pb-2">
-      <p className="mb-2 text-xs font-medium text-muted">{title}</p>
-      {children}
-    </div>
+    <Card className="px-4 pb-3 pt-3">
+      <div className="mb-2 flex items-center gap-2">
+        <Gauge className="h-4 w-4 text-copper" aria-hidden="true" />
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">{title}</p>
+      </div>
+      <ResponsiveContainer width="100%" height={120}>
+        <AreaChart data={data} margin={{ top: 6, right: 8, bottom: 0, left: -18 }}>
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={color} stopOpacity={0.35} />
+              <stop offset="95%" stopColor={color} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <XAxis hide />
+          <YAxis domain={domain} tick={{ fontSize: 10, fill: "#8B949E" }} stroke="#303741" />
+          <Tooltip
+            contentStyle={{
+              background: "#171A1E",
+              border: "1px solid #303741",
+              borderRadius: 8,
+              color: "#fff",
+              fontSize: 12,
+            }}
+            formatter={(value) => [`${value}${suffix}`, title]}
+          />
+          <Area
+            type="monotone"
+            dataKey={dataKey}
+            stroke={color}
+            fill={`url(#${gradientId})`}
+            strokeWidth={2}
+            dot={false}
+            isAnimationActive={false}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </Card>
   );
 }
