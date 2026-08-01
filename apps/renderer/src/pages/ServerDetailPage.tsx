@@ -1,21 +1,16 @@
-import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, Play, RotateCcw, Save, Server, Square, Trash2 } from "lucide-react";
 import { useServerStore } from "../store/serverStore.js";
 import { StatusBadge } from "../components/ui/StatusBadge.js";
 import { ConfirmModal } from "../components/ui/ConfirmModal.js";
 import { Skeleton } from "../components/ui/Skeleton.js";
-import { Console } from "../components/server/Console.js";
-import { FileManager } from "../components/server/FileManager.js";
-import { FileEditor } from "../components/server/FileEditor.js";
-import { PerformanceMonitor } from "../components/server/PerformanceMonitor.js";
-import { BackupPanel } from "../components/server/BackupPanel.js";
 import { api } from "../lib/apiClient.js";
 import { Alert, Card, EmptyState, PageHeader, StatTile } from "../components/ui/Layout.js";
 import { Button } from "../components/ui/Button.js";
 import { Field, Select, Switch, TextInput } from "../components/ui/Form.js";
 import { Tabs } from "../components/ui/Tabs.js";
+import { navigate } from "../lib/router.js";
 import type {
   JavaRuntime,
   JavaRuntimeListResponse,
@@ -33,14 +28,20 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "settings", label: "Settings" },
 ];
 
+const Console = lazy(() => import("../components/server/Console.js").then((module) => ({ default: module.Console })));
+const FileManager = lazy(() => import("../components/server/FileManager.js").then((module) => ({ default: module.FileManager })));
+const FileEditor = lazy(() => import("../components/server/FileEditor.js").then((module) => ({ default: module.FileEditor })));
+const PerformanceMonitor = lazy(() =>
+  import("../components/server/PerformanceMonitor.js").then((module) => ({ default: module.PerformanceMonitor }))
+);
+const BackupPanel = lazy(() => import("../components/server/BackupPanel.js").then((module) => ({ default: module.BackupPanel })));
+
 interface OpenFile {
   path: string;
   name: string;
 }
 
-export function ServerDetailPage() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+export function ServerDetailPage({ serverId }: { serverId: string }) {
   const { servers, fetchServers, startServer, stopServer, restartServer, deleteServer } =
     useServerStore();
 
@@ -53,7 +54,7 @@ export function ServerDetailPage() {
     fetchServers().finally(() => setLoading(false));
   }, [fetchServers]);
 
-  const server = servers.find((server) => server.id === id);
+  const server = servers.find((server) => server.id === serverId);
 
   if (loading) {
     return (
@@ -91,8 +92,6 @@ export function ServerDetailPage() {
   }
 
   const isActive = server.status === "running" || server.status === "starting";
-  const serverId = server.id;
-
   async function handleDelete() {
     await deleteServer(serverId);
     navigate("/servers");
@@ -162,35 +161,37 @@ export function ServerDetailPage() {
           exit={{ opacity: 0, y: -6 }}
           transition={{ duration: 0.15 }}
         >
-          {tab === "console" && <Console serverId={server.id} />}
+          <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+            {tab === "console" && <Console serverId={server.id} />}
 
-          {tab === "files" && (
-            <div className="grid gap-4 xl:grid-cols-[minmax(340px,0.8fr)_minmax(460px,1.2fr)]">
-              <FileManager serverId={server.id} onOpenFile={handleOpenFile} />
-              {openFile ? (
-                <FileEditor
-                  serverId={server.id}
-                  filePath={openFile.path}
-                  fileName={openFile.name}
-                  onClose={() => setOpenFile(null)}
-                />
-              ) : (
-                <EmptyState
-                  icon={<Server className="h-8 w-8" aria-hidden="true" />}
-                  title="Choose a file"
-                  description="Open a configuration file from the list to edit it beside the file browser."
-                />
-              )}
-            </div>
-          )}
+            {tab === "files" && (
+              <div className="grid gap-4 xl:grid-cols-[minmax(340px,0.8fr)_minmax(460px,1.2fr)]">
+                <FileManager serverId={server.id} onOpenFile={handleOpenFile} />
+                {openFile ? (
+                  <FileEditor
+                    serverId={server.id}
+                    filePath={openFile.path}
+                    fileName={openFile.name}
+                    onClose={() => setOpenFile(null)}
+                  />
+                ) : (
+                  <EmptyState
+                    icon={<Server className="h-8 w-8" aria-hidden="true" />}
+                    title="Choose a file"
+                    description="Open a configuration file from the list to edit it beside the file browser."
+                  />
+                )}
+              </div>
+            )}
 
-          {tab === "monitor" && (
-            <PerformanceMonitor serverId={server.id} ramMaxMb={server.ramMaxMb} />
-          )}
+            {tab === "monitor" && (
+              <PerformanceMonitor serverId={server.id} ramMaxMb={server.ramMaxMb} />
+            )}
 
-          {tab === "backups" && <BackupPanel serverId={server.id} />}
+            {tab === "backups" && <BackupPanel serverId={server.id} />}
 
-          {tab === "settings" && <ServerSettings server={server} />}
+            {tab === "settings" && <ServerSettings server={server} />}
+          </Suspense>
         </motion.div>
       </AnimatePresence>
 

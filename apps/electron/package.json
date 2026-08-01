@@ -1,6 +1,6 @@
 {
   "name": "@serverlab/electron",
-  "version": "2.1.0",
+  "version": "3.0.0-beta.1",
   "description": "Electron main + preload process for ServerLab MC",
   "private": true,
   "main": "dist/main.js",
@@ -15,7 +15,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
-    "electron": "^31.0.0",
+    "electron": "^43.2.0",
     "typescript": "^5.5.0"
   }
 }

@@ -9,13 +9,14 @@ import extractZip from "extract-zip";
 import { prisma } from "../../lib/prisma.js";
 import { logger } from "../../lib/logger.js";
 import { getSoftwareSocketServer } from "../software/softwareEvents.js";
-import type {
-  JavaInstallJob,
-  JavaInstallProgressPayload,
-  JavaInstallStage,
-  JavaPackageType,
-  JavaRuntime,
-  JavaRuntimeProviderId,
+import {
+  APP_USER_AGENT,
+  type JavaInstallJob,
+  type JavaInstallProgressPayload,
+  type JavaInstallStage,
+  type JavaPackageType,
+  type JavaRuntime,
+  type JavaRuntimeProviderId,
 } from "@serverlab/shared";
 import { javaRuntimePaths } from "./JavaRuntimePaths.js";
 import { javaRuntimeProviderRegistry, assertAllowedJavaUrl } from "./JavaRuntimeProviders.js";
@@ -221,7 +222,7 @@ export class JavaInstallService {
           parsed,
           {
             headers: {
-              "User-Agent": "ServerLabMC/2.1.0",
+              "User-Agent": APP_USER_AGENT,
               Accept: "application/octet-stream,*/*",
             },
           },

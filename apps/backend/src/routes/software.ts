@@ -3,6 +3,7 @@ import type { ServerFramework } from "@serverlab/shared";
 import { softwareProviderRegistry } from "../services/software/providers.js";
 import { softwareCacheService } from "../services/software/SoftwareCacheService.js";
 import { softwareDownloadService } from "../services/software/SoftwareDownloadService.js";
+import { badRequest } from "../middleware/error.js";
 
 export const softwareRoutes = Router();
 
@@ -10,7 +11,7 @@ function providerId(value: unknown): ServerFramework {
   if (value === "paper" || value === "purpur" || value === "fabric" || value === "spigot") {
     return value;
   }
-  throw new Error("Unknown software provider");
+  throw badRequest("Unknown software provider");
 }
 
 softwareRoutes.get("/providers", (_req, res, next) => {
@@ -93,8 +94,7 @@ softwareRoutes.get("/cache/status", async (req, res, next) => {
     const minecraftVersion = String(req.query.minecraftVersion ?? "");
     const buildId = String(req.query.buildId ?? "");
     if (!minecraftVersion || !buildId) {
-      res.status(400).json({ error: "minecraftVersion and buildId are required" });
-      return;
+      throw badRequest("minecraftVersion and buildId are required");
     }
 
     const artifact = await softwareCacheService.findValidArtifact(provider, minecraftVersion, buildId);
@@ -119,8 +119,7 @@ softwareRoutes.post("/downloads", async (req, res, next) => {
     const minecraftVersion = String(req.body.minecraftVersion ?? "");
     const buildId = String(req.body.buildId ?? "");
     if (!minecraftVersion || !buildId) {
-      res.status(400).json({ error: "provider, minecraftVersion, and buildId are required" });
-      return;
+      throw badRequest("provider, minecraftVersion, and buildId are required");
     }
 
     const result = await softwareDownloadService.ensureArtifact({

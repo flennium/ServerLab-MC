@@ -1,4 +1,3 @@
-// ─── Socket.IO event payload types ───────────────────────────────────────────
 import type {
   ServerFramework,
   ServerStatus,
@@ -9,7 +8,6 @@ import type {
   SoftwareInstallStage,
 } from "./models.js";
 
-// server → client events
 export interface ConsoleOutputPayload {
   serverId: string;
   line: string;
@@ -31,12 +29,6 @@ export interface ServerStatsPayload {
 
 export interface BackupProgressPayload {
   backupId: string;
-  percent: number;
-}
-
-export interface TemplateProgressPayload {
-  templateId: string;
-  stage: string;
   percent: number;
 }
 
@@ -70,19 +62,16 @@ export interface JavaInstallProgressPayload {
   error?: string;
 }
 
-// client → server events
 export interface ConsoleCommandPayload {
   serverId: string;
   command: string;
 }
 
-// Typed map consumed by socket.io typed emitters on both sides
 export interface ServerToClientEvents {
   "console:output": (payload: ConsoleOutputPayload) => void;
   "server:status": (payload: ServerStatusPayload) => void;
   "server:stats": (payload: ServerStatsPayload) => void;
   "backup:progress": (payload: BackupProgressPayload) => void;
-  "template:progress": (payload: TemplateProgressPayload) => void;
   "software:download-progress": (payload: SoftwareDownloadProgressPayload) => void;
   "java:install-progress": (payload: JavaInstallProgressPayload) => void;
 }

@@ -6,10 +6,25 @@ import { logger } from "../lib/logger.js";
 export function registerSocketHandlers(
   io: IOServer<ClientToServerEvents, ServerToClientEvents>
 ): void {
+  const backendToken = process.env.BACKEND_TOKEN;
+
+  io.use((socket, next) => {
+    if (!backendToken) {
+      next();
+      return;
+    }
+
+    if (socket.handshake.auth?.token === backendToken) {
+      next();
+      return;
+    }
+
+    next(new Error("Unauthorized"));
+  });
+
   io.on("connection", (socket) => {
     logger.info({ socketId: socket.id }, "Client connected");
 
-    // client → server: send a command to a running Minecraft server
     socket.on("console:command", ({ serverId, command }) => {
       try {
         serverManager.sendCommand(serverId, command);

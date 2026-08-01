@@ -1,4 +1,3 @@
-// ─── REST API payload types ───────────────────────────────────────────────────
 import type {
   Server,
   ServerSoftware,

@@ -1,8 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-// ─── Whitelisted API surface exposed to the renderer ─────────────────────────
-// The renderer accesses this via `window.serverlab.*`
-// Nothing from Node / Electron leaks through — contextIsolation: true enforces that.
+// Keep the renderer API small and explicit.
 
 export interface BackendConfig {
   origin: string;

@@ -1,5 +1,3 @@
-// ─── Database model types (mirrors Prisma schema) ────────────────────────────
-
 export type ServerStatus =
   | "stopped"
   | "starting"

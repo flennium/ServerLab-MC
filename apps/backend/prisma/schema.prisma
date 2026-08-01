@@ -1,4 +1,4 @@
-// ─── Prisma schema — ServerLab MC ─────────────────────────────────────────────
+// Prisma schema for ServerLab MC local app data.
 
 generator client {
   provider = "prisma-client-js"

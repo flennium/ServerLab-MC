@@ -9,6 +9,7 @@ import { javaRuntimeRegistry } from "../services/java/JavaRuntimeRegistry.js";
 import { javaRuntimeValidator } from "../services/java/JavaRuntimeValidator.js";
 import { javaRecommendationService } from "../services/java/JavaRecommendationService.js";
 import { logger } from "../lib/logger.js";
+import { badRequest } from "../middleware/error.js";
 import type {
   AssignServerJavaRuntimeDto,
   CreateServerDto,
@@ -18,6 +19,36 @@ import type {
 } from "@serverlab/shared";
 
 export const serverRoutes = Router();
+
+function requireText(value: unknown, field: string): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw badRequest(`${field} is required`);
+  }
+  return value.trim();
+}
+
+function optionalInt(value: unknown, field: string, min: number, max: number): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw badRequest(`${field} must be between ${min} and ${max}`);
+  }
+  return parsed;
+}
+
+function validateCreateServer(body: CreateServerDto): void {
+  requireText(body.name, "name");
+  requireText(body.path, "path");
+  requireText(body.version, "version");
+  requireText(body.software, "software");
+  if (!body.softwareSource) requireText(body.javaPath, "javaPath");
+  optionalInt(body.ramMinMb, "ramMinMb", 128, 262144);
+  optionalInt(body.ramMaxMb, "ramMaxMb", 128, 262144);
+  optionalInt(body.port, "port", 1, 65535);
+  if (body.ramMinMb && body.ramMaxMb && body.ramMinMb > body.ramMaxMb) {
+    throw badRequest("ramMinMb cannot be greater than ramMaxMb");
+  }
+}
 
 async function resolveJavaSelection(input: {
   version: string;
@@ -98,13 +129,13 @@ serverRoutes.get("/", async (_req, res, next) => {
 serverRoutes.post("/", async (req, res, next) => {
   try {
     const body = req.body as CreateServerDto;
+    validateCreateServer(body);
     let version = body.version;
     let software = body.software;
 
     if (body.softwareSource) {
       if (!body.eulaAccepted) {
-        res.status(400).json({ error: "Minecraft EULA acceptance is required" });
-        return;
+        throw badRequest("Minecraft EULA acceptance is required");
       }
 
       const requestId = body.softwareSource.requestId;
@@ -177,6 +208,12 @@ serverRoutes.get("/:id", async (req, res, next) => {
 serverRoutes.patch("/:id", async (req, res, next) => {
   try {
     const body = req.body as UpdateServerDto;
+    optionalInt(body.ramMinMb, "ramMinMb", 128, 262144);
+    optionalInt(body.ramMaxMb, "ramMaxMb", 128, 262144);
+    optionalInt(body.port, "port", 1, 65535);
+    if (body.ramMinMb && body.ramMaxMb && body.ramMinMb > body.ramMaxMb) {
+      throw badRequest("ramMinMb cannot be greater than ramMaxMb");
+    }
     const server = await prisma.server.update({
       where: { id: req.params.id },
       data: body,
@@ -219,7 +256,7 @@ serverRoutes.delete("/:id", async (req, res, next) => {
     }
     // Auto-backup before destroy
     await createBackup(id, "manual").catch((e) =>
-      logger.warn({ e }, "Pre-delete backup failed — continuing with delete")
+      logger.warn({ e }, "Pre-delete backup failed; continuing with delete")
     );
     await prisma.server.delete({ where: { id } });
     res.json({ message: "Server deleted" });
@@ -227,8 +264,6 @@ serverRoutes.delete("/:id", async (req, res, next) => {
     next(err);
   }
 });
-
-// ─── Process control ──────────────────────────────────────────────────────────
 
 serverRoutes.post("/:id/start", async (req, res, next) => {
   try {
@@ -267,8 +302,6 @@ serverRoutes.post("/:id/command", async (req, res, next) => {
     next(err);
   }
 });
-
-// ─── File manager ─────────────────────────────────────────────────────────────
 
 async function getFileManager(serverId: string): Promise<FileManager> {
   const server = await prisma.server.findUniqueOrThrow({
@@ -348,8 +381,6 @@ serverRoutes.patch("/:id/files/rename", async (req, res, next) => {
     next(err);
   }
 });
-
-// ─── Backups ──────────────────────────────────────────────────────────────────
 
 // GET /api/servers/:id/backups
 serverRoutes.get("/:id/backups", async (req, res, next) => {

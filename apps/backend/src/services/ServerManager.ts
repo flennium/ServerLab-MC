@@ -9,6 +9,7 @@ import {
   updateTps,
   updatePlayers,
 } from "./MonitorService.js";
+import { parseStartupArgs } from "./ProcessArgs.js";
 import { javaRuntimeRegistry } from "./java/JavaRuntimeRegistry.js";
 import { javaRuntimeValidator } from "./java/JavaRuntimeValidator.js";
 import { javaRecommendationService } from "./java/JavaRecommendationService.js";
@@ -39,7 +40,7 @@ class ServerManager {
     ];
 
     if (server.startupArgs) {
-      args.push(...server.startupArgs.split(" ").filter(Boolean));
+      args.push(...parseStartupArgs(server.startupArgs));
     }
 
     args.push("-jar", "server.jar", "nogui");
@@ -101,18 +102,15 @@ class ServerManager {
       timestamp: new Date().toISOString(),
     });
 
-    // Detect "Done" → flip to running
     if (DONE_REGEX.test(line)) {
       this.setStatus(serverId, "running").catch(logger.error);
     }
 
-    // Parse TPS from `/tps` command output
     const tpsMatch = line.match(TPS_REGEX);
     if (tpsMatch) {
       updateTps(serverId, parseFloat(tpsMatch[1]));
     }
 
-    // Parse player count from `/list` command output
     const playersMatch = line.match(PLAYERS_REGEX);
     if (playersMatch) {
       updatePlayers(serverId, parseInt(playersMatch[1], 10));
@@ -128,7 +126,6 @@ class ServerManager {
       where: { id: serverId },
     });
 
-    // Port collision guard
     for (const [id] of this.running) {
       const s = await prisma.server.findUnique({ where: { id } });
       if (s && s.port === server.port && id !== serverId) {

@@ -9,12 +9,13 @@ import { logger } from "../../lib/logger.js";
 import { softwareCacheService } from "./SoftwareCacheService.js";
 import { assertAllowedHttpsUrl, softwareProviderRegistry } from "./providers.js";
 import { getSoftwareSocketServer } from "./softwareEvents.js";
-import type {
-  ServerFramework,
-  SoftwareArtifact,
-  SoftwareDownload,
-  SoftwareDownloadProgressPayload,
-  SoftwareInstallStage,
+import {
+  APP_USER_AGENT,
+  type ServerFramework,
+  type SoftwareArtifact,
+  type SoftwareDownload,
+  type SoftwareDownloadProgressPayload,
+  type SoftwareInstallStage,
 } from "@serverlab/shared";
 import type { SoftwareArtifactMeta } from "./types.js";
 
@@ -232,7 +233,7 @@ export class SoftwareDownloadService {
         url,
         {
           headers: {
-            "User-Agent": "ServerLabMC/2.1.0 (+https://serverlab.local)",
+            "User-Agent": APP_USER_AGENT,
             Accept: "application/java-archive,application/octet-stream,*/*",
           },
         },
