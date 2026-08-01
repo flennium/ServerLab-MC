@@ -5,20 +5,34 @@ import type { ServerToClientEvents, ClientToServerEvents } from "@serverlab/shar
 type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 let socketInstance: AppSocket | null = null;
+let socketPromise: Promise<AppSocket> | null = null;
 
 export async function getSocket(): Promise<AppSocket> {
   if (socketInstance?.connected) return socketInstance;
+  if (socketPromise) return socketPromise;
 
-  const { origin, token } = await api.getConfig();
+  socketPromise = api
+    .getConfig()
+    .then(({ origin, token }) => {
+      socketInstance = io(origin, {
+        auth: { token },
+        transports: ["websocket"],
+        reconnectionAttempts: 10,
+        reconnectionDelay: 1500,
+      }) as AppSocket;
 
-  socketInstance = io(origin, {
-    auth: { token },
-    transports: ["websocket"],
-    reconnectionAttempts: 10,
-    reconnectionDelay: 1500,
-  }) as AppSocket;
+      socketInstance.on("disconnect", () => {
+        socketPromise = null;
+      });
 
-  return socketInstance;
+      return socketInstance;
+    })
+    .catch((error) => {
+      socketPromise = null;
+      throw error;
+    });
+
+  return socketPromise;
 }
 
 export function getSocketSync(): AppSocket | null {
