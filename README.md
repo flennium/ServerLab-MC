@@ -155,8 +155,8 @@ If Vite reports port `5173` is in use, close the old dev server or stop the owni
 
 If Prisma generation fails because `query_engine-windows.dll.node` is locked, stop Electron/backend processes and rerun the build.
 
-- [Contributing Guide](CONTRIBUTING.md) — Guidelines for developers who want to contribute to ServerLab MC.
-- [Security Policy](SECURITY.md) — Security practices, vulnerability reporting, and responsible disclosure process.
+## [Contributing Guide](CONTRIBUTING.md) — Guidelines for developers who want to contribute to ServerLab MC.
+## [Security Policy](SECURITY.md) — Security practices, vulnerability reporting, and responsible disclosure process.
 
 ## License
 
