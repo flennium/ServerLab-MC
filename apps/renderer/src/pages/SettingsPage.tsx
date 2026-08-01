@@ -1,12 +1,25 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Database, FolderOpen, Info, Keyboard, RefreshCw, Trash2 } from "lucide-react";
+import {
+  Database,
+  FolderOpen,
+  Info,
+  Keyboard,
+  RefreshCw,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { Button } from "../components/ui/Button.js";
 import { Alert, Card, PageHeader } from "../components/ui/Layout.js";
 import { LabelValue } from "../components/ui/Form.js";
 import { api } from "../lib/apiClient.js";
-import { APP_VERSION, type SoftwareArtifact, type SoftwareArtifactListResponse } from "@serverlab/shared";
+import {
+  APP_VERSION,
+  type SoftwareArtifact,
+  type SoftwareArtifactListResponse,
+  type TemplateCapabilityResponse,
+} from "@serverlab/shared";
 
 function getPlatformLabel(): string {
   if (typeof window !== "undefined" && window.serverlab) {
@@ -28,7 +41,10 @@ export function SettingsPage() {
 
   useEffect(() => {
     if (window.serverlab?.getAppVersion) {
-      window.serverlab.getAppVersion().then(setVersion).catch(() => {});
+      window.serverlab
+        .getAppVersion()
+        .then(setVersion)
+        .catch(() => {});
     }
   }, []);
 
@@ -84,17 +100,51 @@ export function SettingsPage() {
           </div>
         </SettingsCard>
 
-        <SettingsCard icon={Info} title="Next work">
-          <ul className="flex list-disc flex-col gap-2 pl-4 text-sm leading-6 text-muted">
-            <li>Template browser</li>
-            <li>Community template repositories</li>
-            <li>One-click server creation from templates</li>
-          </ul>
-        </SettingsCard>
+        <TemplateSystemPanel />
 
         <SoftwareCachePanel />
       </div>
     </div>
+  );
+}
+
+function TemplateSystemPanel() {
+  const [capabilities, setCapabilities] = useState<TemplateCapabilityResponse | null>(
+    null
+  );
+
+  useEffect(() => {
+    api
+      .get<TemplateCapabilityResponse>("/api/templates/capabilities")
+      .then(setCapabilities)
+      .catch(() => {});
+  }, []);
+
+  return (
+    <SettingsCard icon={Search} title="Template system">
+      {!capabilities ? (
+        <p className="text-sm text-muted">Loading template capabilities...</p>
+      ) : (
+        <div className="grid gap-2">
+          {capabilities.capabilities.map((capability) => (
+            <div
+              key={capability.id}
+              className="rounded border border-border bg-rail px-3 py-2"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-medium text-white">{capability.label}</span>
+                <span className="rounded border border-border bg-panel px-2 py-0.5 text-[0.68rem] uppercase text-muted">
+                  {capability.status}
+                </span>
+              </div>
+              <p className="mt-1 text-xs leading-5 text-muted">
+                {capability.description}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </SettingsCard>
   );
 }
 
@@ -127,7 +177,8 @@ function SoftwareCachePanel() {
     setLoading(true);
     setError(null);
     try {
-      const { artifacts } = await api.get<SoftwareArtifactListResponse>("/api/software/cache");
+      const { artifacts } =
+        await api.get<SoftwareArtifactListResponse>("/api/software/cache");
       setArtifacts(artifacts);
     } catch (error) {
       setError(error instanceof Error ? error.message : "Failed to load software cache");
@@ -164,7 +215,13 @@ function SoftwareCachePanel() {
           <h2 className="font-display text-lg font-semibold">Software cache</h2>
         </div>
         <div className="flex gap-2">
-          <Button onClick={load} disabled={loading} icon={RefreshCw} variant="secondary" size="sm">
+          <Button
+            onClick={load}
+            disabled={loading}
+            icon={RefreshCw}
+            variant="secondary"
+            size="sm"
+          >
             Refresh
           </Button>
           <Button onClick={revealCache} icon={FolderOpen} variant="secondary" size="sm">
@@ -201,12 +258,20 @@ function SoftwareCachePanel() {
             <tbody className="divide-y divide-border">
               {artifacts.map((artifact) => (
                 <tr key={artifact.id}>
-                  <td className="py-3 font-semibold capitalize text-white">{artifact.provider}</td>
-                  <td className="py-3 font-mono text-xs text-white">{artifact.minecraftVersion}</td>
-                  <td className="py-3 font-mono text-xs text-muted">{artifact.buildId}</td>
+                  <td className="py-3 font-semibold capitalize text-white">
+                    {artifact.provider}
+                  </td>
+                  <td className="py-3 font-mono text-xs text-white">
+                    {artifact.minecraftVersion}
+                  </td>
+                  <td className="py-3 font-mono text-xs text-muted">
+                    {artifact.buildId}
+                  </td>
                   <td className="py-3 text-muted">{formatBytes(artifact.sizeBytes)}</td>
                   <td className="py-3 text-muted">
-                    {formatDate(artifact.lastUsedAt ?? artifact.downloadedAt ?? artifact.createdAt)}
+                    {formatDate(
+                      artifact.lastUsedAt ?? artifact.downloadedAt ?? artifact.createdAt
+                    )}
                   </td>
                   <td className="py-3">
                     <span className="rounded border border-border bg-rail px-2 py-1 text-xs capitalize text-muted">

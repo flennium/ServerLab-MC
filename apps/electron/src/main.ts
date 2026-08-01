@@ -14,10 +14,7 @@ let backendProcess: ChildProcess | null = null;
 const isDev = !app.isPackaged;
 
 function getDevRoot(): string {
-  const candidates = [
-    path.join(__dirname, ".."),
-    path.join(__dirname, "../../.."),
-  ];
+  const candidates = [path.join(__dirname, ".."), path.join(__dirname, "../../..")];
 
   for (const candidate of candidates) {
     if (
@@ -50,7 +47,10 @@ function pathInside(candidate: string, root: string): boolean {
 
 function allowedOpenRoots(): string[] {
   const roots = [getDataDir()];
-  const programFiles = [process.env.ProgramFiles, process.env["ProgramFiles(x86)"]].filter(Boolean) as string[];
+  const programFiles = [
+    process.env.ProgramFiles,
+    process.env["ProgramFiles(x86)"],
+  ].filter(Boolean) as string[];
 
   for (const root of programFiles) {
     roots.push(path.join(root, "Java"));
@@ -64,13 +64,7 @@ function allowedOpenRoots(): string[] {
 function getPrismaQueryEnginePath(): string {
   const clientDir = isDev
     ? path.join(getDevRoot(), "node_modules/.prisma/client")
-    : path.join(
-        process.resourcesPath,
-        "backend",
-        "node_modules",
-        ".prisma",
-        "client"
-      );
+    : path.join(process.resourcesPath, "backend", "node_modules", ".prisma", "client");
 
   return path.join(clientDir, "query_engine-windows.dll.node");
 }
@@ -108,9 +102,7 @@ function startBackend(): void {
     const bundledNode = path.join(process.resourcesPath, "node", "node.exe");
     const systemNode = "node";
     command = fs.existsSync(bundledNode) ? bundledNode : systemNode;
-    args = [
-      path.join(process.resourcesPath, "backend", "dist", "index.js"),
-    ];
+    args = [path.join(process.resourcesPath, "backend", "dist", "index.js")];
   }
 
   backendProcess = spawn(command, args, {
@@ -174,15 +166,21 @@ async function runMigrations(): Promise<void> {
   }
 
   return new Promise((resolve) => {
-    const proc = spawn(nodeCmd, [prismaCli, "migrate", "deploy", "--schema", schemaPath], {
-      env: {
-        ...process.env,
-        DATABASE_URL: `file:${dbPath}`,
-      },
-      stdio: "pipe",
-    });
+    const proc = spawn(
+      nodeCmd,
+      [prismaCli, "migrate", "deploy", "--schema", schemaPath],
+      {
+        env: {
+          ...process.env,
+          DATABASE_URL: `file:${dbPath}`,
+        },
+        stdio: "pipe",
+      }
+    );
     proc.stdout?.on("data", (d: Buffer) => console.log("[migrate]", d.toString().trim()));
-    proc.stderr?.on("data", (d: Buffer) => console.log("[migrate:err]", d.toString().trim()));
+    proc.stderr?.on("data", (d: Buffer) =>
+      console.log("[migrate:err]", d.toString().trim())
+    );
     proc.on("exit", () => resolve());
     proc.on("error", () => resolve());
   });
@@ -212,13 +210,11 @@ function createWindow(): void {
     mainWindow.loadURL("http://localhost:5173");
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(
-      path.join(process.resourcesPath, "renderer", "index.html")
-    );
+    mainWindow.loadFile(path.join(process.resourcesPath, "renderer", "index.html"));
   }
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("https://") || url.startsWith("http://")) {
+    if (url.startsWith("https://")) {
       shell.openExternal(url);
     }
     return { action: "deny" };
@@ -262,6 +258,24 @@ ipcMain.handle("shell:openPath", async (_event, filePath: string) => {
 });
 
 ipcMain.handle("app:version", () => app.getVersion());
+
+ipcMain.handle("window:minimize", () => {
+  mainWindow?.minimize();
+});
+
+ipcMain.handle("window:toggleMaximize", () => {
+  if (!mainWindow) return false;
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize();
+  } else {
+    mainWindow.maximize();
+  }
+  return mainWindow.isMaximized();
+});
+
+ipcMain.handle("window:close", () => {
+  mainWindow?.close();
+});
 
 app.whenReady().then(async () => {
   if (!isDev) {

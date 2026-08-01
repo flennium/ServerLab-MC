@@ -12,6 +12,9 @@ declare global {
       openPath: (path: string) => Promise<void>;
       getAppVersion: () => Promise<string>;
       getPlatform: () => string;
+      minimizeWindow: () => Promise<void>;
+      toggleMaximizeWindow: () => Promise<boolean>;
+      closeWindow: () => Promise<void>;
     };
   }
 }

@@ -17,7 +17,7 @@ Create, run, monitor, back up, and maintain local Minecraft servers from one pol
 
 ServerLab MC is an Electron desktop app backed by a local Node.js service and a React renderer. It is built for people who run Minecraft servers locally and want a focused interface for server creation, Java runtime management, console access, files, backups, monitoring, and cached server software downloads.
 
-Current beta: `3.0.0-beta.1`
+Current beta: `3.0.0-beta.2`
 
 ## Highlights
 
@@ -34,12 +34,12 @@ Current beta: `3.0.0-beta.1`
 
 ServerLab MC can resolve, download, cache, and install server software during server creation.
 
-| Provider | Status | Notes |
-| --- | --- | --- |
-| Paper | Supported | Uses PaperMC provider metadata. |
-| Purpur | Supported | Uses Purpur provider metadata. |
-| Fabric | Supported | Uses Fabric Meta server launcher artifacts. |
-| Spigot | Not available | Reserved for a future legal BuildTools workflow. |
+| Provider | Status        | Notes                                            |
+| -------- | ------------- | ------------------------------------------------ |
+| Paper    | Supported     | Uses PaperMC provider metadata.                  |
+| Purpur   | Supported     | Uses Purpur provider metadata.                   |
+| Fabric   | Supported     | Uses Fabric Meta server launcher artifacts.      |
+| Spigot   | Not available | Reserved for a future legal BuildTools workflow. |
 
 Cached server software is stored in the app data directory. When a server is created, ServerLab copies the cached artifact into that server folder as `server.jar`, so existing servers never depend on the cache.
 
@@ -47,11 +47,11 @@ Cached server software is stored in the app data directory. When a server is cre
 
 ServerLab MC replaces raw `javaPath` setup with managed runtime selection.
 
-| Capability | Description |
-| --- | --- |
-| Detection | Finds system Java installs and ServerLab-managed runtimes. |
-| Managed installs | Downloads verified archive-based runtimes into app data. |
-| Recommendations | Picks a compatible Java major for the selected Minecraft/software version. |
+| Capability           | Description                                                                   |
+| -------------------- | ----------------------------------------------------------------------------- |
+| Detection            | Finds system Java installs and ServerLab-managed runtimes.                    |
+| Managed installs     | Downloads verified archive-based runtimes into app data.                      |
+| Recommendations      | Picks a compatible Java major for the selected Minecraft/software version.    |
 | Per-server selection | Stores the selected runtime and uses its absolute executable path at startup. |
 
 Managed runtime providers:
@@ -63,13 +63,13 @@ Legacy manual Java paths remain available as an advanced override.
 
 ## Tech Stack
 
-| Layer | Technology |
-| --- | --- |
-| Desktop | Electron main and preload process |
+| Layer    | Technology                         |
+| -------- | ---------------------------------- |
+| Desktop  | Electron main and preload process  |
 | Renderer | React, Vite, Tailwind CSS, Zustand |
-| Backend | Node.js, Express, Socket.IO |
-| Storage | Prisma, SQLite |
-| Build | esbuild, electron-builder |
+| Backend  | Node.js, Express, Socket.IO        |
+| Storage  | Prisma, SQLite                     |
+| Build    | esbuild, electron-builder          |
 
 ## Requirements
 
@@ -111,15 +111,15 @@ npm run reset:data:force
 
 ## Commands
 
-| Command | Purpose |
-| --- | --- |
-| `npm run dev` | Start the local development app. |
-| `npm run dev:stop` | Stop leftover dev processes on ServerLab ports. |
-| `npm run lint` | Run ESLint across TypeScript and React source. |
-| `npm test` | Run Vitest tests. |
-| `npm run build` | Build shared, renderer, Electron, backend, and stage output. |
-| `npm run package` | Build the Windows installer with electron-builder. |
-| `npm run release:check` | Run lint, tests, build, and packaging as the release gate. |
+| Command                 | Purpose                                                      |
+| ----------------------- | ------------------------------------------------------------ |
+| `npm run dev`           | Start the local development app.                             |
+| `npm run dev:stop`      | Stop leftover dev processes on ServerLab ports.              |
+| `npm run lint`          | Run ESLint across TypeScript and React source.               |
+| `npm test`              | Run Vitest tests.                                            |
+| `npm run build`         | Build shared, renderer, Electron, backend, and stage output. |
+| `npm run package`       | Build the Windows installer with electron-builder.           |
+| `npm run release:check` | Run lint, tests, build, and packaging as the release gate.   |
 
 ## Local Data
 
@@ -167,6 +167,23 @@ Before publishing a release:
 8. Update release notes and publish a GitHub release.
 
 Release history is tracked in [CHANGELOG.md](CHANGELOG.md).
+
+## Roadmap
+
+Planned plugin management work:
+
+- Browse and install Minecraft plugins from Modrinth.
+- Search plugins by loader, Minecraft version, category, and popularity.
+- Check plugin compatibility against the selected server software and Minecraft version.
+- Detect installed plugin versions and surface available updates.
+- Manage plugin enablement, removal, and update history directly from ServerLab.
+
+Planned template work:
+
+- Template browser for local and community templates.
+- Import and export portable template bundles.
+- One-click server creation from trusted templates.
+- Template metadata, versioning, and update checks.
 
 ## Troubleshooting
 

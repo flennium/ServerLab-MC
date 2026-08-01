@@ -1,20 +1,39 @@
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowLeft, Play, RotateCcw, Save, Server, Square, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Play,
+  RotateCcw,
+  Save,
+  Server,
+  ShieldAlert,
+  Square,
+  Trash2,
+} from "lucide-react";
 import { useServerStore } from "../store/serverStore.js";
 import { StatusBadge } from "../components/ui/StatusBadge.js";
 import { ConfirmModal } from "../components/ui/ConfirmModal.js";
 import { Skeleton } from "../components/ui/Skeleton.js";
 import { api } from "../lib/apiClient.js";
-import { Alert, Card, EmptyState, PageHeader, StatTile } from "../components/ui/Layout.js";
+import { getSocket } from "../lib/socket.js";
+import {
+  Alert,
+  Card,
+  EmptyState,
+  PageHeader,
+  StatTile,
+} from "../components/ui/Layout.js";
 import { Button } from "../components/ui/Button.js";
-import { Field, Select, Switch, TextInput } from "../components/ui/Form.js";
+import { Field, LabelValue, Select, Switch, TextInput } from "../components/ui/Form.js";
 import { Tabs } from "../components/ui/Tabs.js";
 import { navigate } from "../lib/router.js";
 import type {
   JavaRuntime,
   JavaRuntimeListResponse,
+  JavaRecommendationResponse,
   Server as ServerModel,
+  ServerDeleteProgressPayload,
   UpdateServerDto,
 } from "@serverlab/shared";
 
@@ -28,13 +47,31 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "settings", label: "Settings" },
 ];
 
-const Console = lazy(() => import("../components/server/Console.js").then((module) => ({ default: module.Console })));
-const FileManager = lazy(() => import("../components/server/FileManager.js").then((module) => ({ default: module.FileManager })));
-const FileEditor = lazy(() => import("../components/server/FileEditor.js").then((module) => ({ default: module.FileEditor })));
-const PerformanceMonitor = lazy(() =>
-  import("../components/server/PerformanceMonitor.js").then((module) => ({ default: module.PerformanceMonitor }))
+const Console = lazy(() =>
+  import("../components/server/Console.js").then((module) => ({
+    default: module.Console,
+  }))
 );
-const BackupPanel = lazy(() => import("../components/server/BackupPanel.js").then((module) => ({ default: module.BackupPanel })));
+const FileManager = lazy(() =>
+  import("../components/server/FileManager.js").then((module) => ({
+    default: module.FileManager,
+  }))
+);
+const FileEditor = lazy(() =>
+  import("../components/server/FileEditor.js").then((module) => ({
+    default: module.FileEditor,
+  }))
+);
+const PerformanceMonitor = lazy(() =>
+  import("../components/server/PerformanceMonitor.js").then((module) => ({
+    default: module.PerformanceMonitor,
+  }))
+);
+const BackupPanel = lazy(() =>
+  import("../components/server/BackupPanel.js").then((module) => ({
+    default: module.BackupPanel,
+  }))
+);
 
 interface OpenFile {
   path: string;
@@ -49,12 +86,38 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
   const [tab, setTab] = useState<Tab>("console");
   const [openFile, setOpenFile] = useState<OpenFile | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteState, setDeleteState] = useState<{
+    running: boolean;
+    percent: number;
+    message: string;
+    error: string | null;
+  }>({ running: false, percent: 0, message: "Preparing deletion...", error: null });
 
   useEffect(() => {
     fetchServers().finally(() => setLoading(false));
   }, [fetchServers]);
 
   const server = servers.find((server) => server.id === serverId);
+
+  useEffect(() => {
+    let cleanup = () => {};
+
+    getSocket().then((socket) => {
+      const handler = (payload: ServerDeleteProgressPayload) => {
+        if (payload.serverId !== serverId) return;
+        setDeleteState({
+          running: payload.status === "running",
+          percent: payload.percent,
+          message: payload.error ?? payload.message,
+          error: payload.status === "failed" ? (payload.error ?? payload.message) : null,
+        });
+      };
+      socket.on("server:delete-progress", handler);
+      cleanup = () => socket.off("server:delete-progress", handler);
+    });
+
+    return () => cleanup();
+  }, [serverId]);
 
   if (loading) {
     return (
@@ -93,8 +156,23 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
 
   const isActive = server.status === "running" || server.status === "starting";
   async function handleDelete() {
-    await deleteServer(serverId);
-    navigate("/servers");
+    setDeleteState({
+      running: true,
+      percent: 0,
+      message: "Preparing deletion...",
+      error: null,
+    });
+    try {
+      await deleteServer(serverId);
+      navigate("/servers");
+    } catch (error) {
+      setDeleteState({
+        running: false,
+        percent: 0,
+        message: error instanceof Error ? error.message : "Delete failed",
+        error: error instanceof Error ? error.message : "Delete failed",
+      });
+    }
   }
 
   function handleOpenFile(filePath: string, fileName: string) {
@@ -112,15 +190,27 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
         actions={
           <>
             {!isActive ? (
-              <Button onClick={() => startServer(server.id)} icon={Play} variant="primary">
+              <Button
+                onClick={() => startServer(server.id)}
+                icon={Play}
+                variant="primary"
+              >
                 Start
               </Button>
             ) : (
               <>
-                <Button onClick={() => stopServer(server.id)} icon={Square} variant="secondary">
+                <Button
+                  onClick={() => stopServer(server.id)}
+                  icon={Square}
+                  variant="secondary"
+                >
                   Stop
                 </Button>
-                <Button onClick={() => restartServer(server.id)} icon={RotateCcw} variant="secondary">
+                <Button
+                  onClick={() => restartServer(server.id)}
+                  icon={RotateCcw}
+                  variant="secondary"
+                >
                   Restart
                 </Button>
               </>
@@ -140,7 +230,11 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
         <StatTile label="RAM min" value={`${server.ramMinMb}`} detail="MB" />
         <StatTile label="RAM max" value={`${server.ramMaxMb}`} detail="MB" tone="info" />
         <StatTile label="Port" value={server.port} />
-        <StatTile label="Auto-start" value={server.autoStart ? "On" : "Off"} tone={server.autoStart ? "good" : "neutral"} />
+        <StatTile
+          label="Auto-start"
+          value={server.autoStart ? "On" : "Off"}
+          tone={server.autoStart ? "good" : "neutral"}
+        />
       </div>
 
       <Tabs
@@ -198,11 +292,19 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
       {confirmDelete && (
         <ConfirmModal
           title={`Delete "${server.name}"?`}
-          message="A backup will be taken automatically before deletion. This cannot be undone."
+          message={
+            deleteState.error ??
+            "ServerLab will stop the server, take a safety backup, remove metadata, and delete the server folder. This cannot be undone."
+          }
           confirmLabel="Delete server"
+          loading={deleteState.running}
+          progress={deleteState.percent}
+          statusText={deleteState.message}
           danger
           onConfirm={handleDelete}
-          onCancel={() => setConfirmDelete(false)}
+          onCancel={() => {
+            if (!deleteState.running) setConfirmDelete(false);
+          }}
         />
       )}
     </div>
@@ -227,7 +329,42 @@ function ServerSettings({ server }: { server: ServerModel }) {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [runtimes, setRuntimes] = useState<JavaRuntime[]>([]);
+  const [recommendation, setRecommendation] = useState<JavaRecommendationResponse | null>(
+    null
+  );
+  const [runtimeLoading, setRuntimeLoading] = useState(false);
   const manualJava = form.javaOverrideMode === "manual";
+  const selectedRuntime = useMemo(
+    () => runtimes.find((runtime) => runtime.id === form.javaRuntimeId) ?? null,
+    [form.javaRuntimeId, runtimes]
+  );
+  const runtimeIssue = useMemo(() => {
+    if (manualJava) {
+      return form.javaPath?.trim()
+        ? null
+        : "Enter a Java executable path or return to managed runtime selection.";
+    }
+    if (!selectedRuntime) return "Select a Java runtime before saving.";
+    if (!recommendation) return null;
+    if (selectedRuntime.major < recommendation.requiredMajor) {
+      return `Java ${recommendation.requiredMajor} is required for ${server.software} ${server.version}.`;
+    }
+    if (
+      selectedRuntime.major > recommendation.requiredMajor &&
+      !form.allowUnsupportedJava
+    ) {
+      return `Java ${selectedRuntime.major} is newer than the recommended Java ${recommendation.requiredMajor}. Enable unsupported Java only if you want this override.`;
+    }
+    return null;
+  }, [
+    form.allowUnsupportedJava,
+    form.javaPath,
+    manualJava,
+    recommendation,
+    selectedRuntime,
+    server.software,
+    server.version,
+  ]);
 
   useEffect(() => {
     setForm({
@@ -245,17 +382,43 @@ function ServerSettings({ server }: { server: ServerModel }) {
   }, [server]);
 
   useEffect(() => {
-    api
-      .get<JavaRuntimeListResponse>("/api/java/runtimes")
-      .then(({ runtimes }) => setRuntimes(runtimes.filter((runtime) => runtime.status === "valid")))
-      .catch(() => {});
-  }, []);
+    setRuntimeLoading(true);
+    Promise.all([
+      api.get<JavaRuntimeListResponse>("/api/java/runtimes"),
+      api.get<JavaRecommendationResponse>(
+        `/api/java/recommendation?minecraftVersion=${encodeURIComponent(server.version)}&software=${server.software}`
+      ),
+    ])
+      .then(([runtimeResponse, recommendationResponse]) => {
+        setRuntimes(
+          runtimeResponse.runtimes.filter((runtime) => runtime.status === "valid")
+        );
+        setRecommendation(recommendationResponse);
+      })
+      .catch((error) =>
+        setError(error instanceof Error ? error.message : "Failed to load Java runtimes")
+      )
+      .finally(() => setRuntimeLoading(false));
+  }, [server.software, server.version]);
+
+  useEffect(() => {
+    if (manualJava || form.javaRuntimeId || !recommendation?.compatibleRuntime) return;
+    setForm((current) => ({
+      ...current,
+      javaRuntimeId: recommendation.compatibleRuntime?.id ?? current.javaRuntimeId,
+      javaPath: recommendation.compatibleRuntime?.executablePath ?? current.javaPath,
+    }));
+  }, [form.javaRuntimeId, manualJava, recommendation]);
 
   function set<K extends keyof UpdateServerDto>(key: K, value: UpdateServerDto[K]) {
     setForm((current) => ({ ...current, [key]: value }));
   }
 
   async function handleSave() {
+    if (runtimeIssue) {
+      setError(runtimeIssue);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -340,7 +503,9 @@ function ServerSettings({ server }: { server: ServerModel }) {
                 if (runtime) set("javaPath", runtime.executablePath);
               }}
             >
-              <option value="">Select runtime</option>
+              <option value="">
+                {runtimeLoading ? "Loading runtimes..." : "Select runtime"}
+              </option>
               {runtimes.map((runtime) => (
                 <option key={runtime.id} value={runtime.id}>
                   Java {runtime.major} - {runtime.distribution} - {runtime.source}
@@ -350,16 +515,76 @@ function ServerSettings({ server }: { server: ServerModel }) {
           </Field>
         </div>
 
+        <div className="grid gap-3 rounded-lg border border-border bg-surface-console p-4 md:grid-cols-2">
+          <div>
+            <div className="mb-2 flex items-center gap-2">
+              <ShieldAlert className="h-4 w-4 text-copper" aria-hidden="true" />
+              <h3 className="font-display text-sm font-semibold text-white">
+                Compatibility
+              </h3>
+            </div>
+            <div className="grid gap-2">
+              <LabelValue label="Server" value={`${server.software} ${server.version}`} />
+              <LabelValue
+                label="Required Java"
+                value={
+                  recommendation ? `Java ${recommendation.requiredMajor}` : "Checking..."
+                }
+              />
+              <LabelValue
+                label="Confidence"
+                value={recommendation?.confidence ?? "Unknown"}
+              />
+            </div>
+          </div>
+          <div>
+            <div className="mb-2 flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-grass" aria-hidden="true" />
+              <h3 className="font-display text-sm font-semibold text-white">
+                Selected runtime
+              </h3>
+            </div>
+            {manualJava ? (
+              <p className="break-all font-mono text-xs leading-5 text-muted">
+                {form.javaPath?.trim() || "No manual executable selected"}
+              </p>
+            ) : selectedRuntime ? (
+              <div className="grid gap-2">
+                <LabelValue
+                  label="Version"
+                  value={`Java ${selectedRuntime.major} (${selectedRuntime.version})`}
+                />
+                <LabelValue label="Distribution" value={selectedRuntime.distribution} />
+                <LabelValue label="Source" value={selectedRuntime.source} />
+              </div>
+            ) : (
+              <p className="text-sm text-muted">No runtime selected.</p>
+            )}
+          </div>
+        </div>
+
+        {recommendation?.warnings.map((warning) => (
+          <Alert key={warning} tone="warning">
+            {warning}
+          </Alert>
+        ))}
+
         <div className="rounded-lg border border-border bg-surface-console px-3 py-3">
           <Switch
             label="Use manual Java path"
             checked={manualJava}
-            onChange={(checked) => set("javaOverrideMode", checked ? "manual" : "automatic")}
+            onChange={(checked) =>
+              set("javaOverrideMode", checked ? "manual" : "automatic")
+            }
           />
         </div>
 
         {manualJava && (
-          <Field label="Manual Java executable">
+          <Field
+            label="Manual Java executable"
+            hint="Use this only when the runtime is managed outside ServerLab. ServerLab will validate the path before startup."
+            required
+          >
             <TextInput
               type="text"
               value={form.javaPath ?? ""}
@@ -394,9 +619,15 @@ function ServerSettings({ server }: { server: ServerModel }) {
         </div>
 
         {error && <Alert tone="danger">{error}</Alert>}
+        {runtimeIssue && <Alert tone="warning">{runtimeIssue}</Alert>}
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={handleSave} disabled={saving} icon={Save} variant="primary">
+          <Button
+            onClick={handleSave}
+            disabled={saving || Boolean(runtimeIssue)}
+            icon={Save}
+            variant="primary"
+          >
             {saving ? "Saving..." : "Save changes"}
           </Button>
           {saved && <span className="text-sm font-semibold text-grass">Saved</span>}

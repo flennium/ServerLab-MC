@@ -32,6 +32,21 @@ export interface BackupProgressPayload {
   percent: number;
 }
 
+export interface ServerDeleteProgressPayload {
+  serverId: string;
+  status: "running" | "completed" | "failed";
+  stage:
+    | "stopping-server"
+    | "creating-backup"
+    | "removing-metadata"
+    | "deleting-files"
+    | "done"
+    | "failed";
+  message: string;
+  percent: number;
+  error?: string;
+}
+
 export interface SoftwareDownloadProgressPayload {
   downloadId: string;
   provider: ServerFramework;
@@ -71,11 +86,15 @@ export interface ServerToClientEvents {
   "console:output": (payload: ConsoleOutputPayload) => void;
   "server:status": (payload: ServerStatusPayload) => void;
   "server:stats": (payload: ServerStatsPayload) => void;
+  "server:delete-progress": (payload: ServerDeleteProgressPayload) => void;
   "backup:progress": (payload: BackupProgressPayload) => void;
   "software:download-progress": (payload: SoftwareDownloadProgressPayload) => void;
   "java:install-progress": (payload: JavaInstallProgressPayload) => void;
 }
 
 export interface ClientToServerEvents {
-  "console:command": (payload: ConsoleCommandPayload) => void;
+  "console:command": (
+    payload: ConsoleCommandPayload,
+    ack?: (result: { ok: boolean; error?: string }) => void
+  ) => void;
 }

@@ -5,6 +5,9 @@ interface ConfirmModalProps {
   title: string;
   message: string;
   confirmLabel?: string;
+  loading?: boolean;
+  progress?: number;
+  statusText?: string;
   danger?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -14,10 +17,15 @@ export function ConfirmModal({
   title,
   message,
   confirmLabel = "Confirm",
+  loading = false,
+  progress,
+  statusText,
   danger = false,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  const safeProgress = Math.max(0, Math.min(100, progress ?? 0));
+
   return (
     <AnimatePresence>
       <motion.div
@@ -26,7 +34,9 @@ export function ConfirmModal({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        onClick={onCancel}
+        onClick={() => {
+          if (!loading) onCancel();
+        }}
         aria-hidden="true"
       />
       <motion.div
@@ -52,13 +62,31 @@ export function ConfirmModal({
             <p id="confirm-desc" className="mt-2 text-sm leading-relaxed text-muted">
               {message}
             </p>
+            {loading && (
+              <div className="mt-4">
+                <div className="mb-2 flex items-center justify-between gap-3 text-xs text-muted">
+                  <span>{statusText ?? "Working..."}</span>
+                  {progress !== undefined && <span>{Math.round(safeProgress)}%</span>}
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-rail">
+                  <div
+                    className="h-full bg-copper transition-all duration-200"
+                    style={{ width: `${progress === undefined ? 35 : safeProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
           <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
-            <Button onClick={onCancel} variant="secondary">
+            <Button onClick={onCancel} variant="secondary" disabled={loading}>
               Cancel
             </Button>
-            <Button onClick={onConfirm} variant={danger ? "danger" : "primary"}>
-              {confirmLabel}
+            <Button
+              onClick={onConfirm}
+              variant={danger ? "danger" : "primary"}
+              disabled={loading}
+            >
+              {loading ? "Working..." : confirmLabel}
             </Button>
           </div>
         </div>

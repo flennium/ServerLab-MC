@@ -4,6 +4,7 @@ import { getSocket } from "../lib/socket.js";
 import { useStatsStore } from "./statsStore.js";
 import type {
   Server,
+  DeleteServerResponse,
   ServerListResponse,
   ServerResponse,
   CreateServerDto,
@@ -13,7 +14,7 @@ interface ServerStore {
   servers: Server[];
   fetchServers: () => Promise<void>;
   createServer: (dto: CreateServerDto) => Promise<Server>;
-  deleteServer: (id: string) => Promise<void>;
+  deleteServer: (id: string) => Promise<DeleteServerResponse>;
   startServer: (id: string) => Promise<void>;
   stopServer: (id: string) => Promise<void>;
   restartServer: (id: string) => Promise<void>;
@@ -38,8 +39,9 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   },
 
   deleteServer: async (id) => {
-    await api.delete(`/api/servers/${id}`);
+    const response = await api.delete<DeleteServerResponse>(`/api/servers/${id}`);
     set((s) => ({ servers: s.servers.filter((srv) => srv.id !== id) }));
+    return response;
   },
 
   startServer: async (id) => {
@@ -59,9 +61,7 @@ export const useServerStore = create<ServerStore>((set, get) => ({
 
   _patchStatus: (serverId, status) => {
     set((s) => ({
-      servers: s.servers.map((srv) =>
-        srv.id === serverId ? { ...srv, status } : srv
-      ),
+      servers: s.servers.map((srv) => (srv.id === serverId ? { ...srv, status } : srv)),
     }));
   },
 
