@@ -4,12 +4,6 @@ name: Build and Publish Release
   push:
     tags:
       - "v*"
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Release tag to publish, for example v3.0.0-beta.2"
-        required: true
-        type: string
 
 permissions:
   contents: write
@@ -30,23 +24,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Resolve release metadata
-        id: release
-        shell: pwsh
-        run: |
-          $tag = $env:GITHUB_REF_NAME
-          if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
-            $event = Get-Content -Raw -Path $env:GITHUB_EVENT_PATH | ConvertFrom-Json
-            $tag = $event.inputs.tag
-          }
-
-          if (-not $tag.StartsWith("v")) {
-            throw "Release tags must start with v, for example v3.0.0-beta.2"
-          }
-
-          "tag=$tag" >> $env:GITHUB_OUTPUT
-          "prerelease=$($tag.Contains('-').ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -89,7 +66,7 @@ jobs:
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: serverlab-mc-windows-${{ steps.release.outputs.tag }}
+          name: serverlab-mc-windows-${{ github.ref_name }}
           path: |
             release/*.exe
             release/*.blockmap
@@ -99,9 +76,9 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.release.outputs.tag }}
-          name: ServerLab MC ${{ steps.release.outputs.tag }}
-          prerelease: ${{ steps.release.outputs.prerelease }}
+          tag_name: ${{ github.ref_name }}
+          name: ServerLab MC ${{ github.ref_name }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           files: |
             release/*.exe
