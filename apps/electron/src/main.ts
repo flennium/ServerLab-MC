@@ -1,8 +1,9 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import path from "path";
 import fs from "fs";
 import { spawn, ChildProcess } from "child_process";
 import { createServer } from "net";
+import http from "http";
 import { autoUpdater } from "electron-updater";
 import crypto from "crypto";
 
@@ -114,6 +115,66 @@ async function findBackendPort(): Promise<number> {
   throw new Error("No local backend port is available");
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function checkBackendHealth(): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ready: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(ready);
+    };
+
+    const req = http.request(
+      {
+        hostname: "127.0.0.1",
+        port: backendPort,
+        path: "/health",
+        method: "GET",
+        timeout: 1000,
+        headers: {
+          Authorization: `Bearer ${BACKEND_TOKEN}`,
+        },
+      },
+      (res) => {
+        res.resume();
+        finish(res.statusCode === 200);
+      }
+    );
+
+    req.on("timeout", () => {
+      req.destroy();
+      finish(false);
+    });
+    req.on("error", () => finish(false));
+    req.end();
+  });
+}
+
+async function waitForBackend(timeoutMs = 30000): Promise<void> {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    if (!backendProcess) {
+      throw new Error("Backend process exited before it became ready");
+    }
+
+    if (await checkBackendHealth()) {
+      writeLaunchLog(`[main] backend ready on 127.0.0.1:${backendPort}`);
+      return;
+    }
+
+    await sleep(250);
+  }
+
+  throw new Error(`Backend did not become ready within ${timeoutMs}ms`);
+}
+
 function startBackend(): void {
   const dataDir = getDataDir();
 
@@ -142,6 +203,9 @@ function startBackend(): void {
   }
 
   const useElectronAsNode = !isDev && command === process.execPath;
+  writeLaunchLog(
+    `[main] starting backend command="${command}" port=${backendPort} dataDir="${dataDir}"`
+  );
   backendProcess = spawn(command, args, {
     env: {
       ...process.env,
@@ -325,11 +389,30 @@ ipcMain.handle("window:close", () => {
 });
 
 app.whenReady().then(async () => {
+  writeLaunchLog(
+    `[main] app ready packaged=${app.isPackaged} version=${app.getVersion()} userData="${getDataDir()}"`
+  );
+
   if (!isDev) {
     await runMigrations();
   }
   backendPort = await findBackendPort();
+  writeLaunchLog(`[main] selected backend port ${backendPort}`);
   startBackend();
+
+  try {
+    await waitForBackend();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown backend startup error";
+    writeLaunchLog(`[main:error] ${message}`);
+    if (!isDev) {
+      dialog.showErrorBox(
+        "ServerLab backend failed to start",
+        `${message}\n\nCheck the startup log in ${path.join(getDataDir(), "logs", "electron-main.log")}.`
+      );
+    }
+  }
+
   createWindow();
 
   app.on("activate", () => {

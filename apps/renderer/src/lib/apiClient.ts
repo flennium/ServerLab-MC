@@ -11,6 +11,14 @@ interface BackendConfig {
 }
 
 let configCache: BackendConfig | null = null;
+const RETRYABLE_FETCH_ATTEMPTS = 20;
+const RETRY_DELAY_MS = 250;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
 
 async function getConfig(): Promise<BackendConfig> {
   if (configCache) return configCache;
@@ -23,6 +31,25 @@ async function getConfig(): Promise<BackendConfig> {
   }
 
   return configCache!;
+}
+
+async function fetchWithStartupRetry(
+  url: string,
+  init: RequestInit
+): Promise<Response> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= RETRYABLE_FETCH_ATTEMPTS; attempt += 1) {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      lastError = error;
+      if (attempt === RETRYABLE_FETCH_ATTEMPTS) break;
+      await sleep(RETRY_DELAY_MS);
+    }
+  }
+
+  throw lastError;
 }
 
 async function request<T>(
@@ -38,7 +65,7 @@ async function request<T>(
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(url, {
+  const res = await fetchWithStartupRetry(url, {
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,

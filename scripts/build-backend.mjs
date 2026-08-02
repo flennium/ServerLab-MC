@@ -40,8 +40,6 @@ await build({
     "prisma",
     // Native addons
     "*.node",
-    // systeminformation has native bindings on some platforms
-    "systeminformation",
   ],
   // These packages are copied through electron-builder extraResources.
   packages: "bundle",
