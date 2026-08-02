@@ -2,14 +2,16 @@ import { app, BrowserWindow, ipcMain, shell } from "electron";
 import path from "path";
 import fs from "fs";
 import { spawn, ChildProcess } from "child_process";
+import { createServer } from "net";
 import { autoUpdater } from "electron-updater";
 import crypto from "crypto";
 
 const BACKEND_TOKEN = crypto.randomBytes(32).toString("hex");
-const BACKEND_PORT = 3001;
+const DEFAULT_BACKEND_PORT = 3001;
 
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcess | null = null;
+let backendPort = DEFAULT_BACKEND_PORT;
 
 const isDev = !app.isPackaged;
 
@@ -36,6 +38,20 @@ function getDataDir(): string {
   }
   // app.getPath("userData") = %APPDATA%\ServerLab MC on Windows
   return app.getPath("userData");
+}
+
+function writeLaunchLog(message: string): void {
+  try {
+    const logDir = path.join(getDataDir(), "logs");
+    fs.mkdirSync(logDir, { recursive: true });
+    fs.appendFileSync(
+      path.join(logDir, "electron-main.log"),
+      `[${new Date().toISOString()}] ${message}\n`,
+      "utf8"
+    );
+  } catch {
+    // Logging must never block startup.
+  }
 }
 
 function pathInside(candidate: string, root: string): boolean {
@@ -77,6 +93,27 @@ function getDatabaseUrl(dbPath: string): string {
   return `file:${dbPath}`;
 }
 
+function isPortFree(port: number, host = "127.0.0.1"): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = createServer();
+    server.once("error", () => resolve(false));
+    server.once("listening", () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, host);
+  });
+}
+
+async function findBackendPort(): Promise<number> {
+  if (isDev) return DEFAULT_BACKEND_PORT;
+
+  for (let port = DEFAULT_BACKEND_PORT; port < DEFAULT_BACKEND_PORT + 20; port += 1) {
+    if (await isPortFree(port)) return port;
+  }
+
+  throw new Error("No local backend port is available");
+}
+
 function startBackend(): void {
   const dataDir = getDataDir();
 
@@ -100,15 +137,16 @@ function startBackend(): void {
     }
   } else {
     const bundledNode = path.join(process.resourcesPath, "node", "node.exe");
-    const systemNode = "node";
-    command = fs.existsSync(bundledNode) ? bundledNode : systemNode;
+    command = fs.existsSync(bundledNode) ? bundledNode : process.execPath;
     args = [path.join(process.resourcesPath, "backend", "dist", "index.js")];
   }
 
+  const useElectronAsNode = !isDev && command === process.execPath;
   backendProcess = spawn(command, args, {
     env: {
       ...process.env,
-      PORT: String(BACKEND_PORT),
+      ...(useElectronAsNode ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
+      PORT: String(backendPort),
       BACKEND_TOKEN,
       NODE_ENV: isDev ? "development" : "production",
       DATA_DIR: dataDir,
@@ -122,14 +160,21 @@ function startBackend(): void {
 
   backendProcess.stdout?.on("data", (chunk: Buffer) => {
     console.log("[backend]", chunk.toString().trim());
+    writeLaunchLog(`[backend] ${chunk.toString().trim()}`);
   });
 
   backendProcess.stderr?.on("data", (chunk: Buffer) => {
     console.error("[backend:err]", chunk.toString().trim());
+    writeLaunchLog(`[backend:err] ${chunk.toString().trim()}`);
+  });
+
+  backendProcess.on("error", (error) => {
+    writeLaunchLog(`[backend:error] ${error.message}`);
   });
 
   backendProcess.on("exit", (code, signal) => {
     console.log(`[backend] exited code=${code} signal=${signal}`);
+    writeLaunchLog(`[backend] exited code=${code} signal=${signal}`);
     backendProcess = null;
   });
 }
@@ -151,7 +196,8 @@ async function runMigrations(): Promise<void> {
     "schema.prisma"
   );
   const bundledNode = path.join(process.resourcesPath, "node", "node.exe");
-  const nodeCmd = fs.existsSync(bundledNode) ? bundledNode : "node";
+  const hasBundledNode = fs.existsSync(bundledNode);
+  const nodeCmd = hasBundledNode ? bundledNode : process.execPath;
   const prismaCli = path.join(
     process.resourcesPath,
     "backend",
@@ -172,6 +218,7 @@ async function runMigrations(): Promise<void> {
       {
         env: {
           ...process.env,
+          ...(!hasBundledNode ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
           DATABASE_URL: `file:${dbPath}`,
         },
         stdio: "pipe",
@@ -236,7 +283,7 @@ function createWindow(): void {
 }
 
 ipcMain.handle("backend:config", () => ({
-  origin: `http://127.0.0.1:${BACKEND_PORT}`,
+  origin: `http://127.0.0.1:${backendPort}`,
   token: BACKEND_TOKEN,
 }));
 
@@ -281,6 +328,7 @@ app.whenReady().then(async () => {
   if (!isDev) {
     await runMigrations();
   }
+  backendPort = await findBackendPort();
   startBackend();
   createWindow();
 
