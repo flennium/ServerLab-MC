@@ -26,7 +26,7 @@
     "version:beta": "npm version 3.0.0-beta.2 --workspaces --include-workspace-root --no-git-tag-version",
     "release:check": "npm run lint && npm run test:ci && npm run package:ci",
     "test": "vitest run",
-    "test:ci": "vitest run --passWithNoTests",
+    "test:ci": "npm run prisma:generate --workspace=apps/backend && vitest run --passWithNoTests",
     "test:e2e": "playwright test"
   },
   "devDependencies": {
