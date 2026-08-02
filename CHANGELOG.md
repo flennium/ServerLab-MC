@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.0-beta.3
+
+### Added
+
+- Start Menu uninstall shortcut for Windows installs.
+
+### Changed
+
+- Bumped app and workspace versions to `3.0.0-beta.3`.
+
 ## 3.0.0-beta.2
 
 ### Added
