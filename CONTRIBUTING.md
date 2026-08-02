@@ -27,7 +27,7 @@ Run the relevant checks before opening a PR:
 
 ```powershell
 npm run lint
-npm test
+npm run test:ci
 npm run build
 ```
 

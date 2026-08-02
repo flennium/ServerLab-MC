@@ -159,12 +159,25 @@ Before publishing a release:
 
 1. Remove generated local data and build outputs from the working tree.
 2. Run `npm run lint`.
-3. Run `npm test`.
+3. Run `npm run test:ci`.
 4. Run `npm run build`.
 5. Run `npm run package`.
 6. Smoke test a fresh install and an upgrade from existing data.
 7. Test server creation, cached software reuse, Java runtime selection, server start/stop, file editing, backups, and settings.
-8. Update release notes and publish a GitHub release.
+8. Update release notes, create a version tag, and let GitHub Actions publish the release.
+
+## Automated Releases
+
+GitHub Actions builds and publishes Windows releases from version tags.
+
+```powershell
+git tag v3.0.0-beta.2
+git push origin v3.0.0-beta.2
+```
+
+The `Build and Publish Release` workflow runs `npm ci`, lint, CI-safe tests, and the Windows installer build. It uploads the installer, blockmap, and `latest.yml` to the GitHub Releases page.
+
+You can also run the workflow manually from the Actions tab and provide a `v...` release tag.
 
 Release history is tracked in [CHANGELOG.md](CHANGELOG.md).
 
