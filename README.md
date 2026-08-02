@@ -177,8 +177,6 @@ git push origin v3.0.0-beta.2
 
 The `Build and Publish Release` workflow runs `npm ci`, lint, CI-safe tests, and the Windows installer build. It uploads the installer, blockmap, and `latest.yml` to the GitHub Releases page.
 
-You can also run the workflow manually from the Actions tab and provide a `v...` release tag.
-
 Release history is tracked in [CHANGELOG.md](CHANGELOG.md).
 
 ## Roadmap
