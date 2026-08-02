@@ -7,7 +7,7 @@ type ButtonSize = "sm" | "md";
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    "border-copper bg-copper text-carbon shadow-[0_0_0_1px_rgba(217,130,59,0.25)] hover:bg-copper-hover hover:border-copper-hover",
+    "border-copper bg-copper text-carbon shadow-[0_0_0_1px_rgba(121,217,40,0.25)] hover:bg-copper-hover hover:border-copper-hover",
   secondary:
     "border-border bg-rail text-white hover:border-copper/60 hover:bg-surface-3",
   ghost:

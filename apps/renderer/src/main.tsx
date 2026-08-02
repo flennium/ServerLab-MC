@@ -41,8 +41,8 @@ class RootErrorBoundary extends React.Component<
             style={{
               marginTop: "1rem",
               padding: "0.5rem 1rem",
-              background: "#D9823B",
-              color: "#101214",
+              background: "#79D928",
+              color: "#071008",
               border: "none",
               borderRadius: "6px",
               cursor: "pointer",

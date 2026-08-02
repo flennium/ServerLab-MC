@@ -180,6 +180,7 @@ function startBackend(): void {
 
   fs.mkdirSync(path.join(dataDir, "backups"), { recursive: true });
   fs.mkdirSync(path.join(dataDir, "logs"), { recursive: true });
+  fs.mkdirSync(path.join(dataDir, "servers"), { recursive: true });
   fs.mkdirSync(path.join(dataDir, "java-runtimes"), { recursive: true });
   fs.mkdirSync(path.join(dataDir, "software-cache"), { recursive: true });
 
