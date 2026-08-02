@@ -17,7 +17,7 @@ Create, run, monitor, back up, and maintain local Minecraft servers from one pol
 
 ServerLab MC is an Electron desktop app backed by a local Node.js service and a React renderer. It is built for people who run Minecraft servers locally and want a focused interface for server creation, Java runtime management, console access, files, backups, monitoring, and cached server software downloads.
 
-Current beta: `3.0.0-beta.2`
+Current beta: `3.0.0-beta.3`
 
 ## Highlights
 
@@ -76,6 +76,10 @@ Legacy manual Java paths remain available as an advanced override.
 - Windows is the primary supported target.
 - Node.js 20 or newer.
 - npm 10 or newer.
+
+## Install And Uninstall
+
+The Windows installer registers ServerLab MC in Windows Apps & Features and creates Start Menu shortcuts. To remove the app, use Apps & Features or open Start Menu > ServerLab MC > Uninstall ServerLab MC.
 
 ## Getting Started
 
@@ -171,8 +175,8 @@ Before publishing a release:
 GitHub Actions builds and publishes Windows releases from version tags.
 
 ```powershell
-git tag v3.0.0-beta.2
-git push origin v3.0.0-beta.2
+git tag v3.0.0-beta.3
+git push origin v3.0.0-beta.3
 ```
 
 The `Build and Publish Release` workflow runs `npm ci`, lint, CI-safe tests, and the Windows installer build. It uploads the installer, blockmap, and `latest.yml` to the GitHub Releases page.

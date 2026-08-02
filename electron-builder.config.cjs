@@ -60,6 +60,7 @@ module.exports = {
     installerIcon: "build-resources/icon.ico",
     uninstallerIcon: "build-resources/icon.ico",
     license: "LICENSE",
+    include: "build-resources/installer.nsh",
   },
 
   publish: {
