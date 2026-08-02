@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { Activity, Blocks, Coffee, LayoutDashboard, Settings, Server } from "lucide-react";
+import { Activity, Coffee, LayoutDashboard, Settings, Server } from "lucide-react";
 import { useServerStore } from "../../store/serverStore.js";
 import { APP_VERSION } from "@serverlab/shared";
 import { toHashPath, useHashRoute } from "../../lib/router.js";
@@ -19,8 +19,13 @@ export function Sidebar() {
   return (
     <aside className="flex h-full w-20 shrink-0 flex-col border-r border-border bg-carbon/95 sm:w-64">
       <div className="flex h-20 items-center gap-3 border-b border-border px-4 sm:px-5">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-copper/40 bg-copper/15 text-copper">
-          <Blocks className="h-5 w-5" aria-hidden="true" />
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-copper/35 bg-copper/10 shadow-[0_0_24px_rgba(121,217,40,0.16)]">
+          <img
+            src="/serverlab-icon.png"
+            alt=""
+            aria-hidden="true"
+            className="h-10 w-10 object-cover"
+          />
         </div>
         <div className="hidden min-w-0 sm:block">
           <p className="font-display text-base font-semibold tracking-normal">ServerLab MC</p>

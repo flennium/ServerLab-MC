@@ -18,11 +18,11 @@
   }
 
   ::selection {
-    @apply bg-copper/30 text-white;
+    @apply bg-copper/25 text-white;
   }
 
   :focus-visible {
-    @apply outline-none ring-2 ring-copper/70 ring-offset-2 ring-offset-carbon;
+    @apply outline-none ring-2 ring-copper/80 ring-offset-2 ring-offset-carbon;
   }
 
   ::-webkit-scrollbar {
@@ -52,8 +52,8 @@
 
   .operator-grid {
     background-image:
-      linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+      linear-gradient(rgba(121, 217, 40, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(121, 217, 40, 0.025) 1px, transparent 1px);
     background-size: 24px 24px;
   }
 

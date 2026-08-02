@@ -4,7 +4,7 @@ import type { ServerStatus } from "@serverlab/shared";
 const CONFIG: Record<ServerStatus, { label: string; dot: string; shell: string }> = {
   running: {
     label: "Running",
-    dot: "bg-grass shadow-[0_0_12px_rgba(76,175,80,0.65)]",
+    dot: "bg-grass shadow-[0_0_12px_rgba(100,214,58,0.65)]",
     shell: "border-grass/30 bg-grass/10 text-grass",
   },
   starting: {

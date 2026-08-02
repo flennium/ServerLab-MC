@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.0-beta.4
+
+### Added
+
+- Default server creation location under the app data `servers` folder.
+- Optional custom server folder selection during server creation.
+- App logo in the title bar and main sidebar.
+
+### Changed
+
+- Bumped app and workspace versions to `3.0.0-beta.4`.
+- Updated the UI theme to use the logo-inspired graphite and green palette.
+
 ## 3.0.0-beta.3
 
 ### Added

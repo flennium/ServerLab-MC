@@ -12,7 +12,12 @@ export function AppShell({ children }: AppShellProps) {
     <div className="operator-grid flex h-screen w-screen flex-col overflow-hidden bg-carbon text-white">
       <header className="app-drag flex h-9 shrink-0 items-center justify-between border-b border-border bg-carbon/95 pl-4">
         <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-copper" aria-hidden="true" />
+          <img
+            src="/serverlab-icon.png"
+            alt=""
+            aria-hidden="true"
+            className="h-5 w-5 rounded border border-copper/30 object-cover"
+          />
           <span className="font-mono text-[0.68rem] uppercase tracking-[0.18em] text-muted">
             ServerLab MC
           </span>

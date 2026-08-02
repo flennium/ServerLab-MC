@@ -41,6 +41,37 @@ const stageLabels: Record<string, string> = {
   cancelled: "Cancelled",
 };
 
+function trimTrailingSeparators(value: string): string {
+  return value.replace(/[\\/]+$/, "");
+}
+
+function pathSeparator(root: string): string {
+  return root.includes("\\") ? "\\" : "/";
+}
+
+function joinPath(root: string, child: string): string {
+  return `${trimTrailingSeparators(root)}${pathSeparator(root)}${child}`;
+}
+
+function serverFolderName(name: string): string {
+  const cleaned = name
+    .trim()
+    .toLowerCase()
+    .split("")
+    .filter((character) => character.charCodeAt(0) >= 32)
+    .join("")
+    .replace(/[<>:"/\\|?*]/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  return cleaned || "new-server";
+}
+
+function managedServerPath(serverRoot: string, name: string): string {
+  return joinPath(serverRoot, serverFolderName(name));
+}
+
 export function CreateServerModal({ onClose }: CreateServerModalProps) {
   const { createServer } = useServerStore();
   const [loading, setLoading] = useState(false);
@@ -61,6 +92,8 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
   const [javaProgress, setJavaProgress] = useState<JavaInstallProgressPayload | null>(null);
   const [activeDownloadId, setActiveDownloadId] = useState<string | null>(null);
   const [activeJavaInstallId, setActiveJavaInstallId] = useState<string | null>(null);
+  const [serverRoot, setServerRoot] = useState("");
+  const [customLocation, setCustomLocation] = useState(false);
 
   const [form, setForm] = useState<CreateServerDto>({
     name: "",
@@ -112,6 +145,17 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
   useEffect(() => {
     loadRuntimes();
     api
+      .get<{ path: string }>("/api/data-path")
+      .then(({ path }) => {
+        const root = joinPath(path, "servers");
+        setServerRoot(root);
+        setForm((current) => ({
+          ...current,
+          path: managedServerPath(root, current.name),
+        }));
+      })
+      .catch(() => {});
+    api
       .get<SoftwareProviderListResponse>("/api/software/providers")
       .then(({ providers }) => {
         setProviders(providers);
@@ -120,6 +164,14 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
       })
       .catch((error) => setError(error instanceof Error ? error.message : "Failed to load providers"));
   }, []);
+
+  useEffect(() => {
+    if (!serverRoot || customLocation) return;
+    setForm((current) => ({
+      ...current,
+      path: managedServerPath(serverRoot, current.name),
+    }));
+  }, [customLocation, form.name, serverRoot]);
 
   useEffect(() => {
     setForm((current) => ({ ...current, software: provider }));
@@ -222,6 +274,13 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
     }
   }
 
+  function setCustomServerLocation(enabled: boolean) {
+    setCustomLocation(enabled);
+    if (!enabled && serverRoot) {
+      set("path", managedServerPath(serverRoot, form.name));
+    }
+  }
+
   async function handleScanJava() {
     await api.post("/api/java/detect");
     await loadRuntimes();
@@ -307,9 +366,32 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
             <TextInput value={form.name} onChange={(event) => set("name", event.target.value)} placeholder="Survival development" required />
           </Field>
           <Field label="Server folder" required>
-            <div className="flex gap-2">
-              <TextInput value={form.path} onChange={(event) => set("path", event.target.value)} placeholder="C:\\servers\\survival" className="flex-1" required />
-              <Button type="button" onClick={handleBrowse} icon={FolderOpen} variant="secondary">Browse</Button>
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <TextInput
+                  value={form.path}
+                  onChange={(event) => set("path", event.target.value)}
+                  placeholder={serverRoot ? managedServerPath(serverRoot, form.name) : "Loading app server folder..."}
+                  className="flex-1"
+                  readOnly={!customLocation}
+                  required
+                />
+                <Button type="button" onClick={handleBrowse} icon={FolderOpen} variant="secondary" disabled={!customLocation}>
+                  Browse
+                </Button>
+              </div>
+              <div className="rounded border border-border bg-surface-console px-3 py-2">
+                <Switch
+                  label="Use custom server location"
+                  checked={customLocation}
+                  onChange={setCustomServerLocation}
+                />
+                {!customLocation && (
+                  <p className="mt-2 text-xs text-muted">
+                    Servers are stored under the app data servers folder by default.
+                  </p>
+                )}
+              </div>
             </div>
           </Field>
         </div>
