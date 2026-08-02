@@ -1,0 +1,112 @@
+name: Build and Publish Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, for example v3.0.0-beta.2"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Windows installer
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      ELECTRON_CACHE: ${{ runner.temp }}\electron-cache
+      ELECTRON_BUILDER_CACHE: ${{ runner.temp }}\electron-builder-cache
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release metadata
+        id: release
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.tag }}"
+          if (-not $tag) {
+            $tag = "${{ github.ref_name }}"
+          }
+
+          if (-not $tag.StartsWith("v")) {
+            throw "Release tags must start with v, for example v3.0.0-beta.2"
+          }
+
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "prerelease=$($tag.Contains('-').ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test:ci
+
+      - name: Build installer
+        run: npm run package:ci
+
+      - name: Verify release assets
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path release -Filter "ServerLab MC Setup *.exe" | Select-Object -First 1
+          if (-not $installer) {
+            throw "Installer was not created."
+          }
+
+          $blockmap = Get-ChildItem -Path release -Filter "ServerLab MC Setup *.exe.blockmap" | Select-Object -First 1
+          if (-not $blockmap) {
+            throw "Installer blockmap was not created."
+          }
+
+          if (-not (Test-Path "release/latest.yml")) {
+            throw "latest.yml was not created."
+          }
+
+          Write-Host "Installer: $($installer.FullName)"
+          Write-Host "Blockmap:  $($blockmap.FullName)"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: serverlab-mc-windows-${{ steps.release.outputs.tag }}
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          name: ServerLab MC ${{ steps.release.outputs.tag }}
+          prerelease: ${{ steps.release.outputs.prerelease }}
+          generate_release_notes: true
+          files: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
