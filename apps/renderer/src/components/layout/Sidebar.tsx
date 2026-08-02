@@ -21,7 +21,7 @@ export function Sidebar() {
       <div className="flex h-20 items-center gap-3 border-b border-border px-4 sm:px-5">
         <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-copper/35 bg-copper/10 shadow-[0_0_24px_rgba(121,217,40,0.16)]">
           <img
-            src="/serverlab-icon.png"
+            src="./serverlab-icon.png"
             alt=""
             aria-hidden="true"
             className="h-10 w-10 object-cover"

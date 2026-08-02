@@ -72,8 +72,18 @@ function managedServerPath(serverRoot: string, name: string): string {
   return joinPath(serverRoot, serverFolderName(name));
 }
 
+function nextAvailablePort(usedPorts: number[], start = 25565): number {
+  const used = new Set(usedPorts);
+  let port = start;
+  while (used.has(port) && port < 65535) {
+    port += 1;
+  }
+  return port;
+}
+
 export function CreateServerModal({ onClose }: CreateServerModalProps) {
   const { createServer } = useServerStore();
+  const servers = useServerStore((state) => state.servers);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [providers, setProviders] = useState<SoftwareProviderInfo[]>([]);
@@ -113,6 +123,10 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
   const compatibleRuntimes = recommendation
     ? runtimes.filter((runtime) => runtime.status === "valid" && runtime.major >= recommendation.requiredMajor)
     : runtimes.filter((runtime) => runtime.status === "valid");
+  const suggestedPort = useMemo(
+    () => nextAvailablePort(servers.map((server) => server.port)),
+    [servers]
+  );
 
   const canCreate = useMemo(
     () =>
@@ -164,6 +178,12 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
       })
       .catch((error) => setError(error instanceof Error ? error.message : "Failed to load providers"));
   }, []);
+
+  useEffect(() => {
+    setForm((current) =>
+      current.port === 25565 ? { ...current, port: suggestedPort } : current
+    );
+  }, [suggestedPort]);
 
   useEffect(() => {
     if (!serverRoot || customLocation) return;
@@ -446,6 +466,9 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
           </Field>
           <Field label="Port">
             <TextInput type="number" value={form.port} onChange={(event) => set("port", Number(event.target.value))} min={1024} max={65535} />
+            <p className="mt-1 text-xs text-muted">
+              New servers use the next free port automatically.
+            </p>
           </Field>
         </div>
 

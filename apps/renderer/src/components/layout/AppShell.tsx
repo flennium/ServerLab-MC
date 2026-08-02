@@ -13,7 +13,7 @@ export function AppShell({ children }: AppShellProps) {
       <header className="app-drag flex h-9 shrink-0 items-center justify-between border-b border-border bg-carbon/95 pl-4">
         <div className="flex items-center gap-2">
           <img
-            src="/serverlab-icon.png"
+            src="./serverlab-icon.png"
             alt=""
             aria-hidden="true"
             className="h-5 w-5 rounded border border-copper/30 object-cover"

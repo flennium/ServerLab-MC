@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.0.0-beta.5
+
+### Changed
+
+- Switched UI logo references to packaged-safe relative paths.
+- New server creation now suggests the next available server port.
+
+### Fixed
+
+- App logo now renders correctly in packaged Electron builds.
+- Creating multiple servers no longer defaults them all to port `25565`.
+
 ## 3.0.0-beta.4
 
 ### Added
