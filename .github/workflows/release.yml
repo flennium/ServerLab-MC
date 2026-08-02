@@ -1,6 +1,6 @@
 name: Build and Publish Release
 
-on:
+"on":
   push:
     tags:
       - "v*"
@@ -13,10 +13,6 @@ on:
 
 permissions:
   contents: write
-
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
 
 jobs:
   windows:
@@ -39,9 +35,10 @@ jobs:
         id: release
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            $tag = "${{ inputs.tag }}"
+          $tag = $env:GITHUB_REF_NAME
+          if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") {
+            $event = Get-Content -Raw -Path $env:GITHUB_EVENT_PATH | ConvertFrom-Json
+            $tag = $event.inputs.tag
           }
 
           if (-not $tag.StartsWith("v")) {
