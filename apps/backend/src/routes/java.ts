@@ -98,6 +98,20 @@ javaRoutes.post("/installations", async (req, res, next) => {
   }
 });
 
+javaRoutes.get("/installations/:id", async (req, res, next) => {
+  try {
+    const install = await prisma.javaInstallJob.findUnique({
+      where: { id: req.params.id },
+    });
+    if (!install) {
+      throw new HttpError(404, "Java installation not found");
+    }
+    res.json({ install });
+  } catch (err) {
+    next(err);
+  }
+});
+
 javaRoutes.post("/installations/:id/cancel", async (req, res, next) => {
   try {
     const install = await javaInstallService.cancel(req.params.id);

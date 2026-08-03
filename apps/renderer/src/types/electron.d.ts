@@ -1,7 +1,4 @@
-/**
- * Type declarations for APIs exposed by the Electron preload via contextBridge.
- * These are globally available on `window.serverlab` inside the renderer.
- */
+// Renderer access is limited to the preload bridge defined by Electron.
 export {};
 
 declare global {
@@ -11,7 +8,16 @@ declare global {
       openDirectoryDialog: () => Promise<string | null>;
       openPath: (path: string) => Promise<void>;
       getAppVersion: () => Promise<string>;
+      getDiagnostics: () => Promise<{
+        version: string;
+        platform: string;
+        packaged: boolean;
+        backendOrigin: string;
+        dataDir: string;
+      }>;
       getPlatform: () => string;
+      openDevTools: () => Promise<void>;
+      closeDevTools: () => Promise<void>;
       minimizeWindow: () => Promise<void>;
       toggleMaximizeWindow: () => Promise<boolean>;
       closeWindow: () => Promise<void>;

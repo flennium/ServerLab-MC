@@ -7,6 +7,10 @@ import { Button } from "../ui/Button.js";
 import { Field, Select, Switch, TextInput } from "../ui/Form.js";
 import { api } from "../../lib/apiClient.js";
 import { getSocket } from "../../lib/socket.js";
+import {
+  isSuccessfulJobStatus,
+  shouldKeepJobProgress,
+} from "../../lib/jobLifecycle.js";
 import type {
   CreateServerDto,
   JavaInstallProgressPayload,
@@ -254,14 +258,24 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
       .then((socket) => {
         if (disposed) return;
         const softwareHandler = (payload: SoftwareDownloadProgressPayload) => {
-          if (payload.downloadId === activeDownloadId) setSoftwareProgress(payload);
+          if (payload.downloadId !== activeDownloadId) return;
+          setSoftwareProgress(payload);
+          if (!shouldKeepJobProgress(payload.status)) {
+            setActiveDownloadId(null);
+            setSoftwareProgress(null);
+          } else if (payload.status === "failed" || payload.status === "cancelled") {
+            setActiveDownloadId(null);
+          }
         };
         const javaHandler = (payload: JavaInstallProgressPayload) => {
           if (payload.installId !== activeJavaInstallId) return;
           setJavaProgress(payload);
-          if (payload.status === "completed") {
+          if (isSuccessfulJobStatus(payload.status)) {
             setActiveJavaInstallId(null);
-            loadRuntimes();
+            setJavaProgress(null);
+            void loadRuntimes();
+          } else if (payload.status === "failed" || payload.status === "cancelled") {
+            setActiveJavaInstallId(null);
           }
         };
         socket.on("software:download-progress", softwareHandler);
@@ -316,6 +330,8 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
         major: recommendation.requiredMajor,
         requestId,
       });
+      setActiveJavaInstallId(null);
+      setJavaProgress(null);
       await loadRuntimes();
       if (result.runtime) {
         setJavaRuntimeId(result.runtime.id);
@@ -370,6 +386,8 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
           requestId,
         },
       });
+      setActiveDownloadId(null);
+      setSoftwareProgress(null);
       onClose();
     } catch (error) {
       setError(error instanceof Error ? error.message : "Failed to create server");
@@ -526,6 +544,7 @@ function JavaRuntimePanel({
   onScan: () => void;
 }) {
   const percent = Math.round(progress?.percent ?? 0);
+  const failed = progress?.status === "failed" || progress?.status === "cancelled";
   return (
     <div className="rounded border border-border bg-rail p-3">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -567,16 +586,24 @@ function JavaRuntimePanel({
         <div className="mt-3">
           <div className="mb-1 flex justify-between text-xs text-muted">
             <span>{stageLabels[progress.stage] ?? progress.stage}</span>
-            <span className="font-mono text-white">{percent}%</span>
+            <span className={failed ? "font-mono text-redstone" : "font-mono text-white"}>
+              {percent}%
+            </span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-panel">
-            <div className="h-full bg-copper transition-all" style={{ width: `${percent}%` }} />
+            <div
+              className={
+                failed ? "h-full bg-redstone transition-all" : "h-full bg-copper transition-all"
+              }
+              style={{ width: `${percent}%` }}
+            />
           </div>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
             <span>{formatBytes(progress.bytesReceived)}{progress.totalBytes ? ` / ${formatBytes(progress.totalBytes)}` : ""}</span>
             <span>{formatBytes(progress.speedBytesPerSec)}/s{progress.etaSeconds !== null ? `, ${formatDuration(progress.etaSeconds)} left` : ""}</span>
             {installing && <Button type="button" onClick={onCancelInstall} icon={X} variant="danger" size="sm">Cancel</Button>}
           </div>
+          {progress.error && <p className="mt-2 text-xs text-redstone">{progress.error}</p>}
         </div>
       )}
     </div>
@@ -625,6 +652,7 @@ function SoftwareStatus({
         <span>{formatBytes(progress.speedBytesPerSec)}/s{progress.etaSeconds !== null ? `, ${formatDuration(progress.etaSeconds)} left` : ""}</span>
         {cancellable && <Button type="button" onClick={onCancel} icon={X} variant="danger" size="sm">Cancel</Button>}
       </div>
+      {progress.error && <p className="mt-2 text-xs text-redstone">{progress.error}</p>}
     </div>
   );
 }

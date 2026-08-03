@@ -14,6 +14,11 @@ import { getSocket } from "../lib/socket.js";
 import { Alert, Card, PageHeader, StatTile } from "../components/ui/Layout.js";
 import { Button, IconButton } from "../components/ui/Button.js";
 import { Field, Select } from "../components/ui/Form.js";
+import {
+  getTerminalJobMessage,
+  isSuccessfulJobStatus,
+  shouldKeepJobProgress,
+} from "../lib/jobLifecycle.js";
 import type {
   JavaInstallProgressPayload,
   JavaInstallResponse,
@@ -88,7 +93,15 @@ export function JavaManagerPage() {
           setProgress(payload);
           if (payload.status === "completed") {
             setInstallingId(null);
-            load();
+            setMessage(getTerminalJobMessage(payload.status, `Java ${payload.major}`));
+            setProgress(null);
+            void load();
+          } else if (!shouldKeepJobProgress(payload.status)) {
+            setInstallingId(null);
+            setMessage(getTerminalJobMessage(payload.status, `Java ${payload.major}`));
+            setProgress(null);
+          } else if (payload.status === "failed" || payload.status === "cancelled") {
+            setInstallingId(null);
           }
         };
         socket.on("java:install-progress", handler);
@@ -149,7 +162,36 @@ export function JavaManagerPage() {
         provider,
         requestId,
       });
-      if (result.runtime) setMessage(`Java ${result.runtime.major} installed.`);
+      setInstallingId(null);
+      if (isSuccessfulJobStatus(result.install.status)) {
+        setProgress(null);
+        setMessage(
+          result.runtime
+            ? getTerminalJobMessage(result.install.status, `Java ${result.runtime.major}`)
+            : getTerminalJobMessage(result.install.status, `Java ${installMajor}`)
+        );
+      } else {
+        const percent =
+          result.install.totalBytes && result.install.totalBytes > 0
+            ? (result.install.bytesReceived / result.install.totalBytes) * 100
+            : result.install.stage === "done"
+              ? 100
+              : 0;
+        setProgress({
+          installId: result.install.id,
+          provider: result.install.provider,
+          major: result.install.major,
+          version: result.install.version,
+          status: result.install.status,
+          stage: result.install.stage,
+          bytesReceived: result.install.bytesReceived,
+          totalBytes: result.install.totalBytes,
+          percent,
+          speedBytesPerSec: result.install.speedBytesPerSec,
+          etaSeconds: result.install.etaSeconds,
+          error: result.install.error ?? undefined,
+        });
+      }
       await load();
     } catch (error) {
       setError(error instanceof Error ? error.message : "Java installation failed");
@@ -161,6 +203,7 @@ export function JavaManagerPage() {
     if (!installingId) return;
     await api.post(`/api/java/installations/${installingId}/cancel`);
     setInstallingId(null);
+    setMessage("Java installation cancelled.");
   }
 
   async function validateRuntime(runtime: JavaRuntime) {
@@ -493,15 +536,20 @@ function GuidanceRow({
 
 function ProgressBlock({ progress }: { progress: JavaInstallProgressPayload }) {
   const percent = Math.round(progress.percent);
+  const failed = progress.status === "failed" || progress.status === "cancelled";
   return (
     <div className="mt-4 rounded border border-border bg-rail p-3">
       <div className="mb-2 flex justify-between text-xs text-muted">
         <span className="capitalize">{progress.stage.replace(/-/g, " ")}</span>
-        <span className="font-mono text-white">{percent}%</span>
+        <span className={failed ? "font-mono text-redstone" : "font-mono text-white"}>
+          {percent}%
+        </span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-panel">
         <div
-          className="h-full bg-copper transition-all"
+          className={
+            failed ? "h-full bg-redstone transition-all" : "h-full bg-copper transition-all"
+          }
           style={{ width: `${percent}%` }}
         />
       </div>
@@ -517,6 +565,7 @@ function ProgressBlock({ progress }: { progress: JavaInstallProgressPayload }) {
             : ""}
         </span>
       </div>
+      {progress.error && <p className="mt-2 text-xs text-redstone">{progress.error}</p>}
     </div>
   );
 }

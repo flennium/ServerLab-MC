@@ -3,7 +3,7 @@ import type { ServerFramework } from "@serverlab/shared";
 import { softwareProviderRegistry } from "../services/software/providers.js";
 import { softwareCacheService } from "../services/software/SoftwareCacheService.js";
 import { softwareDownloadService } from "../services/software/SoftwareDownloadService.js";
-import { badRequest } from "../middleware/error.js";
+import { badRequest, HttpError } from "../middleware/error.js";
 
 export const softwareRoutes = Router();
 
@@ -129,6 +129,18 @@ softwareRoutes.post("/downloads", async (req, res, next) => {
       requestId: typeof req.body.requestId === "string" ? req.body.requestId : undefined,
     });
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+softwareRoutes.get("/downloads/:id", async (req, res, next) => {
+  try {
+    const download = await softwareDownloadService.getDownload(req.params.id);
+    if (!download) {
+      throw new HttpError(404, "Software download not found");
+    }
+    res.json({ download });
   } catch (err) {
     next(err);
   }

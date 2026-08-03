@@ -130,6 +130,10 @@ export interface SoftwareDownloadResponse {
   cached: boolean;
 }
 
+export interface SoftwareDownloadJobResponse {
+  download: SoftwareDownload;
+}
+
 // Console
 export interface SendCommandDto {
   command: string;
@@ -198,6 +202,10 @@ export interface JavaRuntimeListResponse {
 export interface JavaInstallResponse {
   install: JavaInstallJob;
   runtime: JavaRuntime | null;
+}
+
+export interface JavaInstallJobResponse {
+  install: JavaInstallJob;
 }
 
 export interface JavaRecommendationResponse {
