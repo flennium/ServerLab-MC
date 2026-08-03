@@ -80,7 +80,15 @@ async function resolveJavaSelection(input: {
   const allowUnsupportedJava = input.allowUnsupportedJava ?? false;
 
   if (javaOverrideMode === "manual") {
-    await javaRuntimeValidator.validateExecutable(input.javaPath);
+    try {
+      await javaRuntimeValidator.validateExecutable(input.javaPath);
+    } catch (error) {
+      throw badRequest(
+        error instanceof Error
+          ? error.message
+          : "Java executable could not be validated"
+      );
+    }
     return {
       javaRuntimeId: null,
       javaPath: input.javaPath,
@@ -99,7 +107,7 @@ async function resolveJavaSelection(input: {
   if (!runtime) runtime = recommendation.compatibleRuntime;
   if (!runtime) {
     if (input.strict) {
-      throw new Error(
+      throw badRequest(
         `Java ${recommendation.requiredMajor} is required. Install or select a compatible runtime.`
       );
     }
@@ -120,7 +128,7 @@ async function resolveJavaSelection(input: {
       allowUnsupportedJava
     )
   ) {
-    throw new Error(
+    throw badRequest(
       `Selected Java runtime is not compatible. Java ${recommendation.requiredMajor} is required.`
     );
   }
@@ -155,7 +163,21 @@ serverRoutes.post("/", async (req, res, next) => {
       if (!body.eulaAccepted) {
         throw badRequest("Minecraft EULA acceptance is required");
       }
+      version = body.softwareSource.minecraftVersion;
+      software = body.softwareSource.provider;
+    }
 
+    const javaSelection = await resolveJavaSelection({
+      version,
+      software,
+      javaRuntimeId: body.javaRuntimeId,
+      javaPath: body.javaPath,
+      javaOverrideMode: body.javaOverrideMode,
+      allowUnsupportedJava: body.allowUnsupportedJava,
+      strict: Boolean(body.softwareSource),
+    });
+
+    if (body.softwareSource) {
       const requestId = body.softwareSource.requestId;
       const { artifact } = await softwareDownloadService.ensureArtifact({
         provider: body.softwareSource.provider,
@@ -174,19 +196,7 @@ serverRoutes.post("/", async (req, res, next) => {
         await softwareDownloadService.markStage(requestId, "writing-eula");
         await softwareDownloadService.markStage(requestId, "done");
       }
-      version = body.softwareSource.minecraftVersion;
-      software = body.softwareSource.provider;
     }
-
-    const javaSelection = await resolveJavaSelection({
-      version,
-      software,
-      javaRuntimeId: body.javaRuntimeId,
-      javaPath: body.javaPath,
-      javaOverrideMode: body.javaOverrideMode,
-      allowUnsupportedJava: body.allowUnsupportedJava,
-      strict: Boolean(body.softwareSource),
-    });
 
     const server = await prisma.server.create({
       data: {

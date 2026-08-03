@@ -447,7 +447,7 @@ function ServerSettings({ server }: { server: ServerModel }) {
   }
 
   return (
-    <Card className="max-w-3xl p-5">
+    <Card className="w-full max-w-5xl p-4 sm:p-5">
       <div className="mb-5">
         <h2 className="font-display text-lg font-semibold">Runtime settings</h2>
         <p className="mt-1 text-sm text-muted">
@@ -455,7 +455,7 @@ function ServerSettings({ server }: { server: ServerModel }) {
         </p>
       </div>
 
-      <div className="grid gap-4">
+      <div className="grid min-w-0 gap-4">
         <Field label="Name">
           <TextInput
             type="text"
@@ -515,15 +515,15 @@ function ServerSettings({ server }: { server: ServerModel }) {
           </Field>
         </div>
 
-        <div className="grid gap-3 rounded-lg border border-border bg-surface-console p-4 md:grid-cols-2">
-          <div>
+        <div className="grid min-w-0 gap-4 rounded-lg border border-border bg-surface-console p-4 lg:grid-cols-2">
+          <div className="min-w-0">
             <div className="mb-2 flex items-center gap-2">
               <ShieldAlert className="h-4 w-4 text-copper" aria-hidden="true" />
               <h3 className="font-display text-sm font-semibold text-white">
                 Compatibility
               </h3>
             </div>
-            <div className="grid gap-2">
+            <div className="grid min-w-0 gap-2">
               <LabelValue label="Server" value={`${server.software} ${server.version}`} />
               <LabelValue
                 label="Required Java"
@@ -537,7 +537,7 @@ function ServerSettings({ server }: { server: ServerModel }) {
               />
             </div>
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="mb-2 flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 text-grass" aria-hidden="true" />
               <h3 className="font-display text-sm font-semibold text-white">
@@ -549,7 +549,7 @@ function ServerSettings({ server }: { server: ServerModel }) {
                 {form.javaPath?.trim() || "No manual executable selected"}
               </p>
             ) : selectedRuntime ? (
-              <div className="grid gap-2">
+              <div className="grid min-w-0 gap-2">
                 <LabelValue
                   label="Version"
                   value={`Java ${selectedRuntime.major} (${selectedRuntime.version})`}

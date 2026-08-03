@@ -4,6 +4,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   Activity,
   Bug,
+  Coffee,
   Copy,
   Database,
   FolderOpen,
@@ -19,6 +20,9 @@ import { LabelValue } from "../components/ui/Form.js";
 import { api } from "../lib/apiClient.js";
 import {
   APP_VERSION,
+  type JavaRuntime,
+  type JavaRuntimeListResponse,
+  type ServerListResponse,
   type SoftwareArtifact,
   type SoftwareArtifactListResponse,
   type TemplateCapabilityResponse,
@@ -286,6 +290,8 @@ function SettingsCard({
 
 function SoftwareCachePanel() {
   const [artifacts, setArtifacts] = useState<SoftwareArtifact[]>([]);
+  const [javaRuntimes, setJavaRuntimes] = useState<JavaRuntime[]>([]);
+  const [runtimeUsage, setRuntimeUsage] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -293,11 +299,22 @@ function SoftwareCachePanel() {
     setLoading(true);
     setError(null);
     try {
-      const { artifacts } =
-        await api.get<SoftwareArtifactListResponse>("/api/software/cache");
-      setArtifacts(artifacts);
+      const [softwareData, javaData, serverData] = await Promise.all([
+        api.get<SoftwareArtifactListResponse>("/api/software/cache"),
+        api.get<JavaRuntimeListResponse>("/api/java/runtimes"),
+        api.get<ServerListResponse>("/api/servers"),
+      ]);
+      setArtifacts(softwareData.artifacts);
+      setJavaRuntimes(javaData.runtimes.filter((runtime) => runtime.source === "managed"));
+      const usage: Record<string, number> = {};
+      for (const server of serverData.servers) {
+        if (server.javaRuntimeId) {
+          usage[server.javaRuntimeId] = (usage[server.javaRuntimeId] ?? 0) + 1;
+        }
+      }
+      setRuntimeUsage(usage);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Failed to load software cache");
+      setError(error instanceof Error ? error.message : "Failed to load cache");
     } finally {
       setLoading(false);
     }
@@ -323,6 +340,21 @@ function SoftwareCachePanel() {
     }
   }
 
+  async function removeRuntime(id: string) {
+    setError(null);
+    try {
+      await api.delete(`/api/java/runtimes/${id}`);
+      await load();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Failed to remove Java runtime");
+    }
+  }
+
+  async function revealRuntime(runtime: JavaRuntime) {
+    if (!window.serverlab?.openPath) return;
+    await window.serverlab.openPath(runtime.path);
+  }
+
   return (
     <Card className="p-5 lg:col-span-2">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -346,71 +378,171 @@ function SoftwareCachePanel() {
         </div>
       </div>
 
-      {error && <Alert tone="danger">{error}</Alert>}
+      {error && <Alert tone="danger" className="mb-4">{error}</Alert>}
 
-      {artifacts.length === 0 ? (
+      <div className="grid gap-5">
+        <CacheSection
+          icon={Database}
+          title="Server software"
+          emptyTitle={loading ? "Loading server software..." : "No cached server software"}
+          emptyDescription="Downloaded server jars will appear here after server creation."
+        >
+          {artifacts.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[680px] text-left text-sm">
+                <thead className="border-b border-border text-xs uppercase text-muted">
+                  <tr>
+                    <th className="pb-2 font-semibold">Provider</th>
+                    <th className="pb-2 font-semibold">Minecraft</th>
+                    <th className="pb-2 font-semibold">Build</th>
+                    <th className="pb-2 font-semibold">Size</th>
+                    <th className="pb-2 font-semibold">Last used</th>
+                    <th className="pb-2 font-semibold">Status</th>
+                    <th className="pb-2 text-right font-semibold">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {artifacts.map((artifact) => (
+                    <tr key={artifact.id}>
+                      <td className="py-3 font-semibold capitalize text-white">
+                        {artifact.provider}
+                      </td>
+                      <td className="py-3 font-mono text-xs text-white">
+                        {artifact.minecraftVersion}
+                      </td>
+                      <td className="py-3 font-mono text-xs text-muted">
+                        {artifact.buildId}
+                      </td>
+                      <td className="py-3 text-muted">
+                        {formatBytes(artifact.sizeBytes)}
+                      </td>
+                      <td className="py-3 text-muted">
+                        {formatDate(
+                          artifact.lastUsedAt ?? artifact.downloadedAt ?? artifact.createdAt
+                        )}
+                      </td>
+                      <td className="py-3">
+                        <span className="rounded border border-border bg-rail px-2 py-1 text-xs capitalize text-muted">
+                          {artifact.status}
+                        </span>
+                      </td>
+                      <td className="py-3 text-right">
+                        <Button
+                          onClick={() => removeArtifact(artifact.id)}
+                          icon={Trash2}
+                          variant="danger"
+                          size="sm"
+                        >
+                          Remove
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CacheSection>
+
+        <CacheSection
+          icon={Coffee}
+          title="Java runtime files"
+          emptyTitle={loading ? "Loading Java cache..." : "No cached Java runtimes"}
+          emptyDescription="Managed Java runtimes installed by ServerLab will appear here."
+        >
+          {javaRuntimes.length > 0 && (
+            <div className="grid gap-2">
+              {javaRuntimes.map((runtime) => {
+                const usedBy = runtimeUsage[runtime.id] ?? 0;
+                return (
+                  <div
+                    key={runtime.id}
+                    className="grid gap-3 rounded border border-border bg-rail px-3 py-3 md:grid-cols-[minmax(0,1fr)_auto]"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-white">
+                          Java {runtime.major}
+                        </span>
+                        <span className="rounded border border-border bg-panel px-2 py-0.5 text-xs capitalize text-muted">
+                          {runtime.status}
+                        </span>
+                        <span className="rounded border border-border bg-panel px-2 py-0.5 text-xs text-muted">
+                          {formatBytes(runtime.sizeBytes ?? 0)}
+                        </span>
+                      </div>
+                      <p className="mt-1 truncate text-sm text-muted">
+                        {runtime.distribution} {runtime.version} / {runtime.arch}
+                      </p>
+                      <p className="mt-1 truncate font-mono text-xs text-muted">
+                        {runtime.path}
+                      </p>
+                      <p className="mt-2 text-xs text-muted">
+                        Last used {formatDate(runtime.lastUsedAt)} / used by {usedBy} server
+                        {usedBy === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                      <Button
+                        onClick={() => revealRuntime(runtime)}
+                        icon={FolderOpen}
+                        variant="secondary"
+                        size="sm"
+                      >
+                        Reveal
+                      </Button>
+                      <Button
+                        onClick={() => removeRuntime(runtime.id)}
+                        disabled={usedBy > 0}
+                        icon={Trash2}
+                        variant="danger"
+                        size="sm"
+                      >
+                        {usedBy > 0 ? "In use" : "Remove"}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CacheSection>
+      </div>
+    </Card>
+  );
+}
+
+function CacheSection({
+  icon: Icon,
+  title,
+  emptyTitle,
+  emptyDescription,
+  children,
+}: {
+  icon: LucideIcon;
+  title: string;
+  emptyTitle: string;
+  emptyDescription: string;
+  children: ReactNode;
+}) {
+  const hasContent = Boolean(children);
+  return (
+    <section>
+      <div className="mb-3 flex items-center gap-2">
+        <Icon className="h-4 w-4 text-copper" aria-hidden="true" />
+        <h3 className="font-display text-base font-semibold text-white">{title}</h3>
+      </div>
+      {hasContent ? (
+        children
+      ) : (
         <div className="rounded border border-border bg-rail px-4 py-8 text-center">
           <p className="font-display text-base font-semibold text-white">
-            {loading ? "Loading cache..." : "No cached software"}
+            {emptyTitle}
           </p>
-          <p className="mt-1 text-sm text-muted">
-            Downloaded server jars will appear here after server creation.
-          </p>
-        </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[680px] text-left text-sm">
-            <thead className="border-b border-border text-xs uppercase text-muted">
-              <tr>
-                <th className="pb-2 font-semibold">Provider</th>
-                <th className="pb-2 font-semibold">Minecraft</th>
-                <th className="pb-2 font-semibold">Build</th>
-                <th className="pb-2 font-semibold">Size</th>
-                <th className="pb-2 font-semibold">Last used</th>
-                <th className="pb-2 font-semibold">Status</th>
-                <th className="pb-2 text-right font-semibold">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {artifacts.map((artifact) => (
-                <tr key={artifact.id}>
-                  <td className="py-3 font-semibold capitalize text-white">
-                    {artifact.provider}
-                  </td>
-                  <td className="py-3 font-mono text-xs text-white">
-                    {artifact.minecraftVersion}
-                  </td>
-                  <td className="py-3 font-mono text-xs text-muted">
-                    {artifact.buildId}
-                  </td>
-                  <td className="py-3 text-muted">{formatBytes(artifact.sizeBytes)}</td>
-                  <td className="py-3 text-muted">
-                    {formatDate(
-                      artifact.lastUsedAt ?? artifact.downloadedAt ?? artifact.createdAt
-                    )}
-                  </td>
-                  <td className="py-3">
-                    <span className="rounded border border-border bg-rail px-2 py-1 text-xs capitalize text-muted">
-                      {artifact.status}
-                    </span>
-                  </td>
-                  <td className="py-3 text-right">
-                    <Button
-                      onClick={() => removeArtifact(artifact.id)}
-                      icon={Trash2}
-                      variant="danger"
-                      size="sm"
-                    >
-                      Remove
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <p className="mt-1 text-sm text-muted">{emptyDescription}</p>
         </div>
       )}
-    </Card>
+    </section>
   );
 }
 

@@ -27,7 +27,7 @@ export function Field({
 }
 
 export const inputClass =
-  "w-full rounded border border-border bg-rail px-3 py-2 text-sm text-white placeholder:text-muted transition-colors focus:border-copper focus:outline-none disabled:cursor-not-allowed disabled:opacity-50";
+  "w-full min-w-0 rounded border border-border bg-rail px-3 py-2 text-sm text-white placeholder:text-muted transition-colors focus:border-copper focus:outline-none disabled:cursor-not-allowed disabled:opacity-50";
 
 export function TextInput({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={clsx(inputClass, className)} {...props} />;
@@ -58,7 +58,7 @@ export function Switch({
 }) {
   return (
     <label className={clsx("flex cursor-pointer items-center justify-between gap-3 text-sm", className)}>
-      <span className="font-medium text-white">{label}</span>
+      <span className="min-w-0 font-medium text-white">{label}</span>
       <input
         type="checkbox"
         checked={checked}
@@ -68,7 +68,7 @@ export function Switch({
       />
       <span
         aria-hidden="true"
-        className="relative h-6 w-11 rounded-full border border-border bg-rail transition-colors peer-checked:border-copper peer-checked:bg-copper/30"
+        className="relative h-6 w-11 shrink-0 rounded-full border border-border bg-rail transition-colors peer-checked:border-copper peer-checked:bg-copper/30"
       >
         <span
           className={clsx(
@@ -91,9 +91,9 @@ export function LabelValue({
   className?: string;
 }) {
   return (
-    <div className={clsx("flex items-center justify-between gap-4 text-sm", className)}>
-      <span className="text-muted">{label}</span>
-      <span className="min-w-0 truncate font-medium text-white">{value}</span>
+    <div className={clsx("flex items-start justify-between gap-4 text-sm", className)}>
+      <span className="shrink-0 text-muted">{label}</span>
+      <span className="min-w-0 break-words text-right font-medium text-white">{value}</span>
     </div>
   );
 }
