@@ -234,12 +234,8 @@ export interface TemplateListResponse {
 
 export interface TemplateCapability {
   id:
-    | "browser"
-    | "community-repositories"
     | "import-export"
     | "one-click-create"
-    | "metadata"
-    | "updates"
     | "modrinth-integration"
     | "backup-restore-rewrite";
   label: string;

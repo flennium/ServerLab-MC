@@ -21,20 +21,6 @@ templateRoutes.get("/capabilities", (_req, res) => {
     exportFormats: ["serverlab-template.json"],
     capabilities: [
       {
-        id: "browser",
-        label: "Template browser",
-        status: "foundation",
-        description:
-          "Local template inventory and metadata are available for the upcoming browser UI.",
-      },
-      {
-        id: "community-repositories",
-        label: "Community repositories",
-        status: "planned",
-        description:
-          "Remote repository feeds will be added after signed metadata and trust rules are finalized.",
-      },
-      {
         id: "import-export",
         label: "Import and export",
         status: "foundation",
@@ -60,20 +46,6 @@ templateRoutes.get("/capabilities", (_req, res) => {
           "Server creation",
           "Ready to start",
         ],
-      },
-      {
-        id: "metadata",
-        label: "Template metadata",
-        status: "foundation",
-        description:
-          "Templates can track version, author, repository, and official status.",
-      },
-      {
-        id: "updates",
-        label: "Template updates",
-        status: "planned",
-        description:
-          "Update checks will compare installed metadata against trusted template repositories.",
       },
       {
         id: "modrinth-integration",

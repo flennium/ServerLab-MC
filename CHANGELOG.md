@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.0.0-beta.7
+
+### Added
+
+- Managed Java runtime files now appear in the Settings cache section alongside server software cache entries.
+
+### Changed
+
+- Bumped app and workspace versions to `3.0.0-beta.7`.
+- Removed template update and community repository roadmap cards from Future Features.
+- Improved Server Settings responsiveness for long Java/runtime values and narrow layouts.
+
+### Fixed
+
+- Server creation now returns actionable validation errors for missing or incompatible Java instead of generic production `500` responses.
+- Server creation validates Java before downloading and copying server software files.
+
 ## 3.0.0-beta.6
 
 ### Added
