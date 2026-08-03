@@ -371,6 +371,22 @@ ipcMain.handle("shell:openPath", async (_event, filePath: string) => {
 
 ipcMain.handle("app:version", () => app.getVersion());
 
+ipcMain.handle("app:diagnostics", () => ({
+  version: app.getVersion(),
+  platform: process.platform,
+  packaged: app.isPackaged,
+  backendOrigin: `http://127.0.0.1:${backendPort}`,
+  dataDir: getDataDir(),
+}));
+
+ipcMain.handle("window:openDevTools", () => {
+  mainWindow?.webContents.openDevTools({ mode: "detach" });
+});
+
+ipcMain.handle("window:closeDevTools", () => {
+  mainWindow?.webContents.closeDevTools();
+});
+
 ipcMain.handle("window:minimize", () => {
   mainWindow?.minimize();
 });

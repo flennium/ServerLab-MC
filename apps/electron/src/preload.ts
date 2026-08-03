@@ -7,6 +7,14 @@ export interface BackendConfig {
   token: string;
 }
 
+export interface AppDiagnostics {
+  version: string;
+  platform: string;
+  packaged: boolean;
+  backendOrigin: string;
+  dataDir: string;
+}
+
 contextBridge.exposeInMainWorld("serverlab", {
   getBackendConfig: (): Promise<BackendConfig> => ipcRenderer.invoke("backend:config"),
 
@@ -17,7 +25,13 @@ contextBridge.exposeInMainWorld("serverlab", {
 
   getAppVersion: (): Promise<string> => ipcRenderer.invoke("app:version"),
 
+  getDiagnostics: (): Promise<AppDiagnostics> => ipcRenderer.invoke("app:diagnostics"),
+
   getPlatform: (): string => process.platform,
+
+  openDevTools: (): Promise<void> => ipcRenderer.invoke("window:openDevTools"),
+
+  closeDevTools: (): Promise<void> => ipcRenderer.invoke("window:closeDevTools"),
 
   minimizeWindow: (): Promise<void> => ipcRenderer.invoke("window:minimize"),
 
@@ -35,7 +49,10 @@ declare global {
       openDirectoryDialog: () => Promise<string | null>;
       openPath: (path: string) => Promise<void>;
       getAppVersion: () => Promise<string>;
+      getDiagnostics: () => Promise<AppDiagnostics>;
       getPlatform: () => string;
+      openDevTools: () => Promise<void>;
+      closeDevTools: () => Promise<void>;
       minimizeWindow: () => Promise<void>;
       toggleMaximizeWindow: () => Promise<boolean>;
       closeWindow: () => Promise<void>;

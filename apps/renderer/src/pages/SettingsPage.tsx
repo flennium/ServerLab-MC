@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
+  Activity,
+  Bug,
+  Copy,
   Database,
   FolderOpen,
   Info,
@@ -103,8 +106,109 @@ export function SettingsPage() {
         <TemplateSystemPanel />
 
         <SoftwareCachePanel />
+
+        <DeveloperPanel />
       </div>
     </div>
+  );
+}
+
+function DeveloperPanel() {
+  const [diagnostics, setDiagnostics] = useState<Awaited<
+    ReturnType<NonNullable<typeof window.serverlab>["getDiagnostics"]>
+  > | null>(null);
+  const [backendHealth, setBackendHealth] = useState<"unknown" | "online" | "offline">(
+    "unknown"
+  );
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function loadDiagnostics() {
+    setMessage(null);
+    try {
+      const [nextDiagnostics] = await Promise.all([
+        window.serverlab?.getDiagnostics?.(),
+        api.get<{ ok: boolean }>("/health")
+          .then(() => setBackendHealth("online"))
+          .catch(() => setBackendHealth("offline")),
+      ]);
+      if (nextDiagnostics) setDiagnostics(nextDiagnostics);
+    } catch {
+      setBackendHealth("offline");
+    }
+  }
+
+  useEffect(() => {
+    loadDiagnostics();
+  }, []);
+
+  async function copyDiagnostics() {
+    if (!diagnostics) return;
+    await navigator.clipboard.writeText(JSON.stringify({ diagnostics, backendHealth }, null, 2));
+    setMessage("Diagnostics copied.");
+  }
+
+  return (
+    <Card className="p-5 lg:col-span-2">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Bug className="h-4 w-4 text-copper" aria-hidden="true" />
+          <h2 className="font-display text-lg font-semibold">Developer tools</h2>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={loadDiagnostics} icon={RefreshCw} variant="secondary" size="sm">
+            Refresh
+          </Button>
+          <Button onClick={() => window.serverlab?.openDevTools?.()} icon={Bug} variant="secondary" size="sm">
+            Open DevTools
+          </Button>
+          <Button onClick={() => window.serverlab?.closeDevTools?.()} icon={Bug} variant="quiet" size="sm">
+            Close DevTools
+          </Button>
+        </div>
+      </div>
+
+      {message && <Alert tone="success" className="mb-3">{message}</Alert>}
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div className="rounded border border-border bg-surface-console px-3 py-3">
+          <div className="mb-3 flex items-center gap-2">
+            <Activity className="h-4 w-4 text-copper" aria-hidden="true" />
+            <span className="font-semibold text-white">Runtime diagnostics</span>
+          </div>
+          <div className="grid gap-2 text-sm">
+            <LabelValue label="Backend" value={backendHealth} />
+            <LabelValue label="Mode" value={diagnostics?.packaged ? "Packaged" : "Development"} />
+            <LabelValue label="Version" value={diagnostics ? `v${diagnostics.version}` : "Unknown"} />
+            <LabelValue label="Platform" value={diagnostics?.platform ?? "Unknown"} />
+          </div>
+        </div>
+
+        <div className="rounded border border-border bg-surface-console px-3 py-3">
+          <div className="mb-3 flex items-center gap-2">
+            <Database className="h-4 w-4 text-copper" aria-hidden="true" />
+            <span className="font-semibold text-white">Local connection</span>
+          </div>
+          <div className="grid gap-2 text-sm">
+            <LabelValue label="Backend origin" value={diagnostics?.backendOrigin ?? "Unknown"} />
+            <LabelValue label="Data folder" value={diagnostics?.dataDir ?? "Unknown"} />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button onClick={copyDiagnostics} disabled={!diagnostics} icon={Copy} variant="secondary" size="sm">
+              Copy diagnostics
+            </Button>
+            <Button
+              onClick={() => diagnostics && window.serverlab?.openPath?.(diagnostics.dataDir)}
+              disabled={!diagnostics}
+              icon={FolderOpen}
+              variant="secondary"
+              size="sm"
+            >
+              Open data
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Card>
   );
 }
 

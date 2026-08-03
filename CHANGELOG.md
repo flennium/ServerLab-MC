@@ -1,5 +1,24 @@
 # Changelog
 
+## 3.0.0-beta.6
+
+### Added
+
+- Dashboard operator view with fleet health, attention items, and local cache/runtime status.
+- Developer tools panel in Settings with backend diagnostics, DevTools controls, and copyable connection details.
+- Java and software job lookup endpoints for reconnect-safe install/download state recovery.
+- Shared renderer job lifecycle helpers with unit coverage.
+
+### Changed
+
+- Bumped app and workspace versions to `3.0.0-beta.6`.
+- Improved Java/software install progress handling across Runtime Center and server creation.
+
+### Fixed
+
+- Java installs no longer leave the progress indicator stuck after reaching 100%.
+- Terminal install/download errors now keep useful retry context visible instead of being treated like active work.
+
 ## 3.0.0-beta.5
 
 ### Changed
