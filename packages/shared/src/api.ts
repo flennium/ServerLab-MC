@@ -13,6 +13,7 @@ import type {
   SoftwareArtifact,
   SoftwareDownload,
 } from "./models.js";
+import type { AppError } from "./errors.js";
 
 // Servers
 export interface CreateServerDto {
@@ -252,7 +253,7 @@ export interface TemplateCapabilityResponse {
 
 // Generic error/success
 export interface ApiError {
-  error: string;
+  error: string | AppError;
   details?: string;
 }
 

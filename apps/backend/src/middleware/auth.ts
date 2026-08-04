@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
+import { errorService } from "../services/ErrorService.js";
 
 const BACKEND_TOKEN = process.env.BACKEND_TOKEN;
 
@@ -27,7 +28,18 @@ export function authMiddleware(
     : undefined;
 
   if (token !== BACKEND_TOKEN) {
-    res.status(401).json({ error: "Unauthorized" });
+    const error = errorService.createFromUnknown("Unauthorized", {
+      category: "auth",
+      severity: "warning",
+      userMessage: "ServerLab could not authenticate the local request.",
+      technicalDetails: "Backend startup token was missing or invalid.",
+      possibleSolution: "Restart ServerLab MC and try again.",
+      source: "backend:auth",
+      action: `${req.method} ${req.originalUrl}`,
+      recoveries: ["retry", "open-logs", "copy-details", "dismiss"],
+    });
+    void errorService.record(error);
+    res.status(401).json({ error });
     return;
   }
 

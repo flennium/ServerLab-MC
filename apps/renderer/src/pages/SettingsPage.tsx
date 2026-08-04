@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
+  AlertCircle,
   Bug,
   Coffee,
   Copy,
@@ -20,6 +21,8 @@ import { LabelValue } from "../components/ui/Form.js";
 import { api } from "../lib/apiClient.js";
 import {
   APP_VERSION,
+  type AppErrorEvent,
+  type ErrorHistoryResponse,
   type JavaRuntime,
   type JavaRuntimeListResponse,
   type ServerListResponse,
@@ -111,9 +114,158 @@ export function SettingsPage() {
 
         <SoftwareCachePanel />
 
+        <ErrorHistoryPanel />
+
         <DeveloperPanel />
       </div>
     </div>
+  );
+}
+
+function ErrorHistoryPanel() {
+  const [errors, setErrors] = useState<AppErrorEvent[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const data = window.serverlab?.getErrorHistory
+        ? await window.serverlab.getErrorHistory()
+        : await api.get<ErrorHistoryResponse>("/api/errors?limit=100&includeCleared=true");
+      setErrors(data.errors);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function clearAll() {
+    if (window.serverlab?.clearErrorHistory) {
+      await window.serverlab.clearErrorHistory();
+    } else {
+      await api.post("/api/errors/clear");
+    }
+    setErrors([]);
+    setMessage("Error history cleared.");
+  }
+
+  async function copyError(error: AppErrorEvent) {
+    await navigator.clipboard.writeText(JSON.stringify(error, null, 2));
+    setMessage("Error details copied.");
+  }
+
+  async function clearOne(id: string) {
+    await api.post(`/api/errors/${id}/clear`);
+    setErrors((current) =>
+      current.map((error) =>
+        error.id === id ? { ...error, clearedAt: new Date().toISOString() } : error
+      )
+    );
+    setMessage("Error cleared.");
+  }
+
+  async function exportLogs() {
+    const logs = window.serverlab?.exportLogs
+      ? await window.serverlab.exportLogs()
+      : await api.get("/api/logs/export");
+    await navigator.clipboard.writeText(JSON.stringify(logs, null, 2));
+    setMessage("Logs copied.");
+  }
+
+  return (
+    <Card className="p-5 lg:col-span-2">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 text-copper" aria-hidden="true" />
+          <h2 className="font-display text-lg font-semibold">Error history</h2>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={load} disabled={loading} icon={RefreshCw} variant="secondary" size="sm">
+            Refresh
+          </Button>
+          <Button onClick={exportLogs} icon={Copy} variant="secondary" size="sm">
+            Export logs
+          </Button>
+          <Button onClick={clearAll} disabled={errors.length === 0} icon={Trash2} variant="danger" size="sm">
+            Clear
+          </Button>
+        </div>
+      </div>
+
+      {message && <Alert tone="success" className="mb-3">{message}</Alert>}
+
+      {errors.length === 0 ? (
+        <div className="rounded border border-border bg-rail px-4 py-8 text-center">
+          <p className="font-display text-base font-semibold text-white">
+            {loading ? "Loading errors..." : "No recent errors"}
+          </p>
+          <p className="mt-1 text-sm text-muted">
+            Warnings and failures will appear here with recovery details.
+          </p>
+        </div>
+      ) : (
+        <div className="grid gap-2">
+          {errors.map((error) => (
+            <details
+              key={error.id}
+              className="rounded border border-border bg-rail px-3 py-2"
+            >
+              <summary className="cursor-pointer list-none">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-white">{error.userMessage}</p>
+                    <p className="mt-1 text-xs text-muted">
+                      {error.category} / {error.action} / {formatDate(error.timestamp)}
+                    </p>
+                  </div>
+                  <span className="rounded border border-border bg-panel px-2 py-0.5 text-xs uppercase text-copper">
+                    {error.severity}
+                  </span>
+                </div>
+              </summary>
+              <div className="mt-3 grid gap-2 border-t border-border pt-3 text-sm">
+                {error.possibleSolution && (
+                  <LabelValue label="Solution" value={error.possibleSolution} />
+                )}
+                <LabelValue label="Source" value={error.source} />
+                <LabelValue label="Recoveries" value={error.recoveries.join(", ")} />
+                {error.technicalDetails && (
+                  <pre className="max-h-40 overflow-auto rounded border border-border bg-surface-console p-3 text-xs text-muted">
+                    {error.technicalDetails}
+                  </pre>
+                )}
+                <div>
+                  <Button
+                    onClick={() => copyError(error)}
+                    icon={Copy}
+                    variant="secondary"
+                    size="sm"
+                  >
+                    Copy details
+                  </Button>
+                  {!error.clearedAt && (
+                    <Button
+                      onClick={() => clearOne(error.id)}
+                      icon={Trash2}
+                      variant="quiet"
+                      size="sm"
+                      className="ml-2"
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </details>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 

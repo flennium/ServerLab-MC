@@ -1,5 +1,6 @@
 import { Suspense, lazy } from "react";
 import { AppShell } from "./components/layout/AppShell.js";
+import { ErrorProvider } from "./components/errors/ErrorProvider.js";
 import { Skeleton } from "./components/ui/Skeleton.js";
 import { serverRouteId, useHashRoute } from "./lib/router.js";
 
@@ -15,17 +16,19 @@ export function App() {
   const serverId = serverRouteId(effectiveRoute);
 
   return (
-    <AppShell>
-      <Suspense fallback={<Skeleton className="h-64 w-full" />}>
-        {effectiveRoute === "/dashboard" && <DashboardPage />}
-        {effectiveRoute === "/servers" && <ServersPage />}
-        {serverId && <ServerDetailPage serverId={serverId} />}
-        {effectiveRoute === "/java" && <JavaManagerPage />}
-        {effectiveRoute === "/settings" && <SettingsPage />}
-        {!["/dashboard", "/servers", "/java", "/settings"].includes(effectiveRoute) && !serverId && (
-          <DashboardPage />
-        )}
-      </Suspense>
-    </AppShell>
+    <ErrorProvider>
+      <AppShell>
+        <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+          {effectiveRoute === "/dashboard" && <DashboardPage />}
+          {effectiveRoute === "/servers" && <ServersPage />}
+          {serverId && <ServerDetailPage serverId={serverId} />}
+          {effectiveRoute === "/java" && <JavaManagerPage />}
+          {effectiveRoute === "/settings" && <SettingsPage />}
+          {!["/dashboard", "/servers", "/java", "/settings"].includes(effectiveRoute) && !serverId && (
+            <DashboardPage />
+          )}
+        </Suspense>
+      </AppShell>
+    </ErrorProvider>
   );
 }

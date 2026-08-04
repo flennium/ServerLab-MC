@@ -1,9 +1,4 @@
-/**
- * Thin wrapper around fetch that:
- * 1. Reads the backend origin + token from the Electron contextBridge (or falls
- *    back to a hardcoded dev address when running outside Electron).
- * 2. Attaches the Authorization header on every request.
- */
+import { AppRequestError, createRendererError, isAppError, pushError } from "./errorStore.js";
 
 interface BackendConfig {
   origin: string;
@@ -65,15 +60,48 @@ async function request<T>(
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetchWithStartupRetry(url, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetchWithStartupRetry(url, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch (error) {
+    const appError = createRendererError({
+      category: "network",
+      severity: "error",
+      userMessage: "ServerLab could not reach the local backend.",
+      technicalDetails: error instanceof Error ? error.stack ?? error.message : String(error),
+      possibleSolution: "Restart ServerLab MC or open Developer tools in Settings.",
+      source: "renderer:api",
+      action: `${method} ${path}`,
+      recoveries: ["retry", "open-settings", "copy-details", "dismiss"],
+    });
+    pushError(appError, { report: true });
+    throw new AppRequestError(appError);
+  }
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((err as { error: string }).error ?? res.statusText);
+    const payload = await res.json().catch(() => ({ error: res.statusText }));
+    const raw = (payload as { error?: unknown }).error;
+    const appError = isAppError(raw)
+      ? raw
+      : createRendererError({
+          category: res.status === 401 ? "auth" : "unknown",
+          severity: res.status >= 500 ? "error" : "warning",
+          userMessage: typeof raw === "string" ? raw : res.statusText,
+          technicalDetails: JSON.stringify(payload),
+          possibleSolution:
+            res.status >= 500
+              ? "Try again. If it keeps failing, copy the error details."
+              : "Review the request and try again.",
+          source: "renderer:api",
+          action: `${method} ${path}`,
+          recoveries: ["retry", "copy-details", "dismiss"],
+        });
+    pushError(appError);
+    throw new AppRequestError(appError);
   }
 
   return res.json() as Promise<T>;

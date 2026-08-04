@@ -149,3 +149,19 @@ model SoftwareDownload {
 
   @@map("software_downloads")
 }
+
+model ErrorEvent {
+  id               String   @id
+  category         String
+  severity         String
+  userMessage      String
+  technicalDetails String?
+  possibleSolution String?
+  action           String
+  source           String
+  recoveriesJson   String
+  createdAt        DateTime @default(now())
+  clearedAt        DateTime?
+
+  @@map("error_events")
+}

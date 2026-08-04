@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type { AppErrorCreateInput, ErrorHistoryResponse } from "@serverlab/shared";
 
 // Keep the renderer API small and explicit.
 
@@ -33,6 +34,16 @@ contextBridge.exposeInMainWorld("serverlab", {
 
   closeDevTools: (): Promise<void> => ipcRenderer.invoke("window:closeDevTools"),
 
+  reportRendererError: (error: AppErrorCreateInput): Promise<unknown> =>
+    ipcRenderer.invoke("errors:report", error),
+
+  getErrorHistory: (): Promise<ErrorHistoryResponse> =>
+    ipcRenderer.invoke("errors:history"),
+
+  clearErrorHistory: (): Promise<void> => ipcRenderer.invoke("errors:clear"),
+
+  exportLogs: (): Promise<unknown> => ipcRenderer.invoke("logs:export"),
+
   minimizeWindow: (): Promise<void> => ipcRenderer.invoke("window:minimize"),
 
   toggleMaximizeWindow: (): Promise<boolean> =>
@@ -53,6 +64,10 @@ declare global {
       getPlatform: () => string;
       openDevTools: () => Promise<void>;
       closeDevTools: () => Promise<void>;
+      reportRendererError: (error: AppErrorCreateInput) => Promise<unknown>;
+      getErrorHistory: () => Promise<ErrorHistoryResponse>;
+      clearErrorHistory: () => Promise<void>;
+      exportLogs: () => Promise<unknown>;
       minimizeWindow: () => Promise<void>;
       toggleMaximizeWindow: () => Promise<boolean>;
       closeWindow: () => Promise<void>;

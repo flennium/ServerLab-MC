@@ -11,6 +11,8 @@ import { templateRoutes } from "./routes/templates.js";
 import { javaRoutes } from "./routes/java.js";
 import { backupRoutes } from "./routes/backups.js";
 import { softwareRoutes } from "./routes/software.js";
+import { errorRoutes } from "./routes/errors.js";
+import { logRoutes } from "./routes/logs.js";
 import { registerSocketHandlers } from "./socket/index.js";
 import { startMonitor, stopMonitor } from "./services/MonitorService.js";
 import { ensureDatabaseSchema } from "./services/DatabaseSchemaService.js";
@@ -54,6 +56,8 @@ app.use("/api/templates", templateRoutes);
 app.use("/api/java", javaRoutes);
 app.use("/api/backups", backupRoutes);
 app.use("/api/software", softwareRoutes);
+app.use("/api/errors", errorRoutes);
+app.use("/api/logs", logRoutes);
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
