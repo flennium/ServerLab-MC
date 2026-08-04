@@ -15,6 +15,19 @@ class RootErrorBoundary extends React.Component<
     return { error };
   }
 
+  componentDidCatch(error: Error) {
+    window.serverlab?.reportRendererError?.({
+      category: "renderer",
+      severity: "critical",
+      userMessage: "The interface failed to render.",
+      technicalDetails: error.stack ?? error.message,
+      possibleSolution: "Reload the app. If it happens again, copy diagnostics from Settings.",
+      source: "renderer:root-boundary",
+      action: "render",
+      recoveries: ["retry", "open-logs", "copy-details", "dismiss"],
+    }).catch(() => {});
+  }
+
   render() {
     if (this.state.error) {
       const err = this.state.error as Error;

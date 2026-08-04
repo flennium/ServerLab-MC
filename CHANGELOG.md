@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.0.0-beta.8
+
+### Added
+
+- Centralized structured error model shared across backend, Electron, and renderer.
+- Backend error history storage with listing, clearing, and export endpoints.
+- Settings Error History section with copy, clear, and log export actions.
+- Renderer global error provider with toasts, critical dialogs, inline/banner primitives, and normalization helpers.
+- Electron IPC error wrapping and preload methods for reporting errors and exporting logs.
+
+### Changed
+
+- Backend errors now return structured `{ error: AppError }` responses while the renderer remains compatible with legacy string errors.
+- API client now converts REST and backend connection failures into user-friendly structured errors.
+- Bumped app and workspace versions to `3.0.0-beta.8`.
+
 ## 3.0.0-beta.7
 
 ### Added

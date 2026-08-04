@@ -6,6 +6,7 @@ import { createServer } from "net";
 import http from "http";
 import { autoUpdater } from "electron-updater";
 import crypto from "crypto";
+import type { AppError, AppErrorCategory, AppErrorSeverity } from "@serverlab/shared";
 
 const BACKEND_TOKEN = crypto.randomBytes(32).toString("hex");
 const DEFAULT_BACKEND_PORT = 3001;
@@ -53,6 +54,103 @@ function writeLaunchLog(message: string): void {
   } catch {
     // Logging must never block startup.
   }
+}
+
+function createElectronError(input: {
+  category?: AppErrorCategory;
+  severity?: AppErrorSeverity;
+  userMessage: string;
+  technicalDetails?: string | null;
+  possibleSolution?: string | null;
+  source?: string;
+  action?: string;
+}): AppError {
+  return {
+    id: crypto.randomUUID(),
+    category: input.category ?? "electron",
+    severity: input.severity ?? "error",
+    userMessage: input.userMessage,
+    technicalDetails: input.technicalDetails ?? null,
+    possibleSolution: input.possibleSolution ?? null,
+    timestamp: new Date().toISOString(),
+    source: input.source ?? "electron:main",
+    action: input.action ?? "ipc",
+    causeId: null,
+    recoveries: ["copy-details", "open-logs", "dismiss"],
+  };
+}
+
+function ipcError(error: unknown, action: string): Error {
+  const appError =
+    typeof error === "object" &&
+    error !== null &&
+    "userMessage" in error &&
+    "id" in error
+      ? (error as AppError)
+      : createElectronError({
+          category: "ipc",
+          severity: "error",
+          userMessage: error instanceof Error ? error.message : "Electron action failed.",
+          technicalDetails: error instanceof Error ? error.stack ?? error.message : String(error),
+          possibleSolution: "Try the action again. If it keeps failing, copy diagnostics.",
+          action,
+        });
+  writeLaunchLog(`[ipc:error] ${appError.action} ${appError.userMessage}`);
+  return new Error(JSON.stringify(appError));
+}
+
+function safeIpcHandler<T, Args extends unknown[]>(
+  channel: string,
+  handler: (...args: Args) => Promise<T> | T
+): void {
+  ipcMain.handle(channel, async (_event, ...args) => {
+    try {
+      return await handler(...(args as Args));
+    } catch (error) {
+      throw ipcError(error, channel);
+    }
+  });
+}
+
+function backendJson<T>(
+  pathName: string,
+  init: { method?: string; body?: string } = {}
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: "127.0.0.1",
+        port: backendPort,
+        path: pathName,
+        method: init.method ?? "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${BACKEND_TOKEN}`,
+        },
+      },
+      (response) => {
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          body += chunk;
+        });
+        response.on("end", () => {
+          if ((response.statusCode ?? 500) >= 400) {
+            reject(new Error(`Backend request failed with HTTP ${response.statusCode}`));
+            return;
+          }
+          try {
+            resolve(JSON.parse(body) as T);
+          } catch (error) {
+            reject(error);
+          }
+        });
+      }
+    );
+    req.on("error", reject);
+    if (init.body) req.write(init.body);
+    req.end();
+  });
 }
 
 function pathInside(candidate: string, root: string): boolean {
@@ -347,12 +445,12 @@ function createWindow(): void {
   });
 }
 
-ipcMain.handle("backend:config", () => ({
+safeIpcHandler("backend:config", () => ({
   origin: `http://127.0.0.1:${backendPort}`,
   token: BACKEND_TOKEN,
 }));
 
-ipcMain.handle("dialog:openDirectory", async () => {
+safeIpcHandler("dialog:openDirectory", async () => {
   const { dialog } = await import("electron");
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ["openDirectory", "createDirectory"],
@@ -360,18 +458,26 @@ ipcMain.handle("dialog:openDirectory", async () => {
   return result.canceled ? null : result.filePaths[0];
 });
 
-ipcMain.handle("shell:openPath", async (_event, filePath: string) => {
+safeIpcHandler("shell:openPath", async (filePath: string) => {
   const resolved = path.resolve(filePath);
   const allowed = allowedOpenRoots().some((root) => pathInside(resolved, root));
   if (!allowed) {
-    throw new Error("Path is outside ServerLab-managed locations");
+    throw createElectronError({
+      category: "file",
+      severity: "warning",
+      userMessage: "ServerLab cannot open that location.",
+      technicalDetails: `Rejected path: ${resolved}`,
+      possibleSolution: "Open a folder managed by ServerLab or choose a server folder first.",
+      action: "open-path",
+      source: "electron:ipc",
+    });
   }
   await shell.openPath(resolved);
 });
 
-ipcMain.handle("app:version", () => app.getVersion());
+safeIpcHandler("app:version", () => app.getVersion());
 
-ipcMain.handle("app:diagnostics", () => ({
+safeIpcHandler("app:diagnostics", () => ({
   version: app.getVersion(),
   platform: process.platform,
   packaged: app.isPackaged,
@@ -379,19 +485,36 @@ ipcMain.handle("app:diagnostics", () => ({
   dataDir: getDataDir(),
 }));
 
-ipcMain.handle("window:openDevTools", () => {
+safeIpcHandler("errors:report", async (error) =>
+  backendJson("/api/errors", {
+    method: "POST",
+    body: JSON.stringify(error),
+  }).catch(() => ({ error }))
+);
+
+safeIpcHandler("errors:history", async () =>
+  backendJson("/api/errors?limit=100&includeCleared=true")
+);
+
+safeIpcHandler("errors:clear", async () =>
+  backendJson("/api/errors/clear", { method: "POST" })
+);
+
+safeIpcHandler("logs:export", async () => backendJson("/api/logs/export"));
+
+safeIpcHandler("window:openDevTools", () => {
   mainWindow?.webContents.openDevTools({ mode: "detach" });
 });
 
-ipcMain.handle("window:closeDevTools", () => {
+safeIpcHandler("window:closeDevTools", () => {
   mainWindow?.webContents.closeDevTools();
 });
 
-ipcMain.handle("window:minimize", () => {
+safeIpcHandler("window:minimize", () => {
   mainWindow?.minimize();
 });
 
-ipcMain.handle("window:toggleMaximize", () => {
+safeIpcHandler("window:toggleMaximize", () => {
   if (!mainWindow) return false;
   if (mainWindow.isMaximized()) {
     mainWindow.unmaximize();
@@ -401,7 +524,7 @@ ipcMain.handle("window:toggleMaximize", () => {
   return mainWindow.isMaximized();
 });
 
-ipcMain.handle("window:close", () => {
+safeIpcHandler("window:close", () => {
   mainWindow?.close();
 });
 
