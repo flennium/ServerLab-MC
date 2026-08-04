@@ -226,7 +226,7 @@ export class JavaRuntimeRegistry {
         where: { id },
         data: { lastUsedAt: new Date() },
       })
-      .catch(() => {});
+      .catch(() => null);
     const runtime = await this.toRuntimeWithCache(record);
     if (runtime?.source === "managed") await this.writeRuntimeMetadata(runtime);
     await this.writeMetadataMirror();

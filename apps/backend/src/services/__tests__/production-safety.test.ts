@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
 import { describe, expect, it } from "vitest";
-import { FileManager } from "../FileManager.js";
+import { FileConflictError, FileManager } from "../FileManager.js";
 import { parseStartupArgs } from "../ProcessArgs.js";
 import { parseJavaVersionOutput } from "../java/JavaRuntimeValidator.js";
 import { assertAllowedHttpsUrl } from "../software/providers.js";
@@ -73,6 +73,60 @@ describe("file manager sandbox", () => {
       await expect(manager.readFile(path.relative(serverRoot, path.join(sibling, "secret.txt")))).rejects.toThrow(
         /Path traversal/
       );
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("returns metadata for editable server config files", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "serverlab-file-meta-"));
+    const serverRoot = path.join(parent, "server");
+
+    try {
+      await mkdir(serverRoot, { recursive: true });
+      await writeFile(path.join(serverRoot, "server.properties"), "online-mode=true", "utf-8");
+
+      const manager = new FileManager(serverRoot);
+      const entries = await manager.listDirectory("");
+      const properties = entries.find((entry) => entry.name === "server.properties");
+
+      expect(properties).toMatchObject({
+        type: "properties",
+        isEditable: true,
+        isBinary: false,
+        readonly: false,
+      });
+
+      const content = await manager.readFileContent("server.properties");
+      expect(content).toMatchObject({
+        language: "properties",
+        readonly: false,
+        restartHint: "Restart the server for most server.properties changes.",
+      });
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("detects save conflicts from stale file metadata", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "serverlab-file-conflict-"));
+    const serverRoot = path.join(parent, "server");
+
+    try {
+      await mkdir(serverRoot, { recursive: true });
+      await writeFile(path.join(serverRoot, "config.json"), "{\"a\":1}", "utf-8");
+
+      const manager = new FileManager(serverRoot);
+      const opened = await manager.readFileContent("config.json");
+      await writeFile(path.join(serverRoot, "config.json"), "{\"a\":2}", "utf-8");
+
+      await expect(
+        manager.writeFile({
+          path: "config.json",
+          content: "{\"a\":3}",
+          expectedEtag: opened.etag,
+        })
+      ).rejects.toBeInstanceOf(FileConflictError);
     } finally {
       await rm(parent, { recursive: true, force: true });
     }
