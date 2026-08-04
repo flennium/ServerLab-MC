@@ -2,7 +2,7 @@ import { Router } from "express";
 import fs from "fs/promises";
 import { prisma } from "../lib/prisma.js";
 import { serverManager } from "../services/ServerManager.js";
-import { FileManager } from "../services/FileManager.js";
+import { FileConflictError, FileManager } from "../services/FileManager.js";
 import { createBackup } from "../services/BackupService.js";
 import { softwareDownloadService } from "../services/software/SoftwareDownloadService.js";
 import { serverSoftwareInstaller } from "../services/software/ServerSoftwareInstaller.js";
@@ -10,13 +10,16 @@ import { javaRuntimeRegistry } from "../services/java/JavaRuntimeRegistry.js";
 import { javaRuntimeValidator } from "../services/java/JavaRuntimeValidator.js";
 import { javaRecommendationService } from "../services/java/JavaRecommendationService.js";
 import { logger } from "../lib/logger.js";
-import { badRequest } from "../middleware/error.js";
+import { HttpError, badRequest } from "../middleware/error.js";
 import type {
   AssignServerJavaRuntimeDto,
   CreateServerDto,
   UpdateServerDto,
   SendCommandDto,
   WriteFileDto,
+  CreateFileDto,
+  CreateFolderDto,
+  DuplicateFileDto,
   ServerDeleteProgressPayload,
 } from "@serverlab/shared";
 
@@ -190,7 +193,7 @@ serverRoutes.post("/", async (req, res, next) => {
       await serverSoftwareInstaller.install({
         artifact,
         serverPath: body.path,
-        eulaAccepted: body.eulaAccepted,
+        eulaAccepted: body.eulaAccepted === true,
       });
       if (requestId) {
         await softwareDownloadService.markStage(requestId, "writing-eula");
@@ -426,12 +429,9 @@ serverRoutes.get("/:id/files/content", async (req, res, next) => {
   try {
     const fm = await getFileManager(req.params.id);
     const filePath = req.query.path as string;
-    if (!filePath) {
-      res.status(400).json({ error: "path query param required" });
-      return;
-    }
-    const content = await fm.readFile(filePath);
-    res.json({ path: filePath, content });
+    if (!filePath) throw badRequest("path query param required", "file");
+    const content = await fm.readFileContent(filePath);
+    res.json(content);
   } catch (err) {
     next(err);
   }
@@ -441,9 +441,48 @@ serverRoutes.get("/:id/files/content", async (req, res, next) => {
 serverRoutes.put("/:id/files", async (req, res, next) => {
   try {
     const fm = await getFileManager(req.params.id);
-    const { path: filePath, content } = req.body as WriteFileDto;
-    await fm.writeFile(filePath, content);
-    res.json({ message: "File saved" });
+    const body = req.body as WriteFileDto;
+    if (!body.path) throw badRequest("path is required", "file");
+    const content = await fm.writeFile(body);
+    res.json({ message: "File saved", file: content });
+  } catch (err) {
+    if (err instanceof FileConflictError) {
+      next(
+        new HttpError(
+          409,
+          err.message,
+          "file",
+          "warning",
+          "Reload the file, copy your unsaved changes, or save again to overwrite the disk version."
+        )
+      );
+      return;
+    }
+    next(err);
+  }
+});
+
+// POST /api/servers/:id/files/create
+serverRoutes.post("/:id/files/create", async (req, res, next) => {
+  try {
+    const fm = await getFileManager(req.params.id);
+    const { path: filePath, content } = req.body as CreateFileDto;
+    if (!filePath) throw badRequest("path is required", "file");
+    const file = await fm.createFile(filePath, content ?? "");
+    res.status(201).json({ message: "File created", file });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/servers/:id/files/folders
+serverRoutes.post("/:id/files/folders", async (req, res, next) => {
+  try {
+    const fm = await getFileManager(req.params.id);
+    const { path: folderPath } = req.body as CreateFolderDto;
+    if (!folderPath) throw badRequest("path is required", "file");
+    const folder = await fm.createDirectory(folderPath);
+    res.status(201).json({ message: "Folder created", folder });
   } catch (err) {
     next(err);
   }
@@ -454,10 +493,7 @@ serverRoutes.delete("/:id/files", async (req, res, next) => {
   try {
     const fm = await getFileManager(req.params.id);
     const filePath = req.query.path as string;
-    if (!filePath) {
-      res.status(400).json({ error: "path query param required" });
-      return;
-    }
+    if (!filePath) throw badRequest("path query param required", "file");
     await fm.deleteEntry(filePath);
     res.json({ message: "Deleted" });
   } catch (err) {
@@ -470,12 +506,33 @@ serverRoutes.patch("/:id/files/rename", async (req, res, next) => {
   try {
     const fm = await getFileManager(req.params.id);
     const { oldPath, newPath } = req.body as { oldPath: string; newPath: string };
-    if (!oldPath || !newPath) {
-      res.status(400).json({ error: "oldPath and newPath are required" });
-      return;
-    }
+    if (!oldPath || !newPath) throw badRequest("oldPath and newPath are required", "file");
     await fm.rename(oldPath, newPath);
     res.json({ message: "Renamed" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/servers/:id/files/duplicate
+serverRoutes.post("/:id/files/duplicate", async (req, res, next) => {
+  try {
+    const fm = await getFileManager(req.params.id);
+    const { path: filePath, targetPath } = req.body as DuplicateFileDto;
+    if (!filePath) throw badRequest("path is required", "file");
+    const entry = await fm.duplicate(filePath, targetPath);
+    res.status(201).json({ message: "Duplicated", entry });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/servers/:id/files/download?path=some/file
+serverRoutes.get("/:id/files/download", async (req, res, next) => {
+  try {
+    const fm = await getFileManager(req.params.id);
+    const filePath = (req.query.path as string) ?? "";
+    await fm.streamDownload(filePath, res);
   } catch (err) {
     next(err);
   }

@@ -145,6 +145,12 @@ export interface FileEntry {
   name: string;
   path: string;
   isDirectory: boolean;
+  type: "directory" | "config" | "json" | "yaml" | "properties" | "log" | "text" | "archive" | "binary" | "other";
+  extension: string | null;
+  isEditable: boolean;
+  isBinary: boolean;
+  isLarge: boolean;
+  readonly: boolean;
   sizeBytes: number | null;
   modifiedAt: string;
 }
@@ -156,11 +162,41 @@ export interface FileListResponse {
 export interface FileContentResponse {
   path: string;
   content: string;
+  encoding: "utf-8" | "binary";
+  language: "yaml" | "json" | "properties" | "javascript" | "text" | "log" | "toml" | "unknown";
+  sizeBytes: number;
+  modifiedAt: string;
+  etag: string;
+  readonly: boolean;
+  restartHint: string | null;
+  validation: {
+    status: "valid" | "warning" | "invalid" | "unknown";
+    message: string | null;
+    line?: number;
+  };
+  isTruncated: boolean;
+  previewBytes: number | null;
 }
 
 export interface WriteFileDto {
   path: string;
   content: string;
+  expectedEtag?: string;
+  force?: boolean;
+}
+
+export interface CreateFileDto {
+  path: string;
+  content?: string;
+}
+
+export interface CreateFolderDto {
+  path: string;
+}
+
+export interface DuplicateFileDto {
+  path: string;
+  targetPath?: string;
 }
 
 // Backups

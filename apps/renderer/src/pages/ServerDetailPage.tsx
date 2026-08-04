@@ -52,14 +52,9 @@ const Console = lazy(() =>
     default: module.Console,
   }))
 );
-const FileManager = lazy(() =>
-  import("../components/server/FileManager.js").then((module) => ({
-    default: module.FileManager,
-  }))
-);
-const FileEditor = lazy(() =>
-  import("../components/server/FileEditor.js").then((module) => ({
-    default: module.FileEditor,
+const ServerFileWorkspace = lazy(() =>
+  import("../components/server/ServerFileWorkspace.js").then((module) => ({
+    default: module.ServerFileWorkspace,
   }))
 );
 const PerformanceMonitor = lazy(() =>
@@ -73,18 +68,12 @@ const BackupPanel = lazy(() =>
   }))
 );
 
-interface OpenFile {
-  path: string;
-  name: string;
-}
-
 export function ServerDetailPage({ serverId }: { serverId: string }) {
   const { servers, fetchServers, startServer, stopServer, restartServer, deleteServer } =
     useServerStore();
 
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("console");
-  const [openFile, setOpenFile] = useState<OpenFile | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteState, setDeleteState] = useState<{
     running: boolean;
@@ -175,11 +164,6 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
     }
   }
 
-  function handleOpenFile(filePath: string, fileName: string) {
-    setOpenFile({ path: filePath, name: fileName });
-    setTab("files");
-  }
-
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
@@ -240,10 +224,7 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
       <Tabs
         items={TABS}
         value={tab}
-        onChange={(nextTab) => {
-          setTab(nextTab);
-          if (nextTab !== "files") setOpenFile(null);
-        }}
+        onChange={setTab}
         label="Server sections"
       />
 
@@ -259,23 +240,11 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
             {tab === "console" && <Console serverId={server.id} />}
 
             {tab === "files" && (
-              <div className="grid gap-4 xl:grid-cols-[minmax(340px,0.8fr)_minmax(460px,1.2fr)]">
-                <FileManager serverId={server.id} onOpenFile={handleOpenFile} />
-                {openFile ? (
-                  <FileEditor
-                    serverId={server.id}
-                    filePath={openFile.path}
-                    fileName={openFile.name}
-                    onClose={() => setOpenFile(null)}
-                  />
-                ) : (
-                  <EmptyState
-                    icon={<Server className="h-8 w-8" aria-hidden="true" />}
-                    title="Choose a file"
-                    description="Open a configuration file from the list to edit it beside the file browser."
-                  />
-                )}
-              </div>
+              <ServerFileWorkspace
+                serverId={server.id}
+                serverPath={server.path}
+                serverStatus={server.status}
+              />
             )}
 
             {tab === "monitor" && (

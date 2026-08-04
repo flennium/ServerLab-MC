@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.0.0-beta.9
+
+### Added
+
+- Redesigned the server Files tab into a multi-file workbench with editor tabs, quick access, favorites, recent files, filters, and a file inspector.
+- Added richer file metadata, large-file and binary-file protection, stale-save conflict detection, duplicate/export actions, and real folder creation.
+- Added Minecraft-aware file validation and restart hints for common server and plugin configuration files.
+
+### Changed
+
+- Files tab state now persists while switching between server sections.
+- File operations now use the centralized structured error system.
+- Bumped app and workspace versions to `3.0.0-beta.9`.
+
 ## 3.0.0-beta.8
 
 ### Added
