@@ -6,6 +6,8 @@ import type {
   JavaRuntimeProviderId,
   SoftwareDownloadStatus,
   SoftwareInstallStage,
+  PluginInstallStatus,
+  PluginInstallStage,
 } from "./models.js";
 
 export interface ConsoleOutputPayload {
@@ -77,6 +79,23 @@ export interface JavaInstallProgressPayload {
   error?: string;
 }
 
+export interface PluginInstallProgressPayload {
+  jobId: string;
+  serverId: string;
+  pluginId: string | null;
+  projectId: string | null;
+  versionId: string | null;
+  action: "install" | "update" | "disable" | "enable" | "remove" | "restore";
+  status: PluginInstallStatus;
+  stage: PluginInstallStage;
+  bytesReceived: number;
+  totalBytes: number | null;
+  percent: number;
+  speedBytesPerSec: number;
+  etaSeconds: number | null;
+  error?: string;
+}
+
 export interface ConsoleCommandPayload {
   serverId: string;
   command: string;
@@ -90,6 +109,7 @@ export interface ServerToClientEvents {
   "backup:progress": (payload: BackupProgressPayload) => void;
   "software:download-progress": (payload: SoftwareDownloadProgressPayload) => void;
   "java:install-progress": (payload: JavaInstallProgressPayload) => void;
+  "plugin:install-progress": (payload: PluginInstallProgressPayload) => void;
 }
 
 export interface ClientToServerEvents {

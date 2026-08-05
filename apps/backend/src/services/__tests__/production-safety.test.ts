@@ -8,6 +8,7 @@ import { parseStartupArgs } from "../ProcessArgs.js";
 import { parseJavaVersionOutput } from "../java/JavaRuntimeValidator.js";
 import { assertAllowedHttpsUrl } from "../software/providers.js";
 import { portManagerService } from "../PortManagerService.js";
+import { sanitizePluginFileName } from "../plugins/PluginInstallService.js";
 
 describe("Java runtime parsing", () => {
   it("parses legacy Java 8 output", () => {
@@ -132,6 +133,30 @@ describe("file manager sandbox", () => {
     } finally {
       await rm(parent, { recursive: true, force: true });
     }
+  });
+
+  it("hides internal plugin management folders", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "serverlab-plugin-folders-"));
+    const serverRoot = path.join(parent, "server");
+
+    try {
+      await mkdir(path.join(serverRoot, "plugins", ".staging"), { recursive: true });
+      await mkdir(path.join(serverRoot, "plugins", ".trash"), { recursive: true });
+      await writeFile(path.join(serverRoot, "plugins", "EssentialsX.jar"), "", "utf-8");
+
+      const manager = new FileManager(serverRoot);
+      const entries = await manager.listDirectory("plugins");
+      expect(entries.map((entry) => entry.name)).toEqual(["EssentialsX.jar"]);
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("plugin file safety", () => {
+  it("sanitizes Modrinth-provided jar names", () => {
+    expect(sanitizePluginFileName("../bad:name")).toBe("bad-name.jar");
+    expect(sanitizePluginFileName("Plugin One.jar")).toBe("Plugin One.jar");
   });
 });
 

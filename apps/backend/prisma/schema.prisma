@@ -29,6 +29,8 @@ model Server {
   updatedAt   DateTime @updatedAt
 
   backups     Backup[]
+  plugins     Plugin[]
+  pluginJobs  PluginInstallJob[]
   javaRuntime JavaRuntime? @relation(fields: [javaRuntimeId], references: [id], onDelete: SetNull)
 
   @@map("servers")
@@ -164,4 +166,83 @@ model ErrorEvent {
   clearedAt        DateTime?
 
   @@map("error_events")
+}
+
+model Plugin {
+  id                String   @id @default(uuid())
+  serverId          String
+  source            String   @default("modrinth")
+  contentType       String   @default("plugin")
+  sourceProjectId   String?
+  sourceVersionId   String?
+  slug              String?
+  name              String
+  installedVersion  String
+  fileName          String
+  filePath          String
+  fileHashSha1      String?
+  fileHashSha512    String?
+  fileSizeBytes     Int?
+  enabled           Boolean  @default(true)
+  status            String   @default("installed")
+  updateAvailable   Boolean  @default(false)
+  installedAt       DateTime?
+  lastCheckedAt     DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  server            Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  dependencies      PluginDependency[]
+  jobs              PluginInstallJob[]
+
+  @@unique([serverId, source, sourceProjectId])
+  @@map("plugins")
+}
+
+model PluginDependency {
+  id                 String   @id @default(uuid())
+  pluginId           String
+  dependsOnProjectId String
+  dependsOnVersionId String?
+  dependsOnName      String?
+  dependencyType     String
+  resolvedPluginId   String?
+  createdAt          DateTime @default(now())
+
+  plugin             Plugin   @relation(fields: [pluginId], references: [id], onDelete: Cascade)
+
+  @@map("plugin_dependencies")
+}
+
+model PluginInstallJob {
+  id                String   @id
+  serverId          String
+  pluginId          String?
+  projectId         String?
+  versionId         String?
+  action            String
+  status            String   @default("queued")
+  stage             String   @default("resolving-project")
+  bytesReceived     Int      @default(0)
+  totalBytes        Int?
+  speedBytesPerSec  Int      @default(0)
+  etaSeconds        Int?
+  error             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  server            Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  plugin            Plugin?  @relation(fields: [pluginId], references: [id], onDelete: SetNull)
+
+  @@map("plugin_install_jobs")
+}
+
+model ModrinthCacheEntry {
+  key         String   @id
+  kind        String
+  payloadJson String
+  cachedAt    DateTime @default(now())
+  expiresAt   DateTime
+
+  @@map("modrinth_cache_entries")
 }

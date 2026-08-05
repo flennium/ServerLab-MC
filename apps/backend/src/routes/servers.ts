@@ -13,6 +13,7 @@ import {
   PortConflictError,
   portManagerService,
 } from "../services/PortManagerService.js";
+import { pluginInstallService } from "../services/plugins/PluginInstallService.js";
 import { logger } from "../lib/logger.js";
 import { HttpError, badRequest } from "../middleware/error.js";
 import type {
@@ -24,6 +25,7 @@ import type {
   CreateFileDto,
   CreateFolderDto,
   DuplicateFileDto,
+  PluginInstallRequest,
   ServerDeleteProgressPayload,
 } from "@serverlab/shared";
 
@@ -428,6 +430,88 @@ serverRoutes.post("/:id/restart", async (req, res, next) => {
       next(portConflictToHttp(err));
       return;
     }
+    next(err);
+  }
+});
+
+serverRoutes.get("/:id/plugins", async (req, res, next) => {
+  try {
+    const plugins = await pluginInstallService.listInstalled(req.params.id);
+    res.json({ plugins });
+  } catch (err) {
+    next(err);
+  }
+});
+
+serverRoutes.post("/:id/plugins/install", async (req, res, next) => {
+  try {
+    const body = req.body as PluginInstallRequest;
+    if (!body.projectId || !body.versionId) {
+      throw badRequest("projectId and versionId are required", "plugin");
+    }
+    const result = await pluginInstallService.install({
+      serverId: req.params.id,
+      projectId: body.projectId,
+      versionId: body.versionId,
+      allowWarning: body.allowWarning,
+      requestId: body.requestId,
+    });
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+serverRoutes.post("/:id/plugins/jobs/:jobId/cancel", async (req, res, next) => {
+  try {
+    const job = await pluginInstallService.cancel(req.params.jobId);
+    res.json({ job });
+  } catch (err) {
+    next(err);
+  }
+});
+
+serverRoutes.post("/:id/plugins/:pluginId/update", async (req, res, next) => {
+  try {
+    const result = await pluginInstallService.updatePlugin(req.params.id, req.params.pluginId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+serverRoutes.post("/:id/plugins/:pluginId/disable", async (req, res, next) => {
+  try {
+    const plugin = await pluginInstallService.disable(req.params.id, req.params.pluginId);
+    res.json({ plugin });
+  } catch (err) {
+    next(err);
+  }
+});
+
+serverRoutes.post("/:id/plugins/:pluginId/enable", async (req, res, next) => {
+  try {
+    const plugin = await pluginInstallService.enable(req.params.id, req.params.pluginId);
+    res.json({ plugin });
+  } catch (err) {
+    next(err);
+  }
+});
+
+serverRoutes.post("/:id/plugins/:pluginId/restore", async (req, res, next) => {
+  try {
+    const plugin = await pluginInstallService.restore(req.params.id, req.params.pluginId);
+    res.json({ plugin });
+  } catch (err) {
+    next(err);
+  }
+});
+
+serverRoutes.delete("/:id/plugins/:pluginId", async (req, res, next) => {
+  try {
+    const plugin = await pluginInstallService.remove(req.params.id, req.params.pluginId);
+    res.json({ plugin });
+  } catch (err) {
     next(err);
   }
 });

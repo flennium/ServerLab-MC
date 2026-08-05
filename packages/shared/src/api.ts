@@ -12,6 +12,9 @@ import type {
   Template,
   SoftwareArtifact,
   SoftwareDownload,
+  InstalledPlugin,
+  PluginDependency,
+  PluginInstallJob,
 } from "./models.js";
 import type { AppError } from "./errors.js";
 
@@ -243,6 +246,122 @@ export interface CreateFolderDto {
 export interface DuplicateFileDto {
   path: string;
   targetPath?: string;
+}
+
+// Plugins / Modrinth
+export type PluginCompatibilityStatus = "compatible" | "warning" | "incompatible";
+
+export interface PluginCompatibility {
+  status: PluginCompatibilityStatus;
+  reason: string;
+  matchedLoaders: string[];
+  matchedVersions: string[];
+}
+
+export interface ModrinthSearchRequest {
+  query?: string;
+  serverId?: string;
+  loader?: string;
+  minecraftVersion?: string;
+  category?: string;
+  sort?: "relevance" | "downloads" | "follows" | "newest" | "updated";
+  offset?: number;
+  limit?: number;
+}
+
+export interface ModrinthProject {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  body?: string | null;
+  projectType: string;
+  iconUrl: string | null;
+  downloads: number;
+  followers: number;
+  categories: string[];
+  loaders: string[];
+  gameVersions: string[];
+  license: string | null;
+  updatedAt: string | null;
+  sourceUrl: string | null;
+  issuesUrl: string | null;
+  wikiUrl: string | null;
+}
+
+export interface ModrinthProjectSearchHit extends ModrinthProject {
+  compatibility: PluginCompatibility | null;
+}
+
+export interface ModrinthSearchResponse {
+  hits: ModrinthProjectSearchHit[];
+  totalHits: number;
+  offset: number;
+  limit: number;
+  offline: boolean;
+}
+
+export interface ModrinthVersionFile {
+  url: string;
+  filename: string;
+  primary: boolean;
+  size: number;
+  hashes: {
+    sha1?: string;
+    sha512?: string;
+  };
+}
+
+export interface ModrinthVersionDependency {
+  projectId: string | null;
+  versionId: string | null;
+  fileName: string | null;
+  dependencyType: "required" | "optional" | "incompatible" | "embedded";
+}
+
+export interface ModrinthVersion {
+  id: string;
+  projectId: string;
+  name: string;
+  versionNumber: string;
+  versionType: "release" | "beta" | "alpha";
+  loaders: string[];
+  gameVersions: string[];
+  datePublished: string;
+  files: ModrinthVersionFile[];
+  dependencies: ModrinthVersionDependency[];
+  compatibility: PluginCompatibility | null;
+}
+
+export interface ModrinthProjectResponse {
+  project: ModrinthProjectSearchHit;
+}
+
+export interface ModrinthVersionListResponse {
+  versions: ModrinthVersion[];
+  offline: boolean;
+}
+
+export interface InstalledPluginListResponse {
+  plugins: InstalledPlugin[];
+}
+
+export interface PluginInstallRequest {
+  projectId: string;
+  versionId: string;
+  allowWarning?: boolean;
+  requestId?: string;
+}
+
+export interface PluginInstallResponse {
+  job: PluginInstallJob;
+  plugin: InstalledPlugin | null;
+  dependencies: PluginDependency[];
+  restartRequired: boolean;
+}
+
+export interface PluginJobResponse {
+  job: PluginInstallJob;
 }
 
 // Backups

@@ -44,7 +44,11 @@ export class FileManager {
 
   async listDirectory(relativePath = ""): Promise<FileEntry[]> {
     const dir = this.resolve(relativePath);
-    const entries = await fs.readdir(dir, { withFileTypes: true });
+    const normalizedRelative = relativePath.toLowerCase().replace(/\\/g, "/");
+    const entries = (await fs.readdir(dir, { withFileTypes: true })).filter((entry) => {
+      if (normalizedRelative !== "plugins") return true;
+      return ![".staging", ".disabled", ".trash", ".backups"].includes(entry.name.toLowerCase());
+    });
 
     const results = await Promise.all(
       entries.map(async (entry) => {
