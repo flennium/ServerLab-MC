@@ -69,6 +69,52 @@ export interface DeleteServerResponse {
   backupCreated: boolean;
 }
 
+// Port management
+export type PortReservationOwnerType = "server" | "backend" | "dev-service";
+export type PortStatusSource =
+  | "available"
+  | "serverlab-running"
+  | "serverlab-saved"
+  | "external"
+  | "unknown";
+
+export interface PortReservationOwner {
+  ownerType: PortReservationOwnerType;
+  ownerId: string;
+  ownerName?: string | null;
+}
+
+export interface PortStatus {
+  port: number;
+  host: string;
+  available: boolean;
+  ownerType: PortReservationOwnerType | null;
+  ownerId: string | null;
+  ownerName: string | null;
+  source: PortStatusSource;
+  processId: number | null;
+  processName: string | null;
+  commandLine: string | null;
+  suggestedPort: number | null;
+  message: string;
+}
+
+export interface PortCheckResponse {
+  status: PortStatus;
+}
+
+export interface PortSuggestionResponse {
+  port: number;
+}
+
+export interface PortStatusListResponse {
+  ports: PortStatus[];
+}
+
+export interface PortConflictResponse {
+  status: PortStatus;
+}
+
 // Server software manager
 export interface SoftwareProviderInfo {
   id: ServerFramework;

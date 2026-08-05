@@ -16,6 +16,19 @@ let backendProcess: ChildProcess | null = null;
 let backendPort = DEFAULT_BACKEND_PORT;
 
 const isDev = !app.isPackaged;
+const allowMultipleInstances = isDev && process.env.SERVERLAB_ALLOW_MULTI_INSTANCE === "1";
+const hasSingleInstanceLock = allowMultipleInstances || app.requestSingleInstanceLock();
+
+if (!hasSingleInstanceLock) {
+  app.quit();
+  app.exit(0);
+}
+
+app.on("second-instance", () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.focus();
+});
 
 function getDevRoot(): string {
   const candidates = [path.join(__dirname, ".."), path.join(__dirname, "../../..")];
@@ -206,11 +219,15 @@ function isPortFree(port: number, host = "127.0.0.1"): Promise<boolean> {
 async function findBackendPort(): Promise<number> {
   if (isDev) return DEFAULT_BACKEND_PORT;
 
+  const checked: number[] = [];
   for (let port = DEFAULT_BACKEND_PORT; port < DEFAULT_BACKEND_PORT + 20; port += 1) {
+    checked.push(port);
     if (await isPortFree(port)) return port;
   }
 
-  throw new Error("No local backend port is available");
+  throw new Error(
+    `No local backend port is available. Checked ${checked[0]}-${checked.at(-1)}. Close another ServerLab instance or the process using those ports.`
+  );
 }
 
 function sleep(ms: number): Promise<void> {

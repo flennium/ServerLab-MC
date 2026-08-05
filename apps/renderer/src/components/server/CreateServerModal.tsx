@@ -5,6 +5,7 @@ import { useServerStore } from "../../store/serverStore.js";
 import { Alert } from "../ui/Layout.js";
 import { Button } from "../ui/Button.js";
 import { Field, Select, Switch, TextInput } from "../ui/Form.js";
+import { PortField } from "./PortField.js";
 import { api } from "../../lib/apiClient.js";
 import { getSocket } from "../../lib/socket.js";
 import {
@@ -17,6 +18,8 @@ import type {
   JavaRecommendationResponse,
   JavaRuntime,
   JavaRuntimeListResponse,
+  PortStatus,
+  PortSuggestionResponse,
   ServerFramework,
   SoftwareBuild,
   SoftwareBuildListResponse,
@@ -76,20 +79,11 @@ function managedServerPath(serverRoot: string, name: string): string {
   return joinPath(serverRoot, serverFolderName(name));
 }
 
-function nextAvailablePort(usedPorts: number[], start = 25565): number {
-  const used = new Set(usedPorts);
-  let port = start;
-  while (used.has(port) && port < 65535) {
-    port += 1;
-  }
-  return port;
-}
-
 export function CreateServerModal({ onClose }: CreateServerModalProps) {
   const { createServer } = useServerStore();
-  const servers = useServerStore((state) => state.servers);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [portStatus, setPortStatus] = useState<PortStatus | null>(null);
   const [providers, setProviders] = useState<SoftwareProviderInfo[]>([]);
   const [versions, setVersions] = useState<string[]>([]);
   const [builds, setBuilds] = useState<SoftwareBuild[]>([]);
@@ -127,11 +121,6 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
   const compatibleRuntimes = recommendation
     ? runtimes.filter((runtime) => runtime.status === "valid" && runtime.major >= recommendation.requiredMajor)
     : runtimes.filter((runtime) => runtime.status === "valid");
-  const suggestedPort = useMemo(
-    () => nextAvailablePort(servers.map((server) => server.port)),
-    [servers]
-  );
-
   const canCreate = useMemo(
     () =>
       Boolean(
@@ -142,6 +131,7 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
           buildId &&
           eulaAccepted &&
           (manualJava ? form.javaPath.trim() : javaRuntimeId) &&
+          portStatus?.available &&
           !loading &&
           !activeJavaInstallId
       ),
@@ -156,6 +146,7 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
       loading,
       manualJava,
       minecraftVersion,
+      portStatus,
       selectedProvider,
     ]
   );
@@ -181,13 +172,11 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
         if (firstEnabled) setProvider(firstEnabled.id);
       })
       .catch((error) => setError(error instanceof Error ? error.message : "Failed to load providers"));
+    api
+      .get<PortSuggestionResponse>("/api/ports/suggest?start=25565")
+      .then(({ port }) => set("port", port))
+      .catch(() => {});
   }, []);
-
-  useEffect(() => {
-    setForm((current) =>
-      current.port === 25565 ? { ...current, port: suggestedPort } : current
-    );
-  }, [suggestedPort]);
 
   useEffect(() => {
     if (!serverRoot || customLocation) return;
@@ -482,12 +471,12 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
           <Field label="RAM max (MB)">
             <TextInput type="number" value={form.ramMaxMb} onChange={(event) => set("ramMaxMb", Number(event.target.value))} min={512} />
           </Field>
-          <Field label="Port">
-            <TextInput type="number" value={form.port} onChange={(event) => set("port", Number(event.target.value))} min={1024} max={65535} />
-            <p className="mt-1 text-xs text-muted">
-              New servers use the next free port automatically.
-            </p>
-          </Field>
+          <PortField
+            value={form.port}
+            onChange={(port) => set("port", port)}
+            onStatusChange={setPortStatus}
+            hint="ServerLab checks saved servers and active OS ports before creation."
+          />
         </div>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1.2fr]">

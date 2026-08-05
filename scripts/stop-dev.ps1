@@ -11,28 +11,38 @@ $RepoRoot = (Resolve-Path (Join-Path (Split-Path -Parent $MyInvocation.MyCommand
 $ports = @(3001, 5173)
 $processIds = New-Object System.Collections.Generic.HashSet[int]
 
+function Test-ServerLabProcess($processInfo) {
+  if (-not $processInfo -or -not $processInfo.CommandLine) {
+    return $false
+  }
+
+  return (
+    $processInfo.CommandLine -like "*$RepoRoot*" -or
+    $processInfo.CommandLine -like "*ServerLab MC*" -or
+    $processInfo.CommandLine -like "*serverlab-mc*" -or
+    $processInfo.CommandLine -like "*apps\backend\dist\index.js*" -or
+    $processInfo.CommandLine -like "*release\win-unpacked\resources\backend\dist\index.js*" -or
+    $processInfo.CommandLine -like "*vite\bin\vite.js*"
+  )
+}
+
 foreach ($port in $ports) {
   netstat -ano -p tcp |
     Select-String ":$port\s" |
     ForEach-Object {
       $parts = $_.Line.Trim() -split "\s+"
       if ($parts.Length -ge 5 -and $parts[3] -eq "LISTENING") {
-        [void]$processIds.Add([int]$parts[4])
+        $pid = [int]$parts[4]
+        $processInfo = Get-WmiObject Win32_Process -Filter "ProcessId=$pid" -ErrorAction SilentlyContinue
+        if (Test-ServerLabProcess $processInfo) {
+          [void]$processIds.Add($pid)
+        }
       }
     }
 }
 
 Get-WmiObject Win32_Process |
-  Where-Object {
-      $_.CommandLine -and (
-        $_.CommandLine -like "*$RepoRoot*" -or
-        $_.CommandLine -like "*ServerLab MC*" -or
-        $_.CommandLine -like "*serverlab-mc*" -or
-        $_.CommandLine -like "*apps\backend\dist\index.js*" -or
-        $_.CommandLine -like "*release\win-unpacked\resources\backend\dist\index.js*" -or
-        $_.CommandLine -like "*vite\bin\vite.js*"
-      )
-  } |
+  Where-Object { Test-ServerLabProcess $_ } |
   ForEach-Object {
     [void]$processIds.Add([int]$_.ProcessId)
   }
