@@ -1,5 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
+import crypto from "crypto";
 import archiver from "archiver";
 import type {
   FileContentResponse,
@@ -81,7 +82,7 @@ export class FileManager {
       language: languageFor(relativePath),
       sizeBytes: stat.size,
       modifiedAt: stat.mtime.toISOString(),
-      etag: etagFor(stat),
+      etag: etagFor(stat, buffer.byteLength === stat.size ? buffer : undefined),
       readonly,
       restartHint: restartHintFor(relativePath),
       validation: validateContent(relativePath, content, binary),
@@ -93,11 +94,12 @@ export class FileManager {
   async writeFile(dto: WriteFileDto): Promise<FileContentResponse> {
     const filePath = this.resolve(dto.path);
     const currentStat = await fs.stat(filePath).catch(() => null);
+    const currentEtag = currentStat ? await etagForFile(filePath, currentStat) : null;
 
     if (
       currentStat &&
       dto.expectedEtag &&
-      dto.expectedEtag !== etagFor(currentStat) &&
+      dto.expectedEtag !== currentEtag &&
       !dto.force
     ) {
       throw new FileConflictError();
@@ -227,8 +229,22 @@ async function isBinaryFile(filePath: string): Promise<boolean> {
   return buffer.includes(0);
 }
 
-function etagFor(stat: { size: number; mtimeMs: number }): string {
-  return `${stat.size}-${Math.round(stat.mtimeMs)}`;
+async function etagForFile(
+  filePath: string,
+  stat: { size: number; mtimeMs: number }
+): Promise<string> {
+  if (stat.size <= LARGE_FILE_BYTES) {
+    const buffer = await fs.readFile(filePath);
+    return etagFor(stat, buffer);
+  }
+  return etagFor(stat);
+}
+
+function etagFor(stat: { size: number; mtimeMs: number }, buffer?: Buffer): string {
+  const metadata = `${stat.size}-${Math.round(stat.mtimeMs)}`;
+  if (!buffer) return metadata;
+  const hash = crypto.createHash("sha256").update(buffer).digest("hex");
+  return `${metadata}-${hash}`;
 }
 
 function extensionFor(name: string): string | null {
