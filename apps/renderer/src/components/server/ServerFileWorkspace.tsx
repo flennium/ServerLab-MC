@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { yaml } from "@codemirror/lang-yaml";
@@ -9,7 +10,7 @@ import {
   Archive,
   Clipboard,
   Copy,
-  Download,
+  Edit3,
   FileCode2,
   FilePlus2,
   FileText,
@@ -18,14 +19,11 @@ import {
   FolderPlus,
   HardDriveDownload,
   Home,
-  Pin,
-  PinOff,
   RefreshCw,
   RotateCcw,
   Save,
   Search,
   ShieldAlert,
-  Star,
   Trash2,
   X,
 } from "lucide-react";
@@ -63,8 +61,6 @@ interface FileTab {
 }
 
 interface WorkspacePrefs {
-  favorites: string[];
-  recent: string[];
   openTabs: string[];
   activePath: string | null;
 }
@@ -95,7 +91,6 @@ const MAX_RENDERED_ROWS = 650;
 
 export function ServerFileWorkspace({
   serverId,
-  serverPath,
   serverStatus,
 }: ServerFileWorkspaceProps) {
   const storageKey = `serverlab.files.${serverId}`;
@@ -108,16 +103,17 @@ export function ServerFileWorkspace({
   const [filter, setFilter] = useState<FilterKey>("all");
   const [tabs, setTabs] = useState<FileTab[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
-  const [favorites, setFavorites] = useState<string[]>([]);
-  const [recent, setRecent] = useState<string[]>([]);
   const [createMode, setCreateMode] = useState<CreateMode | null>(null);
   const [createName, setCreateName] = useState("");
   const [renaming, setRenaming] = useState<FileEntry | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [pendingDelete, setPendingDelete] = useState<FileEntry | null>(null);
   const [dirtyClosePath, setDirtyClosePath] = useState<string | null>(null);
-  const [backupBusy, setBackupBusy] = useState(false);
-  const [backupMessage, setBackupMessage] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    entry: FileEntry;
+    x: number;
+    y: number;
+  } | null>(null);
   const restoredPrefs = useRef(false);
   const { reportError } = useError();
 
@@ -155,18 +151,15 @@ export function ServerFileWorkspace({
 
   useEffect(() => {
     const prefs: WorkspacePrefs = {
-      favorites,
-      recent,
       openTabs: tabs.map((tab) => tab.path),
       activePath,
     };
     localStorage.setItem(storageKey, JSON.stringify(prefs));
-  }, [activePath, favorites, recent, storageKey, tabs]);
+  }, [activePath, storageKey, tabs]);
 
   const openFile = useCallback(async (path: string, name = basename(path), options: { silent?: boolean } = {}) => {
     setActivePath(path);
     setSelectedPath(path);
-    setRecent((current) => [path, ...current.filter((item) => item !== path)].slice(0, 8));
 
     const existing = tabs.find((tab) => tab.path === path);
     if (existing) return;
@@ -229,8 +222,6 @@ export function ServerFileWorkspace({
     if (!raw) return;
     try {
       const prefs = JSON.parse(raw) as WorkspacePrefs;
-      setFavorites(Array.isArray(prefs.favorites) ? prefs.favorites : []);
-      setRecent(Array.isArray(prefs.recent) ? prefs.recent : []);
       setActivePath(typeof prefs.activePath === "string" ? prefs.activePath : null);
       for (const path of Array.isArray(prefs.openTabs) ? prefs.openTabs.slice(0, 5) : []) {
         void openFile(path, basename(path), { silent: true });
@@ -449,76 +440,46 @@ export function ServerFileWorkspace({
     }
   }
 
-  async function downloadEntry(entry: FileEntry) {
-    try {
-      const { origin, token } = await api.getConfig();
-      const response = await fetch(
-        `${origin}/api/servers/${serverId}/files/download?path=${encodeURIComponent(entry.path)}`,
-        { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
-      );
-      if (!response.ok) throw new Error(response.statusText);
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = entry.isDirectory ? `${entry.name}.zip` : entry.name;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      setListError(
-        reportError(error, {
-          category: "file",
-          severity: "error",
-          userMessage: "ServerLab could not export this item.",
-          possibleSolution: "Try again or check that the file still exists.",
-          source: "renderer:file-workspace",
-          action: "download-file",
-        })
-      );
-    }
-  }
-
-  async function createBackupBeforeEdit() {
-    setBackupBusy(true);
-    setBackupMessage(null);
-    try {
-      await api.post(`/api/servers/${serverId}/backups`, { type: "manual" });
-      setBackupMessage("Backup started. You can continue editing while ServerLab saves it.");
-    } catch (error) {
-      reportError(error, {
-        category: "server",
-        severity: "error",
-        userMessage: "ServerLab could not start a backup.",
-        possibleSolution: "Check disk space, then try again from the Backups section.",
-        source: "renderer:file-workspace",
-        action: "backup-before-edit",
-      });
-    } finally {
-      setBackupBusy(false);
-    }
-  }
-
   async function copyPath(path: string) {
     await navigator.clipboard?.writeText(path).catch(() => {});
   }
 
-  async function revealPath(path: string) {
-    if (!window.serverlab?.openPath) return;
-    const target = `${serverPath}${dirname(path) ? `\\${dirname(path).replace(/\//g, "\\")}` : ""}`;
-    await window.serverlab.openPath(target);
+  function openEntry(entry: FileEntry) {
+    if (entry.isDirectory) void loadDirectory(entry.path);
+    else void openFile(entry.path, entry.name);
   }
 
-  function toggleFavorite(path: string) {
-    setFavorites((current) =>
-      current.includes(path) ? current.filter((item) => item !== path) : [path, ...current].slice(0, 20)
-    );
+  function openContextMenu(entry: FileEntry, event: MouseEvent) {
+    event.preventDefault();
+    setSelectedPath(entry.path);
+    setContextMenu({
+      entry,
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - 220)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 250)),
+    });
   }
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    function closeMenu() {
+      setContextMenu(null);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setContextMenu(null);
+    }
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [contextMenu]);
 
   const dirtyCount = tabs.filter((tab) => tab.content !== tab.original).length;
   const rows = visibleEntries.slice(0, MAX_RENDERED_ROWS);
 
   return (
-    <div className="grid min-h-[620px] gap-4 xl:grid-cols-[minmax(280px,0.7fr)_minmax(520px,1.35fr)_minmax(260px,0.65fr)]">
+    <div className="grid min-h-[620px] gap-4 xl:grid-cols-[minmax(300px,0.58fr)_minmax(560px,1.42fr)]">
       <Card className="flex min-h-[520px] flex-col overflow-hidden">
         <div className="border-b border-border bg-carbon px-3 py-3">
           <div className="mb-3 flex items-center justify-between gap-2">
@@ -593,8 +554,6 @@ export function ServerFileWorkspace({
         <div className="min-h-0 flex-1 overflow-y-auto">
           <QuickSections
             currentPath={currentPath}
-            favorites={favorites}
-            recent={recent}
             onOpenFile={(path) => openFile(path)}
             onOpenFolder={loadDirectory}
           />
@@ -621,26 +580,14 @@ export function ServerFileWorkspace({
                 key={entry.path}
                 entry={entry}
                 selected={selectedPath === entry.path || activePath === entry.path}
-                favorite={favorites.includes(entry.path)}
                 renaming={renaming?.path === entry.path}
                 renameValue={renameValue}
                 onRenameValue={setRenameValue}
                 onConfirmRename={renameEntry}
                 onCancelRename={() => setRenaming(null)}
                 onSelect={() => setSelectedPath(entry.path)}
-                onOpen={() => {
-                  if (entry.isDirectory) void loadDirectory(entry.path);
-                  else void openFile(entry.path, entry.name);
-                }}
-                onFavorite={() => toggleFavorite(entry.path)}
-                onRename={() => {
-                  setRenaming(entry);
-                  setRenameValue(entry.name);
-                }}
-                onDelete={() => setPendingDelete(entry)}
-                onDuplicate={() => duplicateEntry(entry)}
-                onDownload={() => downloadEntry(entry)}
-                onCopyPath={() => copyPath(entry.path)}
+                onOpen={() => openEntry(entry)}
+                onContextMenu={(event) => openContextMenu(entry, event)}
               />
             ))}
 
@@ -724,17 +671,21 @@ export function ServerFileWorkspace({
         />
       </Card>
 
-      <FileInspectorPanel
-        tab={activeTab}
-        isRunning={isRunning}
-        backupBusy={backupBusy}
-        backupMessage={backupMessage}
-        favorite={Boolean(activeTab && favorites.includes(activeTab.path))}
-        onFavorite={() => activeTab && toggleFavorite(activeTab.path)}
-        onBackup={createBackupBeforeEdit}
-        onCopyPath={() => activeTab && copyPath(activeTab.path)}
-        onReveal={() => activeTab && revealPath(activeTab.path)}
-      />
+      {contextMenu && (
+        <FileContextMenu
+          entry={contextMenu.entry}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onOpen={() => openEntry(contextMenu.entry)}
+          onCopyPath={() => copyPath(contextMenu.entry.path)}
+          onDuplicate={() => duplicateEntry(contextMenu.entry)}
+          onRename={() => {
+            setRenaming(contextMenu.entry);
+            setRenameValue(contextMenu.entry.name);
+          }}
+          onDelete={() => setPendingDelete(contextMenu.entry)}
+        />
+      )}
 
       {pendingDelete && (
         <ConfirmModal
@@ -822,7 +773,6 @@ function EditorPane({
             {tab.saving ? "Saving..." : "Save"}
           </Button>
           <IconButton icon={RotateCcw} label="Reload file" onClick={onReload} disabled={tab.loading} />
-          <IconButton icon={Search} label="Use Ctrl+F to search in editor" disabled />
           <IconButton icon={X} label="Close file" onClick={onClose} />
         </div>
       </div>
@@ -896,38 +846,35 @@ function EditorPane({
 
 function QuickSections({
   currentPath,
-  favorites,
-  recent,
   onOpenFile,
   onOpenFolder,
 }: {
   currentPath: string;
-  favorites: string[];
-  recent: string[];
   onOpenFile: (path: string) => void;
   onOpenFolder: (path: string) => void;
 }) {
-  if (currentPath) return null;
   const shortcuts = [
     { label: "Plugins", path: "plugins", icon: Folder },
     { label: "Worlds", path: "world", icon: HardDriveDownload },
     { label: "Logs", path: "logs", icon: FileText },
   ];
+  if (currentPath) return null;
+
   return (
     <div className="border-b border-border bg-panel/40 px-3 py-3">
       <p className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-muted">Quick access</p>
       <div className="grid gap-1">
         <div className="flex flex-wrap gap-1">
           {COMMON_FILES.map((path) => (
-            <button
-              key={path}
-              type="button"
-              onClick={() => onOpenFile(path)}
-              className="rounded border border-border bg-rail px-2 py-1 text-xs font-mono text-muted hover:text-white"
-            >
-              {path}
-            </button>
-          ))}
+          <button
+            key={path}
+            type="button"
+            onClick={() => onOpenFile(path)}
+            className="rounded border border-border bg-rail px-2 py-1 text-xs font-mono text-muted hover:border-copper/60 hover:text-white"
+          >
+            {path}
+          </button>
+        ))}
         </div>
         <div className="mt-1 flex flex-wrap gap-1">
           {shortcuts.map(({ label, path, icon: Icon }) => (
@@ -935,42 +882,77 @@ function QuickSections({
               key={path}
               type="button"
               onClick={() => onOpenFolder(path)}
-              className="inline-flex items-center gap-1 rounded border border-border bg-rail px-2 py-1 text-xs text-muted hover:text-white"
+              className="inline-flex items-center gap-1 rounded border border-border bg-rail px-2 py-1 text-xs text-muted hover:border-copper/60 hover:text-white"
             >
               <Icon className="h-3.5 w-3.5" />
               {label}
             </button>
           ))}
         </div>
-        {(favorites.length > 0 || recent.length > 0) && (
-          <div className="mt-2 grid gap-2">
-            {favorites.length > 0 && (
-              <PathStrip title="Favorites" paths={favorites.slice(0, 5)} onOpen={onOpenFile} />
-            )}
-            {recent.length > 0 && <PathStrip title="Recent" paths={recent.slice(0, 5)} onOpen={onOpenFile} />}
-          </div>
-        )}
       </div>
     </div>
   );
 }
 
-function PathStrip({ title, paths, onOpen }: { title: string; paths: string[]; onOpen: (path: string) => void }) {
+function FileContextMenu({
+  entry,
+  x,
+  y,
+  onOpen,
+  onRename,
+  onDuplicate,
+  onCopyPath,
+  onDelete,
+}: {
+  entry: FileEntry;
+  x: number;
+  y: number;
+  onOpen: () => void;
+  onRename: () => void;
+  onDuplicate: () => void;
+  onCopyPath: () => void;
+  onDelete: () => void;
+}) {
+  const items = [
+    { label: entry.isDirectory ? "Open folder" : "Open file", icon: entry.isDirectory ? FolderOpen : Edit3, action: onOpen },
+    { label: "Rename", icon: FileText, action: onRename },
+    { label: "Duplicate", icon: Copy, action: onDuplicate },
+    { label: "Copy relative path", icon: Clipboard, action: onCopyPath },
+    { label: "Delete", icon: Trash2, action: onDelete, danger: true },
+  ];
+
   return (
-    <div>
-      <p className="mb-1 text-[0.68rem] font-semibold uppercase text-muted">{title}</p>
-      <div className="flex flex-wrap gap-1">
-        {paths.map((path) => (
-          <button
-            key={path}
-            type="button"
-            onClick={() => onOpen(path)}
-            className="max-w-full truncate rounded bg-carbon px-2 py-1 font-mono text-[0.68rem] text-muted hover:text-white"
-          >
-            {path}
-          </button>
-        ))}
+    <div
+      className="fixed z-50 w-56 overflow-hidden rounded-md border border-border bg-carbon py-1 shadow-2xl"
+      style={{ left: x, top: y }}
+      role="menu"
+    >
+      <div className="border-b border-border px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+        <FileGlyph type={entry.type} directory={entry.isDirectory} />
+        <div className="min-w-0">
+          <p className="truncate font-mono text-xs font-semibold text-white">{entry.name}</p>
+          <p className="truncate text-[0.68rem] text-muted">
+            {entry.isDirectory ? "Folder" : `${labelForType(entry.type)}${entry.sizeBytes != null ? `, ${formatBytes(entry.sizeBytes)}` : ""}`}
+          </p>
+        </div>
+        </div>
       </div>
+      {items.map(({ label, icon: Icon, action, danger }) => (
+        <button
+          key={label}
+          type="button"
+          onClick={action}
+          className={clsx(
+            "flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-rail",
+            danger ? "text-redstone" : "text-muted hover:text-white"
+          )}
+          role="menuitem"
+        >
+          <Icon className="h-4 w-4" />
+          {label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -978,7 +960,6 @@ function PathStrip({ title, paths, onOpen }: { title: string; paths: string[]; o
 function FileTreeRow({
   entry,
   selected,
-  favorite,
   renaming,
   renameValue,
   onRenameValue,
@@ -986,16 +967,10 @@ function FileTreeRow({
   onCancelRename,
   onSelect,
   onOpen,
-  onFavorite,
-  onRename,
-  onDelete,
-  onDuplicate,
-  onDownload,
-  onCopyPath,
+  onContextMenu,
 }: {
   entry: FileEntry;
   selected: boolean;
-  favorite: boolean;
   renaming: boolean;
   renameValue: string;
   onRenameValue: (value: string) => void;
@@ -1003,19 +978,15 @@ function FileTreeRow({
   onCancelRename: () => void;
   onSelect: () => void;
   onOpen: () => void;
-  onFavorite: () => void;
-  onRename: () => void;
-  onDelete: () => void;
-  onDuplicate: () => void;
-  onDownload: () => void;
-  onCopyPath: () => void;
+  onContextMenu: (event: MouseEvent) => void;
 }) {
   return (
     <div
       onClick={onSelect}
       onDoubleClick={onOpen}
+      onContextMenu={onContextMenu}
       className={clsx(
-        "group grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-rail",
+        "cursor-pointer px-3 py-2 text-sm transition-colors hover:bg-rail",
         selected && "bg-rail"
       )}
     >
@@ -1045,87 +1016,7 @@ function FileTreeRow({
           </div>
         )}
       </div>
-      <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100" onClick={(event) => event.stopPropagation()}>
-        <IconButton icon={entry.isDirectory ? FolderOpen : FileCode2} label="Open" onClick={onOpen} />
-        <IconButton icon={favorite ? PinOff : Pin} label={favorite ? "Remove favorite" : "Favorite"} onClick={onFavorite} />
-        <IconButton icon={Copy} label="Duplicate" onClick={onDuplicate} />
-        <IconButton icon={Clipboard} label="Copy path" onClick={onCopyPath} />
-        <IconButton icon={Download} label="Export" onClick={onDownload} />
-        <IconButton icon={FileText} label="Rename" onClick={onRename} />
-        <IconButton icon={Trash2} label="Delete" variant="danger" onClick={onDelete} />
-      </div>
     </div>
-  );
-}
-
-function FileInspectorPanel({
-  tab,
-  isRunning,
-  backupBusy,
-  backupMessage,
-  favorite,
-  onFavorite,
-  onBackup,
-  onCopyPath,
-  onReveal,
-}: {
-  tab: FileTab | null;
-  isRunning: boolean;
-  backupBusy: boolean;
-  backupMessage: string | null;
-  favorite: boolean;
-  onFavorite: () => void;
-  onBackup: () => void;
-  onCopyPath: () => void;
-  onReveal: () => void;
-}) {
-  return (
-    <Card className="flex min-h-[320px] flex-col overflow-hidden">
-      <div className="border-b border-border bg-carbon px-3 py-3">
-        <p className="font-display text-sm font-semibold text-white">File inspector</p>
-        <p className="mt-0.5 text-xs text-muted">Metadata, safety, and server hints</p>
-      </div>
-      {!tab ? (
-        <div className="flex flex-1 items-center justify-center px-4 py-10 text-center text-sm text-muted">
-          Open a file to inspect its type, size, validation, and restart guidance.
-        </div>
-      ) : (
-        <div className="grid gap-3 p-3">
-          <InfoRow label="Path" value={tab.path} mono />
-          <InfoRow label="Type" value={tab.meta?.language ?? languageForName(tab.name)} />
-          <InfoRow label="Size" value={tab.meta ? formatBytes(tab.meta.sizeBytes) : "Loading"} />
-          <InfoRow label="Modified" value={tab.meta ? formatDate(tab.meta.modifiedAt) : "Loading"} />
-          <InfoRow label="Save state" value={tab.content === tab.original ? "Saved" : "Unsaved"} tone={tab.content === tab.original ? "good" : "warn"} />
-          {tab.meta?.readonly && (
-            <Alert tone="warning">
-              {tab.meta.isTruncated
-                ? "This large file is shown as a read-only preview."
-                : "This file is read-only in ServerLab."}
-            </Alert>
-          )}
-          {tab.meta?.restartHint && (
-            <Alert tone={isRunning ? "warning" : "info"}>
-              {tab.meta.restartHint}
-            </Alert>
-          )}
-          {backupMessage && <Alert tone="success">{backupMessage}</Alert>}
-          <div className="grid gap-2">
-            <Button onClick={onFavorite} icon={favorite ? Star : Pin} variant="secondary" size="sm">
-              {favorite ? "Favorited" : "Add favorite"}
-            </Button>
-            <Button onClick={onCopyPath} icon={Clipboard} variant="secondary" size="sm">
-              Copy relative path
-            </Button>
-            <Button onClick={onReveal} icon={FolderOpen} variant="secondary" size="sm">
-              Reveal folder
-            </Button>
-            <Button onClick={onBackup} disabled={backupBusy} icon={ShieldAlert} variant="secondary" size="sm">
-              {backupBusy ? "Starting backup..." : "Backup before edit"}
-            </Button>
-          </div>
-        </div>
-      )}
-    </Card>
   );
 }
 
@@ -1160,33 +1051,6 @@ function Breadcrumbs({
           {crumb.label}
         </button>
       ))}
-    </div>
-  );
-}
-
-function InfoRow({
-  label,
-  value,
-  mono,
-  tone,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  tone?: "good" | "warn";
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3 text-sm">
-      <span className="shrink-0 text-muted">{label}</span>
-      <span
-        className={clsx(
-          "min-w-0 break-words text-right font-semibold",
-          mono && "font-mono text-xs",
-          tone === "good" ? "text-grass" : tone === "warn" ? "text-glowstone" : "text-white"
-        )}
-      >
-        {value}
-      </span>
     </div>
   );
 }

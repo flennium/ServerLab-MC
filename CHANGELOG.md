@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.0.0-beta.11
+
+### Added
+
+- Added Ctrl+F console search with match highlighting and previous/next navigation.
+- Added a right-click file context menu for open, rename, duplicate, copy path, and delete actions.
+
+### Changed
+
+- Simplified the server Files tab into a cleaner two-column workspace without the File Inspector panel.
+- Removed Recent/Favorites file-manager clutter and moved file actions out of row button clusters.
+- Polished the Console header, search controls, output rows, and status treatment.
+- Bumped app and workspace versions to `3.0.0-beta.11`.
+
 ## 3.0.0-beta.10
 
 ### Added
