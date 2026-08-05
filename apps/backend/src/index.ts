@@ -13,12 +13,14 @@ import { backupRoutes } from "./routes/backups.js";
 import { softwareRoutes } from "./routes/software.js";
 import { errorRoutes } from "./routes/errors.js";
 import { logRoutes } from "./routes/logs.js";
+import { portRoutes } from "./routes/ports.js";
 import { registerSocketHandlers } from "./socket/index.js";
 import { startMonitor, stopMonitor } from "./services/MonitorService.js";
 import { ensureDatabaseSchema } from "./services/DatabaseSchemaService.js";
 import { softwareCacheService } from "./services/software/SoftwareCacheService.js";
 import { setSoftwareSocketServer } from "./services/software/softwareEvents.js";
 import { javaInstallService } from "./services/java/JavaInstallService.js";
+import { serverManager } from "./services/ServerManager.js";
 import type { ServerToClientEvents, ClientToServerEvents } from "@serverlab/shared";
 
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
@@ -58,6 +60,7 @@ app.use("/api/backups", backupRoutes);
 app.use("/api/software", softwareRoutes);
 app.use("/api/errors", errorRoutes);
 app.use("/api/logs", logRoutes);
+app.use("/api/ports", portRoutes);
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
@@ -72,6 +75,14 @@ registerSocketHandlers(io);
 
 async function start(): Promise<void> {
   await ensureDatabaseSchema();
+  await serverManager.restoreTrackedProcesses();
+
+  httpServer.on("error", (error: NodeJS.ErrnoException) => {
+    if (error.code === "EADDRINUSE") {
+      logger.error({ port: PORT, host: HOST }, "Backend port is already in use");
+    }
+    throw error;
+  });
 
   httpServer.listen(PORT, HOST, () => {
     const dataDir = process.env.DATA_DIR ?? process.cwd();
@@ -92,8 +103,11 @@ start().catch((err) => {
   process.exit(1);
 });
 
-process.on("SIGTERM", () => {
+process.on("SIGTERM", async () => {
   logger.info("SIGTERM received; shutting down");
   stopMonitor();
+  await serverManager.stopAll({ wait: true, timeoutMs: 20_000 }).catch((error) => {
+    logger.warn({ error }, "Failed to stop all Minecraft servers during shutdown");
+  });
   httpServer.close(() => process.exit(0));
 });

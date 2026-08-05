@@ -4,15 +4,17 @@
  *
  * Usage: node scripts/dev.mjs
  */
-import { spawn } from "child_process";
+import { execFile, spawn } from "child_process";
 import { createRequire } from "module";
 import { createConnection } from "net";
 import { fileURLToPath } from "url";
+import { promisify } from "util";
 import path from "path";
 import fs from "fs";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "../..");
 const require = createRequire(import.meta.url);
+const execFileAsync = promisify(execFile);
 const HOST = "127.0.0.1";
 const BACKEND_PORT = 3001;
 const RENDERER_PORT = 5173;
@@ -95,12 +97,51 @@ function canConnect(port, host = HOST) {
 
 async function assertPortFree(port, label) {
   if (!(await canConnect(port))) return;
+  const owner = await findPortOwner(port);
+  const ownerLine = owner
+    ? `Owner: ${owner.processName ?? "unknown"} (${owner.pid})\nCommand: ${owner.commandLine ?? "unknown"}\n`
+    : "";
+  const looksOwnedByServerLab =
+    owner?.commandLine?.includes(ROOT) ||
+    owner?.commandLine?.toLowerCase().includes("serverlab") ||
+    owner?.commandLine?.toLowerCase().includes("vite");
 
   throw new Error(
     `${label} port ${port} is already in use.\n` +
-      `Close the old ServerLab/dev process or run:\n` +
-      `  Get-NetTCPConnection -LocalPort ${port} | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force }\n`
+      ownerLine +
+      (looksOwnedByServerLab
+        ? "It looks like an old ServerLab dev process. Run: npm run dev:stop\n"
+        : "Close the process using that port, or change the dev port before starting ServerLab.\n")
   );
+}
+
+async function findPortOwner(port) {
+  if (process.platform !== "win32") return null;
+  try {
+    const { stdout } = await execFileAsync("netstat", ["-ano", "-p", "tcp"]);
+    const line = stdout
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .find((item) => item.includes(`:${port} `) && item.includes("LISTENING"));
+    const pid = line ? Number(line.split(/\s+/).at(-1)) : NaN;
+    if (!Number.isInteger(pid)) return null;
+    const command = `Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" | Select-Object -First 1 ProcessId,Name,CommandLine | ConvertTo-Json -Compress`;
+    const result = await execFileAsync("powershell", [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      command,
+    ]);
+    const parsed = JSON.parse(result.stdout || "{}");
+    return {
+      pid,
+      processName: parsed.Name ?? null,
+      commandLine: parsed.CommandLine ?? null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function waitForPort(port, host = HOST, timeoutMs = 30_000) {

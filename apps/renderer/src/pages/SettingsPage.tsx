@@ -25,6 +25,8 @@ import {
   type ErrorHistoryResponse,
   type JavaRuntime,
   type JavaRuntimeListResponse,
+  type PortStatus,
+  type PortStatusListResponse,
   type ServerListResponse,
   type SoftwareArtifact,
   type SoftwareArtifactListResponse,
@@ -276,18 +278,21 @@ function DeveloperPanel() {
   const [backendHealth, setBackendHealth] = useState<"unknown" | "online" | "offline">(
     "unknown"
   );
+  const [ports, setPorts] = useState<PortStatus[]>([]);
   const [message, setMessage] = useState<string | null>(null);
 
   async function loadDiagnostics() {
     setMessage(null);
     try {
-      const [nextDiagnostics] = await Promise.all([
+      const [nextDiagnostics, portResponse] = await Promise.all([
         window.serverlab?.getDiagnostics?.(),
+        api.get<PortStatusListResponse>("/api/ports/status").catch(() => ({ ports: [] })),
         api.get<{ ok: boolean }>("/health")
           .then(() => setBackendHealth("online"))
           .catch(() => setBackendHealth("offline")),
       ]);
       if (nextDiagnostics) setDiagnostics(nextDiagnostics);
+      setPorts(portResponse.ports);
     } catch {
       setBackendHealth("offline");
     }
@@ -299,7 +304,7 @@ function DeveloperPanel() {
 
   async function copyDiagnostics() {
     if (!diagnostics) return;
-    await navigator.clipboard.writeText(JSON.stringify({ diagnostics, backendHealth }, null, 2));
+    await navigator.clipboard.writeText(JSON.stringify({ diagnostics, backendHealth, ports }, null, 2));
     setMessage("Diagnostics copied.");
   }
 
@@ -361,6 +366,32 @@ function DeveloperPanel() {
             >
               Open data
             </Button>
+          </div>
+        </div>
+
+        <div className="rounded border border-border bg-surface-console px-3 py-3 md:col-span-2">
+          <div className="mb-3 flex items-center gap-2">
+            <Activity className="h-4 w-4 text-copper" aria-hidden="true" />
+            <span className="font-semibold text-white">Ports</span>
+          </div>
+          <div className="grid gap-2 text-sm">
+            <LabelValue label="Backend / Socket.IO" value={diagnostics?.backendOrigin ?? "Unknown"} />
+            {ports.length === 0 ? (
+              <p className="text-sm text-muted">No Minecraft server ports are assigned yet.</p>
+            ) : (
+              ports.map((port) => (
+                <div
+                  key={`${port.ownerId ?? "external"}-${port.port}`}
+                  className="grid gap-1 rounded border border-border bg-panel px-3 py-2 sm:grid-cols-[auto_1fr_auto]"
+                >
+                  <span className="font-mono text-sm font-semibold text-white">{port.port}</span>
+                  <span className="min-w-0 truncate text-muted">{port.ownerName ?? port.message}</span>
+                  <span className={port.available ? "text-grass" : "text-glowstone"}>
+                    {port.available ? "free" : port.source}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

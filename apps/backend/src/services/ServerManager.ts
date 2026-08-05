@@ -1,10 +1,15 @@
 import { spawn, ChildProcess } from "child_process";
+import fs from "fs/promises";
+import path from "path";
 import treeKill from "tree-kill";
 import { prisma } from "../lib/prisma.js";
 import { logger } from "../lib/logger.js";
 import { io } from "../index.js";
 import { trackPid, untrackPid, updateTps, updatePlayers } from "./MonitorService.js";
 import { parseStartupArgs } from "./ProcessArgs.js";
+import {
+  portManagerService,
+} from "./PortManagerService.js";
 import { javaRuntimeRegistry } from "./java/JavaRuntimeRegistry.js";
 import { javaRuntimeValidator } from "./java/JavaRuntimeValidator.js";
 import { javaRecommendationService } from "./java/JavaRecommendationService.js";
@@ -13,15 +18,78 @@ import type { ServerDeleteProgressPayload, ServerStatus } from "@serverlab/share
 interface RunningServer {
   process: ChildProcess;
   serverId: string;
+  port: number;
+  cwd: string;
+  startedAt: string;
+}
+
+interface TrackedProcessRecord {
+  serverId: string;
+  pid: number;
+  port: number;
+  command: string;
+  cwd: string;
+  startedAt: string;
 }
 
 // Regexes for parsing Paper/Spigot/Purpur stdout
 const TPS_REGEX = /TPS from last 1m, 5m, 15m: ([\d.]+)/;
 const PLAYERS_REGEX = /There are (\d+) of a max/;
 const DONE_REGEX = /Done \([\d.]+s\)!/;
+const PORT_BIND_ERROR_REGEX = /(address already in use|bindexception|failed to bind|perhaps a server is already running)/i;
 
 class ServerManager {
   private running = new Map<string, RunningServer>();
+  private staleProcesses: TrackedProcessRecord[] = [];
+
+  private processRegistryPath(): string {
+    const dataDir = process.env.DATA_DIR ?? process.cwd();
+    return path.join(dataDir, "processes", "servers.json");
+  }
+
+  private async writeProcessRegistry(): Promise<void> {
+    const filePath = this.processRegistryPath();
+    const records: TrackedProcessRecord[] = [...this.running.values()]
+      .filter((entry) => entry.process.pid)
+      .map((entry) => ({
+        serverId: entry.serverId,
+        pid: entry.process.pid!,
+        port: entry.port,
+        command: entry.process.spawnfile,
+        cwd: entry.cwd,
+        startedAt: entry.startedAt,
+      }));
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, JSON.stringify(records, null, 2), "utf-8");
+  }
+
+  private async clearProcessRegistry(): Promise<void> {
+    await this.writeProcessRegistry().catch((error) => {
+      logger.warn({ error }, "Failed to update process registry");
+    });
+  }
+
+  async restoreTrackedProcesses(): Promise<void> {
+    const filePath = this.processRegistryPath();
+    const raw = await fs.readFile(filePath, "utf-8").catch(() => null);
+    if (!raw) return;
+
+    const records = JSON.parse(raw) as TrackedProcessRecord[];
+    this.staleProcesses = records.filter((record) => {
+      try {
+        process.kill(record.pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+
+    if (this.staleProcesses.length > 0) {
+      logger.warn({ staleProcesses: this.staleProcesses }, "Found stale ServerLab-owned server processes");
+    }
+
+    await fs.writeFile(filePath, JSON.stringify(this.staleProcesses, null, 2), "utf-8").catch(() => {});
+  }
 
   private buildCommand(server: {
     javaPath: string;
@@ -89,6 +157,23 @@ class ServerManager {
     logger.info({ serverId, status }, "Server status changed");
   }
 
+  private async ensureServerPropertiesPort(serverPath: string, port: number): Promise<void> {
+    const filePath = path.join(serverPath, "server.properties");
+    const existing = await fs.readFile(filePath, "utf-8").catch(() => "");
+    const lines = existing ? existing.split(/\r?\n/) : [];
+    let found = false;
+    const next = lines.map((line) => {
+      if (/^\s*server-port\s*=/.test(line)) {
+        found = true;
+        return `server-port=${port}`;
+      }
+      return line;
+    });
+    if (!found) next.push(`server-port=${port}`);
+    await fs.mkdir(serverPath, { recursive: true });
+    await fs.writeFile(filePath, next.filter((line, index) => line || index < next.length - 1).join("\n"), "utf-8");
+  }
+
   private handleLine(serverId: string, line: string) {
     // Emit raw console output
     io.emit("console:output", {
@@ -121,17 +206,19 @@ class ServerManager {
       where: { id: serverId },
     });
 
-    for (const [id] of this.running) {
-      const s = await prisma.server.findUnique({ where: { id } });
-      if (s && s.port === server.port && id !== serverId) {
-        throw new Error(`Port ${server.port} is already in use by server "${s.name}"`);
-      }
-    }
+    await portManagerService.assertAvailableForServer(server.port, serverId);
 
     const { args } = this.buildCommand(server);
     const cmd = await this.resolveJavaCommand(server);
 
     await this.setStatus(serverId, "starting");
+    await this.ensureServerPropertiesPort(server.path, server.port);
+    portManagerService.reservePort({
+      ownerType: "server",
+      ownerId: serverId,
+      ownerName: server.name,
+      port: server.port,
+    });
 
     const proc = spawn(cmd, args, {
       cwd: server.path,
@@ -139,7 +226,14 @@ class ServerManager {
       detached: false,
     });
 
-    this.running.set(serverId, { process: proc, serverId });
+    this.running.set(serverId, {
+      process: proc,
+      serverId,
+      port: server.port,
+      cwd: server.path,
+      startedAt: new Date().toISOString(),
+    });
+    await this.writeProcessRegistry();
 
     if (proc.pid) {
       trackPid(serverId, proc.pid);
@@ -158,18 +252,27 @@ class ServerManager {
         .toString()
         .split("\n")
         .filter(Boolean)
-        .forEach((line) =>
+        .forEach((line) => {
+          if (PORT_BIND_ERROR_REGEX.test(line)) {
+            io.emit("console:output", {
+              serverId,
+              line: `ServerLab detected a port conflict on ${server.port}. Choose another port in Settings or close the process using it.`,
+              timestamp: new Date().toISOString(),
+            });
+          }
           io.emit("console:output", {
             serverId,
             line,
             timestamp: new Date().toISOString(),
-          })
-        );
+          });
+        });
     });
 
     proc.on("exit", async (code) => {
       if (proc.pid) untrackPid(proc.pid);
       this.running.delete(serverId);
+      portManagerService.releasePort({ ownerType: "server", ownerId: serverId });
+      await this.clearProcessRegistry();
       const status: ServerStatus = code === 0 ? "stopped" : "crashed";
       await this.setStatus(serverId, status);
     });
@@ -178,22 +281,27 @@ class ServerManager {
       logger.error({ err, serverId }, "Process error");
       if (proc.pid) untrackPid(proc.pid);
       this.running.delete(serverId);
+      portManagerService.releasePort({ ownerType: "server", ownerId: serverId });
+      await this.clearProcessRegistry();
       await this.setStatus(serverId, "crashed");
     });
   }
 
-  async stop(serverId: string): Promise<void> {
+  async stop(serverId: string, options: { timeoutMs?: number } = {}): Promise<void> {
     const entry = this.running.get(serverId);
     if (!entry) throw new Error(`Server ${serverId} is not running`);
 
     await this.setStatus(serverId, "stopping");
-    entry.process.stdin?.write("stop\n");
-
-    const forceKillTimeout = setTimeout(() => {
-      if (entry.process.pid) treeKill(entry.process.pid, "SIGKILL");
-    }, 15_000);
-
-    entry.process.once("exit", () => clearTimeout(forceKillTimeout));
+    await new Promise<void>((resolve) => {
+      const forceKillTimeout = setTimeout(() => {
+        if (entry.process.pid) treeKill(entry.process.pid, "SIGKILL");
+      }, options.timeoutMs ?? 15_000);
+      entry.process.once("exit", () => {
+        clearTimeout(forceKillTimeout);
+        resolve();
+      });
+      entry.process.stdin?.write("stop\n");
+    });
   }
 
   async restart(serverId: string): Promise<void> {
@@ -225,9 +333,16 @@ class ServerManager {
     return this.running.has(serverId);
   }
 
-  async stopAll(): Promise<void> {
+  async stopAll(options: { wait?: boolean; timeoutMs?: number } = {}): Promise<void> {
     const ids = [...this.running.keys()];
-    await Promise.allSettled(ids.map((id) => this.stop(id)));
+    if (options.wait === false) {
+      ids.forEach((id) => {
+        const entry = this.running.get(id);
+        entry?.process.stdin?.write("stop\n");
+      });
+      return;
+    }
+    await Promise.allSettled(ids.map((id) => this.stop(id, { timeoutMs: options.timeoutMs })));
   }
 }
 

@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, rm, writeFile } from "fs/promises";
+import { createServer } from "net";
 import os from "os";
 import path from "path";
 import { describe, expect, it } from "vitest";
@@ -6,6 +7,7 @@ import { FileConflictError, FileManager } from "../FileManager.js";
 import { parseStartupArgs } from "../ProcessArgs.js";
 import { parseJavaVersionOutput } from "../java/JavaRuntimeValidator.js";
 import { assertAllowedHttpsUrl } from "../software/providers.js";
+import { portManagerService } from "../PortManagerService.js";
 
 describe("Java runtime parsing", () => {
   it("parses legacy Java 8 output", () => {
@@ -129,6 +131,55 @@ describe("file manager sandbox", () => {
       ).rejects.toBeInstanceOf(FileConflictError);
     } finally {
       await rm(parent, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("port management", () => {
+  it("detects an occupied OS port", async () => {
+    const server = createServer();
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+
+    try {
+      const status = await portManagerService.checkPort({
+        port,
+        host: "127.0.0.1",
+        checkSavedServers: false,
+      });
+      expect(status.available).toBe(false);
+      expect(["external", "unknown"]).toContain(status.source);
+      expect(status.suggestedPort).toBeGreaterThan(port);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("suggests a different port when a ServerLab reservation exists", async () => {
+    const server = createServer();
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+
+    portManagerService.reservePort({
+      ownerType: "server",
+      ownerId: "test-server",
+      ownerName: "Test Server",
+      port,
+    });
+
+    try {
+      const status = await portManagerService.checkPort({
+        port,
+        checkSavedServers: false,
+      });
+      expect(status.available).toBe(false);
+      expect(status.source).toBe("serverlab-running");
+      expect(status.suggestedPort).not.toBe(port);
+    } finally {
+      portManagerService.releasePort({ ownerType: "server", ownerId: "test-server" });
     }
   });
 });

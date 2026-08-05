@@ -9,6 +9,10 @@ import { serverSoftwareInstaller } from "../services/software/ServerSoftwareInst
 import { javaRuntimeRegistry } from "../services/java/JavaRuntimeRegistry.js";
 import { javaRuntimeValidator } from "../services/java/JavaRuntimeValidator.js";
 import { javaRecommendationService } from "../services/java/JavaRecommendationService.js";
+import {
+  PortConflictError,
+  portManagerService,
+} from "../services/PortManagerService.js";
 import { logger } from "../lib/logger.js";
 import { HttpError, badRequest } from "../middleware/error.js";
 import type {
@@ -62,6 +66,19 @@ function validateCreateServer(body: CreateServerDto): void {
   if (body.ramMinMb && body.ramMaxMb && body.ramMinMb > body.ramMaxMb) {
     throw badRequest("ramMinMb cannot be greater than ramMaxMb");
   }
+}
+
+function portConflictToHttp(error: PortConflictError): HttpError {
+  return new HttpError(
+    409,
+    error.status.message,
+    "server",
+    "warning",
+    error.status.suggestedPort
+      ? `Use port ${error.status.suggestedPort} or close the process using port ${error.status.port}.`
+      : `Choose another port or close the process using port ${error.status.port}.`,
+    ["retry", "copy-details", "dismiss"]
+  );
 }
 
 async function resolveJavaSelection(input: {
@@ -170,6 +187,9 @@ serverRoutes.post("/", async (req, res, next) => {
       software = body.softwareSource.provider;
     }
 
+    const port = body.port ?? (await portManagerService.suggestPort());
+    await portManagerService.assertAvailableForServer(port);
+
     const javaSelection = await resolveJavaSelection({
       version,
       software,
@@ -213,13 +233,17 @@ serverRoutes.post("/", async (req, res, next) => {
         allowUnsupportedJava: javaSelection.allowUnsupportedJava,
         ramMinMb: body.ramMinMb ?? 1024,
         ramMaxMb: body.ramMaxMb ?? 4096,
-        port: body.port ?? 25565,
+        port,
         startupArgs: body.startupArgs ?? null,
         autoStart: body.autoStart ?? false,
       },
     });
     res.status(201).json({ server });
   } catch (err) {
+    if (err instanceof PortConflictError) {
+      next(portConflictToHttp(err));
+      return;
+    }
     next(err);
   }
 });
@@ -246,12 +270,19 @@ serverRoutes.patch("/:id", async (req, res, next) => {
     if (body.ramMinMb && body.ramMaxMb && body.ramMinMb > body.ramMaxMb) {
       throw badRequest("ramMinMb cannot be greater than ramMaxMb");
     }
+    if (body.port !== undefined) {
+      await portManagerService.assertAvailableForServer(body.port, req.params.id);
+    }
     const server = await prisma.server.update({
       where: { id: req.params.id },
       data: body,
     });
     res.json({ server });
   } catch (err) {
+    if (err instanceof PortConflictError) {
+      next(portConflictToHttp(err));
+      return;
+    }
     next(err);
   }
 });
@@ -371,6 +402,10 @@ serverRoutes.post("/:id/start", async (req, res, next) => {
     await serverManager.start(req.params.id);
     res.json({ message: "Server starting" });
   } catch (err) {
+    if (err instanceof PortConflictError) {
+      next(portConflictToHttp(err));
+      return;
+    }
     next(err);
   }
 });
@@ -389,6 +424,10 @@ serverRoutes.post("/:id/restart", async (req, res, next) => {
     await serverManager.restart(req.params.id);
     res.json({ message: "Server restarting" });
   } catch (err) {
+    if (err instanceof PortConflictError) {
+      next(portConflictToHttp(err));
+      return;
+    }
     next(err);
   }
 });

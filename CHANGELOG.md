@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.0.0-beta.10
+
+### Added
+
+- Centralized port management API for checking, suggesting, and listing Minecraft server ports.
+- Live port availability UI in server creation and server settings.
+- Settings diagnostics panel for backend, Socket.IO, and Minecraft server port status.
+- Server process metadata tracking for stale ServerLab-owned process detection.
+
+### Changed
+
+- Server creation, settings updates, and startup now block duplicate or occupied ports before launching Minecraft.
+- Server shutdown now waits for managed Minecraft processes to release ports before backend exit.
+- Dev startup now reports port owners for blocked development ports instead of showing a blind kill command.
+- Bumped app and workspace versions to `3.0.0-beta.10`.
+
 ## 3.0.0-beta.9
 
 ### Added

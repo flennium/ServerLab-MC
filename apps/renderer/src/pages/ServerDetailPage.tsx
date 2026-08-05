@@ -26,12 +26,15 @@ import {
 } from "../components/ui/Layout.js";
 import { Button } from "../components/ui/Button.js";
 import { Field, LabelValue, Select, Switch, TextInput } from "../components/ui/Form.js";
+import { PortField } from "../components/server/PortField.js";
 import { Tabs } from "../components/ui/Tabs.js";
 import { navigate } from "../lib/router.js";
 import type {
   JavaRuntime,
   JavaRuntimeListResponse,
   JavaRecommendationResponse,
+  PortCheckResponse,
+  PortStatus,
   Server as ServerModel,
   ServerDeleteProgressPayload,
   UpdateServerDto,
@@ -74,6 +77,7 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
 
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("console");
+  const [detailPortStatus, setDetailPortStatus] = useState<PortStatus | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteState, setDeleteState] = useState<{
     running: boolean;
@@ -87,6 +91,20 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
   }, [fetchServers]);
 
   const server = servers.find((server) => server.id === serverId);
+  const currentServerPort = server?.port;
+  const currentServerId = server?.id;
+
+  useEffect(() => {
+    if (!currentServerId || !currentServerPort) return;
+    const query = new URLSearchParams({
+      port: String(currentServerPort),
+      excludeServerId: currentServerId,
+    });
+    api
+      .get<PortCheckResponse>(`/api/ports/check?${query.toString()}`)
+      .then(({ status }) => setDetailPortStatus(status))
+      .catch(() => setDetailPortStatus(null));
+  }, [currentServerId, currentServerPort]);
 
   useEffect(() => {
     let cleanup = () => {};
@@ -213,7 +231,12 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile label="RAM min" value={`${server.ramMinMb}`} detail="MB" />
         <StatTile label="RAM max" value={`${server.ramMaxMb}`} detail="MB" tone="info" />
-        <StatTile label="Port" value={server.port} />
+        <StatTile
+          label="Port"
+          value={server.port}
+          detail={detailPortStatus?.available === false ? "conflict" : "ready"}
+          tone={detailPortStatus?.available === false ? "warn" : "neutral"}
+        />
         <StatTile
           label="Auto-start"
           value={server.autoStart ? "On" : "Off"}
@@ -301,6 +324,7 @@ function ServerSettings({ server }: { server: ServerModel }) {
   const [recommendation, setRecommendation] = useState<JavaRecommendationResponse | null>(
     null
   );
+  const [portStatus, setPortStatus] = useState<PortStatus | null>(null);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
   const manualJava = form.javaOverrideMode === "manual";
   const selectedRuntime = useMemo(
@@ -453,15 +477,17 @@ function ServerSettings({ server }: { server: ServerModel }) {
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Port">
-            <TextInput
-              type="number"
-              value={form.port}
-              onChange={(event) => set("port", Number(event.target.value))}
-              min={1024}
-              max={65535}
-            />
-          </Field>
+          <PortField
+            value={form.port}
+            onChange={(port) => set("port", port)}
+            excludeServerId={server.id}
+            onStatusChange={setPortStatus}
+            hint={
+              server.status === "running" || server.status === "starting"
+                ? "Port changes apply after restart."
+                : "ServerLab checks saved servers and active OS ports before saving."
+            }
+          />
           <Field label="Java runtime">
             <Select
               value={form.javaRuntimeId ?? ""}
@@ -593,7 +619,7 @@ function ServerSettings({ server }: { server: ServerModel }) {
         <div className="flex flex-wrap items-center gap-3">
           <Button
             onClick={handleSave}
-            disabled={saving || Boolean(runtimeIssue)}
+            disabled={saving || Boolean(runtimeIssue) || portStatus?.available === false}
             icon={Save}
             variant="primary"
           >
