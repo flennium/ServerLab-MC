@@ -1,6 +1,19 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import type { MutableRefObject, ReactNode } from "react";
 import clsx from "clsx";
-import { ArrowDownCircle, Copy, Pause, Play, Send, Terminal, Trash2 } from "lucide-react";
+import {
+  ArrowDownCircle,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Pause,
+  Play,
+  Search,
+  Send,
+  Terminal,
+  Trash2,
+  X,
+} from "lucide-react";
 import { getSocket } from "../../lib/socket.js";
 import { api } from "../../lib/apiClient.js";
 import { formatConsoleLine } from "../../lib/consoleFormat.js";
@@ -26,14 +39,70 @@ export function Console({ serverId }: ConsoleProps) {
   const [autoScroll, setAutoScroll] = useState(true);
   const [sending, setSending] = useState(false);
   const [commandError, setCommandError] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeMatchIndex, setActiveMatchIndex] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const matchRefs = useRef(new Map<string, HTMLSpanElement>());
+
+  const searchMatches = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return [];
+
+    const matches: { lineIndex: number; start: number; end: number }[] = [];
+    lines.forEach((line, lineIndex) => {
+      const text = line.text.toLowerCase();
+      let fromIndex = 0;
+      while (fromIndex < text.length) {
+        const start = text.indexOf(query, fromIndex);
+        if (start === -1) break;
+        matches.push({ lineIndex, start, end: start + query.length });
+        fromIndex = Math.max(start + query.length, start + 1);
+      }
+    });
+    return matches;
+  }, [lines, searchQuery]);
+
+  useEffect(() => {
+    setActiveMatchIndex(0);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (!searchOpen) return;
+    window.setTimeout(() => searchInputRef.current?.focus(), 0);
+  }, [searchOpen]);
+
+  useEffect(() => {
+    if (!searchMatches.length) return;
+    const match = searchMatches[activeMatchIndex % searchMatches.length];
+    const node = matchRefs.current.get(matchKey(match.lineIndex, match.start));
+    node?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [activeMatchIndex, searchMatches]);
 
   useEffect(() => {
     if (autoScroll) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [lines, autoScroll]);
+
+  useEffect(() => {
+    function onWindowKeyDown(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        setSearchOpen(true);
+        return;
+      }
+      if (event.key === "Escape" && searchOpen) {
+        setSearchOpen(false);
+        setSearchQuery("");
+      }
+    }
+
+    window.addEventListener("keydown", onWindowKeyDown);
+    return () => window.removeEventListener("keydown", onWindowKeyDown);
+  }, [searchOpen]);
 
   function handleScroll() {
     const el = scrollRef.current;
@@ -94,6 +163,13 @@ export function Console({ serverId }: ConsoleProps) {
     await navigator.clipboard?.writeText(text);
   }
 
+  function goToNextMatch(direction: 1 | -1) {
+    if (!searchMatches.length) return;
+    setActiveMatchIndex((current) =>
+      (current + direction + searchMatches.length) % searchMatches.length
+    );
+  }
+
   function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") {
       sendCommand();
@@ -110,46 +186,110 @@ export function Console({ serverId }: ConsoleProps) {
     }
   }
 
+  const activeSearchMatch =
+    searchMatches.length > 0
+      ? searchMatches[activeMatchIndex % searchMatches.length]
+      : null;
+  const activeSearchLabel =
+    searchQuery.trim() && searchMatches.length > 0
+      ? `${(activeMatchIndex % searchMatches.length) + 1}/${searchMatches.length}`
+      : searchQuery.trim()
+        ? "0/0"
+        : "-";
+
   return (
     <div className="flex h-[calc(100vh-17rem)] min-h-[420px] flex-col overflow-hidden rounded-lg border border-border bg-surface-console shadow-2xl">
-      <div className="flex items-center justify-between gap-3 border-b border-border bg-carbon px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <Terminal className="h-4 w-4 text-copper" aria-hidden="true" />
-          <span className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-muted">
-            Server console
-          </span>
+      <div className="border-b border-border bg-carbon">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="grid h-8 w-8 place-items-center rounded border border-copper/40 bg-copper/10">
+              <Terminal className="h-4 w-4 text-copper" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <p className="font-display text-sm font-semibold text-white">Console</p>
+              <p className="truncate font-mono text-[0.68rem] uppercase tracking-[0.14em] text-muted">
+                {lines.length} lines {paused ? "/ paused" : "/ live"}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {!autoScroll && (
+              <Button
+                onClick={() => {
+                  setAutoScroll(true);
+                  bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+                }}
+                icon={ArrowDownCircle}
+                variant="quiet"
+                size="sm"
+              >
+                Resume
+              </Button>
+            )}
+            <IconButton
+              icon={Search}
+              label="Search console"
+              onClick={() => setSearchOpen((value) => !value)}
+            />
+            <IconButton
+              icon={paused ? Play : Pause}
+              label={paused ? "Resume console output" : "Pause console output"}
+              onClick={togglePaused}
+            />
+            <IconButton
+              icon={Copy}
+              label="Copy console"
+              onClick={copyConsole}
+              disabled={lines.length === 0}
+            />
+            <IconButton
+              icon={Trash2}
+              label="Clear console"
+              onClick={() => clearLines(serverId)}
+            />
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {!autoScroll && (
-            <Button
+
+        {searchOpen && (
+          <div className="flex flex-wrap items-center gap-2 border-t border-border bg-panel/70 px-3 py-2">
+            <div className="relative min-w-[220px] flex-1">
+              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    goToNextMatch(event.shiftKey ? -1 : 1);
+                  }
+                  if (event.key === "Escape") {
+                    setSearchOpen(false);
+                    setSearchQuery("");
+                  }
+                }}
+                placeholder="Search console output"
+                className="console-font h-9 w-full rounded border border-border bg-carbon pl-9 pr-3 text-sm text-white placeholder:text-muted focus:border-copper focus:outline-none"
+                aria-label="Search console output"
+                spellCheck={false}
+              />
+            </div>
+            <span className="min-w-[4.5rem] text-right font-mono text-xs text-muted">
+              {activeSearchLabel}
+            </span>
+            <IconButton icon={ChevronUp} label="Previous match" onClick={() => goToNextMatch(-1)} disabled={searchMatches.length === 0} />
+            <IconButton icon={ChevronDown} label="Next match" onClick={() => goToNextMatch(1)} disabled={searchMatches.length === 0} />
+            <IconButton
+              icon={X}
+              label="Close search"
               onClick={() => {
-                setAutoScroll(true);
-                bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+                setSearchOpen(false);
+                setSearchQuery("");
               }}
-              icon={ArrowDownCircle}
-              variant="quiet"
-              size="sm"
-            >
-              Resume
-            </Button>
-          )}
-          <IconButton
-            icon={paused ? Play : Pause}
-            label={paused ? "Resume console output" : "Pause console output"}
-            onClick={togglePaused}
-          />
-          <IconButton
-            icon={Copy}
-            label="Copy console"
-            onClick={copyConsole}
-            disabled={lines.length === 0}
-          />
-          <IconButton
-            icon={Trash2}
-            label="Clear console"
-            onClick={() => clearLines(serverId)}
-          />
-        </div>
+            />
+          </div>
+        )}
       </div>
 
       {commandError && (
@@ -174,25 +314,22 @@ export function Console({ serverId }: ConsoleProps) {
         {lines.map((line, index) => (
           <div
             key={`${line.timestamp}-${index}`}
-            className="grid grid-cols-[4.75rem_minmax(0,1fr)] gap-3 whitespace-pre-wrap break-words leading-relaxed"
+            className={clsx(
+              "grid grid-cols-[4.75rem_minmax(0,1fr)] gap-3 whitespace-pre-wrap break-words rounded px-1 py-0.5 leading-relaxed",
+              lineTone(line.text)
+            )}
           >
             <span className="mr-3 select-none text-muted/60">
               {new Date(line.timestamp).toLocaleTimeString()}
             </span>
             <span>
-              {formatConsoleLine(line.text).map((segment, segmentIndex) => (
-                <span
-                  key={segmentIndex}
-                  className={clsx(
-                    segment.bold && "font-bold",
-                    segment.italic && "italic",
-                    segment.underline && "underline"
-                  )}
-                  style={segment.color ? { color: segment.color } : undefined}
-                >
-                  {segment.text}
-                </span>
-              ))}
+              <ConsoleLineText
+                lineIndex={index}
+                text={line.text}
+                searchQuery={searchQuery}
+                activeMatch={activeSearchMatch}
+                matchRefs={matchRefs}
+              />
             </span>
           </div>
         ))}
@@ -227,4 +364,121 @@ export function Console({ serverId }: ConsoleProps) {
       </div>
     </div>
   );
+}
+
+function ConsoleLineText({
+  lineIndex,
+  text,
+  searchQuery,
+  activeMatch,
+  matchRefs,
+}: {
+  lineIndex: number;
+  text: string;
+  searchQuery: string;
+  activeMatch: { lineIndex: number; start: number; end: number } | null;
+  matchRefs: MutableRefObject<Map<string, HTMLSpanElement>>;
+}) {
+  let offset = 0;
+  const query = searchQuery.trim();
+
+  return (
+    <>
+      {formatConsoleLine(text).map((segment, segmentIndex) => {
+        const startOffset = offset;
+        offset += segment.text.length;
+        return (
+          <span
+            key={`${segmentIndex}-${startOffset}`}
+            className={clsx(
+              segment.bold && "font-bold",
+              segment.italic && "italic",
+              segment.underline && "underline"
+            )}
+            style={segment.color ? { color: segment.color } : undefined}
+          >
+            {renderHighlightedText({
+              text: segment.text,
+              query,
+              lineIndex,
+              startOffset,
+              activeMatch,
+              matchRefs,
+            })}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+function renderHighlightedText({
+  text,
+  query,
+  lineIndex,
+  startOffset,
+  activeMatch,
+  matchRefs,
+}: {
+  text: string;
+  query: string;
+  lineIndex: number;
+  startOffset: number;
+  activeMatch: { lineIndex: number; start: number; end: number } | null;
+  matchRefs: MutableRefObject<Map<string, HTMLSpanElement>>;
+}) {
+  if (!query) return text;
+
+  const parts: ReactNode[] = [];
+  const lowerText = text.toLowerCase();
+  const lowerQuery = query.toLowerCase();
+  let cursor = 0;
+
+  while (cursor < text.length) {
+    const index = lowerText.indexOf(lowerQuery, cursor);
+    if (index === -1) break;
+    if (index > cursor) parts.push(text.slice(cursor, index));
+
+    const absoluteStart = startOffset + index;
+    const key = matchKey(lineIndex, absoluteStart);
+    const isActive =
+      activeMatch?.lineIndex === lineIndex && activeMatch.start === absoluteStart;
+    parts.push(
+      <span
+        key={key}
+        ref={(node) => {
+          if (node) matchRefs.current.set(key, node);
+          else matchRefs.current.delete(key);
+        }}
+        className={clsx(
+          "rounded px-0.5",
+          isActive
+            ? "bg-copper text-carbon"
+            : "bg-glowstone/25 text-white"
+        )}
+      >
+        {text.slice(index, index + query.length)}
+      </span>
+    );
+    cursor = index + query.length;
+  }
+
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return parts.length > 0 ? parts : text;
+}
+
+function matchKey(lineIndex: number, start: number): string {
+  return `${lineIndex}:${start}`;
+}
+
+function lineTone(text: string): string {
+  const lower = text.toLowerCase();
+  if (lower.includes("error") || lower.includes("exception") || lower.includes("failed")) {
+    return "bg-redstone/5";
+  }
+  if (lower.includes("warn")) return "bg-glowstone/5";
+  if (lower.includes("done") || lower.includes("started") || lower.includes("success")) {
+    return "bg-grass/5";
+  }
+  return "";
 }
