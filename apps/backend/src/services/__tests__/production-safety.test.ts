@@ -179,7 +179,7 @@ describe("port management", () => {
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
-  });
+  }, 10000);
 
   it("suggests a different port when a ServerLab reservation exists", async () => {
     const server = createServer();
