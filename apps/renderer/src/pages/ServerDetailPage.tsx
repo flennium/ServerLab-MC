@@ -40,11 +40,12 @@ import type {
   UpdateServerDto,
 } from "@serverlab/shared";
 
-type Tab = "console" | "files" | "monitor" | "backups" | "settings";
+type Tab = "console" | "files" | "plugins" | "monitor" | "backups" | "settings";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "console", label: "Console" },
   { id: "files", label: "Files" },
+  { id: "plugins", label: "Plugins" },
   { id: "monitor", label: "Monitor" },
   { id: "backups", label: "Backups" },
   { id: "settings", label: "Settings" },
@@ -58,6 +59,11 @@ const Console = lazy(() =>
 const ServerFileWorkspace = lazy(() =>
   import("../components/server/ServerFileWorkspace.js").then((module) => ({
     default: module.ServerFileWorkspace,
+  }))
+);
+const PluginsPanel = lazy(() =>
+  import("../components/server/PluginsPanel.js").then((module) => ({
+    default: module.PluginsPanel,
   }))
 );
 const PerformanceMonitor = lazy(() =>
@@ -269,6 +275,8 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
                 serverStatus={server.status}
               />
             )}
+
+            {tab === "plugins" && <PluginsPanel server={server} />}
 
             {tab === "monitor" && (
               <PerformanceMonitor serverId={server.id} ramMaxMb={server.ramMaxMb} />

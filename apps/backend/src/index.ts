@@ -11,6 +11,7 @@ import { templateRoutes } from "./routes/templates.js";
 import { javaRoutes } from "./routes/java.js";
 import { backupRoutes } from "./routes/backups.js";
 import { softwareRoutes } from "./routes/software.js";
+import { modrinthRoutes } from "./routes/modrinth.js";
 import { errorRoutes } from "./routes/errors.js";
 import { logRoutes } from "./routes/logs.js";
 import { portRoutes } from "./routes/ports.js";
@@ -20,6 +21,8 @@ import { ensureDatabaseSchema } from "./services/DatabaseSchemaService.js";
 import { softwareCacheService } from "./services/software/SoftwareCacheService.js";
 import { setSoftwareSocketServer } from "./services/software/softwareEvents.js";
 import { javaInstallService } from "./services/java/JavaInstallService.js";
+import { pluginInstallService } from "./services/plugins/PluginInstallService.js";
+import { setPluginSocketServer } from "./services/plugins/pluginEvents.js";
 import { serverManager } from "./services/ServerManager.js";
 import type { ServerToClientEvents, ClientToServerEvents } from "@serverlab/shared";
 
@@ -44,6 +47,7 @@ export const io = new IOServer<ClientToServerEvents, ServerToClientEvents>(
   }
 );
 setSoftwareSocketServer(io);
+setPluginSocketServer(io);
 
 app.use(
   cors({
@@ -58,6 +62,7 @@ app.use("/api/templates", templateRoutes);
 app.use("/api/java", javaRoutes);
 app.use("/api/backups", backupRoutes);
 app.use("/api/software", softwareRoutes);
+app.use("/api/modrinth", modrinthRoutes);
 app.use("/api/errors", errorRoutes);
 app.use("/api/logs", logRoutes);
 app.use("/api/ports", portRoutes);
@@ -93,6 +98,9 @@ async function start(): Promise<void> {
     });
     javaInstallService.cleanupTmp().catch((err) => {
       logger.warn({ err }, "Failed to clean Java runtime tmp directory");
+    });
+    pluginInstallService.cleanupStaging().catch((err) => {
+      logger.warn({ err }, "Failed to clean plugin staging directories");
     });
     startMonitor();
   });

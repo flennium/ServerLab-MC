@@ -47,6 +47,40 @@ export type JavaInstallStage =
 
 export type BackupType = "manual" | "scheduled";
 
+export type PluginSource = "modrinth" | "manual";
+
+export type PluginContentType =
+  | "plugin"
+  | "mod"
+  | "datapack"
+  | "modpack"
+  | "resourcepack";
+
+export type PluginStatus = "installed" | "disabled" | "missing" | "trashed" | "manual";
+
+export type PluginInstallStatus =
+  "queued" | "running" | "completed" | "failed" | "cancelled";
+
+export type PluginInstallAction =
+  | "install"
+  | "update"
+  | "disable"
+  | "enable"
+  | "remove"
+  | "restore";
+
+export type PluginInstallStage =
+  | "resolving-project"
+  | "checking-compatibility"
+  | "resolving-dependencies"
+  | "downloading"
+  | "verifying"
+  | "installing"
+  | "updating-records"
+  | "done"
+  | "failed"
+  | "cancelled";
+
 export interface Server {
   id: string;
   name: string;
@@ -159,6 +193,57 @@ export interface SoftwareDownload {
   speedBytesPerSec: number;
   etaSeconds: number | null;
   stage: SoftwareInstallStage;
+  error: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface InstalledPlugin {
+  id: string;
+  serverId: string;
+  source: PluginSource;
+  contentType: PluginContentType;
+  sourceProjectId: string | null;
+  sourceVersionId: string | null;
+  slug: string | null;
+  name: string;
+  installedVersion: string;
+  fileName: string;
+  filePath: string;
+  fileHashSha1: string | null;
+  fileHashSha512: string | null;
+  fileSizeBytes: number | null;
+  enabled: boolean;
+  status: PluginStatus;
+  updateAvailable: boolean;
+  installedAt: Date | null;
+  updatedAt: Date;
+  lastCheckedAt: Date | null;
+}
+
+export interface PluginDependency {
+  id: string;
+  pluginId: string;
+  dependsOnProjectId: string;
+  dependsOnVersionId: string | null;
+  dependsOnName: string | null;
+  dependencyType: "required" | "optional" | "incompatible" | "embedded";
+  resolvedPluginId: string | null;
+}
+
+export interface PluginInstallJob {
+  id: string;
+  serverId: string;
+  pluginId: string | null;
+  projectId: string | null;
+  versionId: string | null;
+  action: PluginInstallAction;
+  status: PluginInstallStatus;
+  stage: PluginInstallStage;
+  bytesReceived: number;
+  totalBytes: number | null;
+  speedBytesPerSec: number;
+  etaSeconds: number | null;
   error: string | null;
   createdAt: Date;
   updatedAt: Date;
