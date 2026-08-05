@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.0-beta.13
+
+### Fixed
+
+- Hardened Windows port ownership lookup so release tests do not hang on slower GitHub runners.
+- Increased the occupied-port safety test timeout to match Windows CI timing.
+- Bumped app and workspace versions to `3.0.0-beta.13`.
+
 ## 3.0.0-beta.12
 
 ### Added

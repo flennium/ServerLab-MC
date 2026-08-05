@@ -277,7 +277,10 @@ class PortManagerService {
     }
 
     try {
-      const { stdout } = await execFileAsync("netstat", ["-ano", "-p", "tcp"]);
+      const { stdout } = await execFileAsync("netstat", ["-ano", "-p", "tcp"], {
+        timeout: 1500,
+        windowsHide: true,
+      });
       const line = stdout
         .split(/\r?\n/)
         .map((item) => item.trim())
@@ -297,13 +300,14 @@ class PortManagerService {
     try {
       const escaped = String(pid).replace(/'/g, "''");
       const command = `Get-CimInstance Win32_Process -Filter "ProcessId=${escaped}" | Select-Object -First 1 ProcessId,Name,CommandLine | ConvertTo-Json -Compress`;
-      const { stdout } = await execFileAsync("powershell", [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        command,
-      ]);
+      const { stdout } = await execFileAsync(
+        "powershell",
+        ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
+        {
+          timeout: 1500,
+          windowsHide: true,
+        }
+      );
       const parsed = JSON.parse(stdout || "{}") as { Name?: string; CommandLine?: string };
       return {
         processName: parsed.Name ?? null,
