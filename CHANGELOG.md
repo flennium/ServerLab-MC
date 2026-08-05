@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.0-beta.12
+
+### Added
+
+- Added the first Modrinth plugin integration slice with backend search, project/version lookup, plugin install jobs, and a per-server Plugins tab.
+- Added plugin storage models, install progress events, Modrinth metadata cache, compatibility checks, and install safety tests.
+- Added plugin install/update file handling with staging, hash verification, backup, disable, trash, and restore support.
+
+### Changed
+
+- Server file browsing now hides ServerLab-managed plugin internals such as staging, disabled, trash, and backup folders.
+- Bumped app and workspace versions to `3.0.0-beta.12`.
+
 ## 3.0.0-beta.11
 
 ### Added
