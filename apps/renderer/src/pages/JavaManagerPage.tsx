@@ -11,8 +11,9 @@ import {
 } from "lucide-react";
 import { api } from "../lib/apiClient.js";
 import { getSocket } from "../lib/socket.js";
-import { Alert, Card, PageHeader, StatTile } from "../components/ui/Layout.js";
+import { Alert, Card, DangerZone, ManagementHeader, StatTile } from "../components/ui/Layout.js";
 import { Button, IconButton } from "../components/ui/Button.js";
+import { ConfirmModal } from "../components/ui/ConfirmModal.js";
 import { Field, Select } from "../components/ui/Form.js";
 import {
   getTerminalJobMessage,
@@ -44,6 +45,7 @@ export function JavaManagerPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [pendingRemoval, setPendingRemoval] = useState<JavaRuntime | null>(null);
 
   const managed = runtimes.filter((runtime) => runtime.source === "managed");
   const system = runtimes.filter((runtime) => runtime.source !== "managed");
@@ -234,7 +236,7 @@ export function JavaManagerPage() {
 
   return (
     <div>
-      <PageHeader
+      <ManagementHeader
         eyebrow="Runtime center"
         title="Java Runtime Center"
         description="Manage the Java runtimes ServerLab uses to create and start Minecraft servers."
@@ -383,7 +385,7 @@ export function JavaManagerPage() {
         runtimes={managed}
         usage={serverUsage}
         onValidate={validateRuntime}
-        onRemove={removeRuntime}
+        onRemove={setPendingRemoval}
         onReveal={revealRuntime}
       />
       <RuntimeSection
@@ -391,9 +393,23 @@ export function JavaManagerPage() {
         runtimes={system}
         usage={serverUsage}
         onValidate={validateRuntime}
-        onRemove={removeRuntime}
+        onRemove={setPendingRemoval}
         onReveal={revealRuntime}
       />
+
+      {pendingRemoval && (
+        <ConfirmModal
+          title={`Remove Java ${pendingRemoval.major}?`}
+          message={`ServerLab will remove this ${pendingRemoval.source} runtime from its runtime list and cached files when allowed. Servers currently using a runtime must be reassigned first.`}
+          confirmLabel="Remove runtime"
+          danger
+          onConfirm={() => {
+            void removeRuntime(pendingRemoval);
+            setPendingRemoval(null);
+          }}
+          onCancel={() => setPendingRemoval(null)}
+        />
+      )}
     </div>
   );
 }
@@ -494,6 +510,17 @@ function RuntimeSection({
                   >
                     Reveal
                   </Button>
+                </div>
+                <DangerZone
+                  title="Remove runtime"
+                  description={
+                    usedBy > 0
+                      ? `Reassign ${usedBy} server${usedBy === 1 ? "" : "s"} before removing this runtime.`
+                      : "Remove this runtime from ServerLab's managed cache or runtime list."
+                  }
+                  compact
+                  className="mt-3"
+                >
                   <Button
                     onClick={() => onRemove(runtime)}
                     disabled={usedBy > 0}
@@ -503,7 +530,7 @@ function RuntimeSection({
                   >
                     {usedBy > 0 ? "In use" : "Remove unused"}
                   </Button>
-                </div>
+                </DangerZone>
               </Card>
             );
           })}

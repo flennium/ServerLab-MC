@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.0.0-beta.15
+
+### Added
+
+- Added shared `ManagementHeader`, `ActionBar`, and `DangerZone` UI patterns for consistent page chrome, sticky server controls, and destructive actions.
+
+### Changed
+
+- Normalized dashboard, server inventory, Java Runtime Center, Settings, server detail, and backup layouts around the shared management header/action patterns.
+- Moved server deletion out of the everyday lifecycle controls and into a dedicated danger area in server settings.
+- Wrapped Java runtime, software cache, and backup destructive actions in consistent danger zones while keeping existing confirmation modals.
+- Routed error banners through inline, panel, and toast placements for more predictable error presentation.
+- Respected reduced-motion preferences for sidebar transitions, dashboard/server tab transitions, backup progress reveal, and console search navigation/highlights.
+- Bumped app and workspace versions to `3.0.0-beta.15`.
+
 ## 3.0.0-beta.14
 
 ### Added

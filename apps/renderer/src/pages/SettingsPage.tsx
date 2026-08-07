@@ -16,7 +16,8 @@ import {
   Trash2,
 } from "lucide-react";
 import { Button } from "../components/ui/Button.js";
-import { Alert, Card, PageHeader } from "../components/ui/Layout.js";
+import { Alert, Card, DangerZone, ManagementHeader } from "../components/ui/Layout.js";
+import { ConfirmModal } from "../components/ui/ConfirmModal.js";
 import { LabelValue } from "../components/ui/Form.js";
 import { api } from "../lib/apiClient.js";
 import {
@@ -74,7 +75,7 @@ export function SettingsPage() {
 
   return (
     <div>
-      <PageHeader
+      <ManagementHeader
         eyebrow="Local app"
         title="Settings"
         description="Application metadata, local storage, and keyboard affordances."
@@ -477,6 +478,10 @@ function SoftwareCachePanel() {
   const [runtimeUsage, setRuntimeUsage] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingArtifactRemoval, setPendingArtifactRemoval] =
+    useState<SoftwareArtifact | null>(null);
+  const [pendingRuntimeRemoval, setPendingRuntimeRemoval] =
+    useState<JavaRuntime | null>(null);
 
   async function load() {
     setLoading(true);
@@ -610,14 +615,16 @@ function SoftwareCachePanel() {
                         </span>
                       </td>
                       <td className="py-3 text-right">
-                        <Button
-                          onClick={() => removeArtifact(artifact.id)}
-                          icon={Trash2}
-                          variant="danger"
-                          size="sm"
-                        >
-                          Remove
-                        </Button>
+                        <DangerZone title="Remove cache" compact>
+                          <Button
+                            onClick={() => setPendingArtifactRemoval(artifact)}
+                            icon={Trash2}
+                            variant="danger"
+                            size="sm"
+                          >
+                            Remove
+                          </Button>
+                        </DangerZone>
                       </td>
                     </tr>
                   ))}
@@ -674,15 +681,25 @@ function SoftwareCachePanel() {
                       >
                         Reveal
                       </Button>
-                      <Button
-                        onClick={() => removeRuntime(runtime.id)}
-                        disabled={usedBy > 0}
-                        icon={Trash2}
-                        variant="danger"
-                        size="sm"
+                      <DangerZone
+                        title="Remove runtime"
+                        description={
+                          usedBy > 0
+                            ? "Reassign servers before removing this cached Java runtime."
+                            : undefined
+                        }
+                        compact
                       >
-                        {usedBy > 0 ? "In use" : "Remove"}
-                      </Button>
+                        <Button
+                          onClick={() => setPendingRuntimeRemoval(runtime)}
+                          disabled={usedBy > 0}
+                          icon={Trash2}
+                          variant="danger"
+                          size="sm"
+                        >
+                          {usedBy > 0 ? "In use" : "Remove"}
+                        </Button>
+                      </DangerZone>
                     </div>
                   </div>
                 );
@@ -691,6 +708,33 @@ function SoftwareCachePanel() {
           )}
         </CacheSection>
       </div>
+      {pendingArtifactRemoval && (
+        <ConfirmModal
+          title="Remove cached server software?"
+          message={`${pendingArtifactRemoval.provider} ${pendingArtifactRemoval.minecraftVersion} build ${pendingArtifactRemoval.buildId} will be removed from the shared cache. Existing servers keep their own copied files.`}
+          confirmLabel="Remove cache"
+          danger
+          onConfirm={() => {
+            void removeArtifact(pendingArtifactRemoval.id);
+            setPendingArtifactRemoval(null);
+          }}
+          onCancel={() => setPendingArtifactRemoval(null)}
+        />
+      )}
+
+      {pendingRuntimeRemoval && (
+        <ConfirmModal
+          title={`Remove Java ${pendingRuntimeRemoval.major}?`}
+          message={`This removes the cached runtime files for ${pendingRuntimeRemoval.distribution} ${pendingRuntimeRemoval.version}. Servers using it must be reassigned first.`}
+          confirmLabel="Remove runtime"
+          danger
+          onConfirm={() => {
+            void removeRuntime(pendingRuntimeRemoval.id);
+            setPendingRuntimeRemoval(null);
+          }}
+          onCancel={() => setPendingRuntimeRemoval(null)}
+        />
+      )}
     </Card>
   );
 }

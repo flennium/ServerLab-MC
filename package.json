@@ -1,6 +1,6 @@
 {
   "name": "serverlab-mc",
-  "version": "3.0.0-beta.14",
+  "version": "3.0.0-beta.15",
   "description": "A modern local Minecraft server management dashboard for developers",
   "author": "flennium",
   "private": true,
@@ -23,7 +23,7 @@
     "lint": "eslint . --ext .ts,.tsx",
     "reset:data": "powershell -ExecutionPolicy Bypass -File scripts/reset-app-data.ps1",
     "reset:data:force": "powershell -ExecutionPolicy Bypass -File scripts/reset-app-data.ps1 -Force",
-    "version:beta": "npm version 3.0.0-beta.14 --workspaces --include-workspace-root --no-git-tag-version",
+    "version:beta": "npm version 3.0.0-beta.15 --workspaces --include-workspace-root --no-git-tag-version",
     "release:check": "npm run lint && npm run test:ci && npm run package:ci",
     "test": "vitest run",
     "test:ci": "npm run build:shared && npm run prisma:generate --workspace=apps/backend && vitest run --passWithNoTests",

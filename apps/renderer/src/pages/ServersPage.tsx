@@ -4,7 +4,7 @@ import { useServerStore } from "../store/serverStore.js";
 import { StatusBadge } from "../components/ui/StatusBadge.js";
 import { ServerRowSkeleton } from "../components/ui/Skeleton.js";
 import { CreateServerModal } from "../components/server/CreateServerModal.js";
-import { Alert, Card, EmptyState, PageHeader } from "../components/ui/Layout.js";
+import { Alert, Card, EmptyState, ManagementHeader } from "../components/ui/Layout.js";
 import { Button } from "../components/ui/Button.js";
 import { toHashPath } from "../lib/router.js";
 
@@ -28,7 +28,7 @@ export function ServersPage() {
 
   return (
     <div>
-      <PageHeader
+      <ManagementHeader
         eyebrow="Server inventory"
         title="Servers"
         description="Manage every local server profile, runtime target, port, and control surface."

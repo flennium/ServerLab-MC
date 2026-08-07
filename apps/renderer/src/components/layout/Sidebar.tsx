@@ -37,21 +37,21 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
   return (
     <aside
       className={clsx(
-        "fixed left-0 top-9 z-40 flex h-[calc(100vh-2.25rem)] w-[240px] shrink-0 flex-col border-r border-border bg-carbon/98 shadow-2xl transition-[transform,width] duration-200 ease-out md:static md:top-auto md:z-auto md:h-full md:translate-x-0 md:shadow-none",
+        "fixed left-0 top-9 z-40 flex h-[calc(100vh-2.25rem)] w-[240px] shrink-0 flex-col border-r border-border bg-carbon/98 shadow-2xl transition-[transform,width] duration-200 ease-out motion-reduce:transition-none md:static md:top-auto md:z-auto md:h-full md:translate-x-0 md:shadow-none",
         mobileOpen ? "translate-x-0" : "-translate-x-full",
         collapsed ? "md:w-[70px]" : "md:w-[240px]"
       )}
     >
       <div
         className={clsx(
-          "flex h-20 items-center border-b border-border px-4 transition-all",
+          "flex h-20 items-center border-b border-border px-4 transition-all motion-reduce:transition-none",
           collapsed ? "md:justify-center md:px-3" : "gap-3 md:px-5"
         )}
       >
         <button
           type="button"
           onClick={() => setCollapsed((value) => !value)}
-          className="group hidden h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-copper/35 bg-copper/10 shadow-[0_0_24px_rgba(121,217,40,0.16)] transition-colors hover:border-copper hover:bg-copper/20 md:flex"
+          className="group hidden h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-copper/35 bg-copper/10 shadow-[0_0_24px_rgba(121,217,40,0.16)] transition-colors motion-reduce:transition-none hover:border-copper hover:bg-copper/20 md:flex"
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
@@ -59,7 +59,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
             src="./serverlab-icon.png"
             alt=""
             aria-hidden="true"
-            className="h-10 w-10 object-cover transition-transform group-hover:scale-105"
+            className="h-10 w-10 object-cover transition-transform motion-reduce:transition-none motion-reduce:group-hover:scale-100 group-hover:scale-105"
           />
         </button>
         <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-copper/35 bg-copper/10 shadow-[0_0_24px_rgba(121,217,40,0.16)] md:hidden">
@@ -70,7 +70,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
             className="h-10 w-10 object-cover"
           />
         </div>
-        <div className={clsx("min-w-0 transition-opacity", collapsed ? "md:hidden" : "block")}>
+        <div className={clsx("min-w-0 transition-opacity motion-reduce:transition-none", collapsed ? "md:hidden" : "block")}>
           <p className="font-display text-base font-semibold tracking-normal">ServerLab MC</p>
           <p className="mt-0.5 font-mono text-[0.68rem] uppercase tracking-[0.16em] text-muted">
             Local ops deck
@@ -78,7 +78,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
         </div>
         <button
           type="button"
-          className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded border border-border bg-rail text-muted transition-colors hover:border-copper/60 hover:text-white md:hidden"
+          className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded border border-border bg-rail text-muted transition-colors motion-reduce:transition-none hover:border-copper/60 hover:text-white md:hidden"
           aria-label="Close sidebar"
           onClick={onMobileClose}
         >
@@ -93,7 +93,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
             href={toHashPath(to)}
             onClick={onMobileClose}
             className={clsx(
-              "group relative flex h-11 items-center justify-center gap-3 rounded-lg border px-3 text-sm font-semibold transition-colors",
+              "group relative flex h-11 items-center justify-center gap-3 rounded-lg border px-3 text-sm font-semibold transition-colors motion-reduce:transition-none",
               collapsed ? "md:px-0" : "md:justify-start",
               route === to || (to === "/servers" && route.startsWith("/servers/"))
                 ? "border-copper/45 bg-copper/15 text-copper"
@@ -104,7 +104,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
             <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span className={clsx("truncate", collapsed ? "md:hidden" : "inline")}>{label}</span>
             {collapsed && (
-              <span className="pointer-events-none absolute left-[calc(100%+0.5rem)] top-1/2 z-50 hidden -translate-y-1/2 rounded border border-border bg-carbon px-2 py-1 text-xs text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100 md:block">
+              <span className="pointer-events-none absolute left-[calc(100%+0.5rem)] top-1/2 z-50 hidden -translate-y-1/2 rounded border border-border bg-carbon px-2 py-1 text-xs text-white opacity-0 shadow-xl transition-opacity motion-reduce:transition-none group-hover:opacity-100 md:block">
                 {label}
               </span>
             )}

@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -20,9 +20,11 @@ import { getSocket } from "../lib/socket.js";
 import {
   Alert,
   Card,
+  DangerZone,
   EmptyState,
   StatTile,
 } from "../components/ui/Layout.js";
+import { ActionBar } from "../components/ui/ActionBar.js";
 import { Button } from "../components/ui/Button.js";
 import { Field, LabelValue, Select, Switch, TextInput } from "../components/ui/Form.js";
 import { PortField } from "../components/server/PortField.js";
@@ -90,6 +92,7 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
     message: string;
     error: string | null;
   }>({ running: false, percent: 0, message: "Preparing deletion...", error: null });
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     fetchServers().finally(() => setLoading(false));
@@ -189,25 +192,14 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <section className="sticky top-0 z-20 -mx-4 border-b border-border bg-surface-1/95 px-4 pb-3 pt-1 shadow-[0_12px_35px_rgba(0,0,0,0.22)] backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-        <div className="mx-auto grid w-full max-w-7xl gap-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="mb-1 font-mono text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-copper">
-                Server deck
-              </p>
-              <div className="flex min-w-0 flex-wrap items-center gap-3">
-                <h1 className="truncate font-display text-2xl font-semibold tracking-normal text-white">
-                  {server.name}
-                </h1>
-                <StatusBadge status={server.status} />
-              </div>
-              <p className="mt-1 text-sm text-muted">
-                {server.software} {server.version} / port {server.port}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-end gap-2">
+      <ActionBar
+        sticky
+        eyebrow="Server deck"
+        title={server.name}
+        status={<StatusBadge status={server.status} />}
+        description={`${server.software} ${server.version} / port ${server.port}`}
+        primaryActions={
+          <>
               {!isActive ? (
                 <Button
                   onClick={() => startServer(server.id)}
@@ -237,17 +229,9 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
                   </Button>
                 </>
               )}
-              <span className="hidden h-7 w-px bg-border sm:block" aria-hidden="true" />
-              <Button
-                onClick={() => setConfirmDelete(true)}
-                icon={Trash2}
-                variant="danger"
-                size="sm"
-              >
-                Delete
-              </Button>
-            </div>
-          </div>
+          </>
+        }
+      >
 
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
             <StatTile label="RAM min" value={`${server.ramMinMb}`} detail="MB" className="py-2.5" />
@@ -277,16 +261,15 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
             onChange={setTab}
             label="Server sections"
           />
-        </div>
-      </section>
+      </ActionBar>
 
       <AnimatePresence mode="wait">
         <motion.div
           key={tab}
-          initial={{ opacity: 0, y: 6 }}
+          initial={reduceMotion ? false : { opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.15 }}
+          exit={reduceMotion ? undefined : { opacity: 0, y: -6 }}
+          transition={{ duration: reduceMotion ? 0 : 0.15 }}
         >
           <Suspense fallback={<Skeleton className="h-64 w-full" />}>
             {tab === "console" && <Console serverId={server.id} />}
@@ -307,7 +290,9 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
 
             {tab === "backups" && <BackupPanel serverId={server.id} />}
 
-            {tab === "settings" && <ServerSettings server={server} />}
+            {tab === "settings" && (
+              <ServerSettings server={server} onDeleteServer={() => setConfirmDelete(true)} />
+            )}
           </Suspense>
         </motion.div>
       </AnimatePresence>
@@ -334,7 +319,13 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
   );
 }
 
-function ServerSettings({ server }: { server: ServerModel }) {
+function ServerSettings({
+  server,
+  onDeleteServer,
+}: {
+  server: ServerModel;
+  onDeleteServer: () => void;
+}) {
   const { fetchServers } = useServerStore();
   const [form, setForm] = useState<UpdateServerDto>({
     name: server.name,
@@ -658,6 +649,15 @@ function ServerSettings({ server }: { server: ServerModel }) {
           </Button>
           {saved && <span className="text-sm font-semibold text-grass">Saved</span>}
         </div>
+
+        <DangerZone
+          title="Delete server"
+          description="Stops the server, creates a safety backup, removes metadata, and deletes the server folder."
+        >
+          <Button onClick={onDeleteServer} icon={Trash2} variant="danger">
+            Delete server
+          </Button>
+        </DangerZone>
       </div>
     </Card>
   );
