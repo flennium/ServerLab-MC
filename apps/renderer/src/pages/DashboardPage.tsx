@@ -10,7 +10,6 @@ import {
   Gauge,
   Play,
   Plus,
-  RefreshCw,
   Server,
   Square,
   TerminalSquare,
@@ -19,7 +18,7 @@ import { useServerStore } from "../store/serverStore.js";
 import { useStatsStore } from "../store/statsStore.js";
 import { StatusBadge } from "../components/ui/StatusBadge.js";
 import { ServerCardSkeleton } from "../components/ui/Skeleton.js";
-import { Alert, Card, EmptyState, PageHeader, StatTile } from "../components/ui/Layout.js";
+import { Alert, Card, EmptyState, PageHeader } from "../components/ui/Layout.js";
 import { Button } from "../components/ui/Button.js";
 import { api } from "../lib/apiClient.js";
 import { toHashPath } from "../lib/router.js";
@@ -42,7 +41,6 @@ export function DashboardPage() {
   const { servers, fetchServers, startServer, stopServer } = useServerStore();
   const { getStats } = useStatsStore();
   const [loading, setLoading] = useState(true);
-  const [refreshingHealth, setRefreshingHealth] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [environment, setEnvironment] = useState<EnvironmentSummary>({
     validRuntimes: 0,
@@ -54,7 +52,7 @@ export function DashboardPage() {
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    Promise.all([fetchServers(), loadEnvironment(setEnvironment, setRefreshingHealth)])
+    Promise.all([fetchServers(), loadEnvironment(setEnvironment)])
       .catch((error) =>
         setError(error instanceof Error ? error.message : "Failed to load dashboard")
       )
@@ -66,9 +64,6 @@ export function DashboardPage() {
   }, [load]);
 
   const sortedServers = useMemo(() => orderServersForDashboard(servers), [servers]);
-  const running = servers.filter((server) => server.status === "running").length;
-  const starting = servers.filter((server) => server.status === "starting").length;
-  const crashed = servers.filter((server) => server.status === "crashed").length;
   const autoStart = servers.filter((server) => server.autoStart).length;
   const activeServers = sortedServers.filter(
     (server) => server.status === "running" || server.status === "starting"
@@ -98,21 +93,7 @@ export function DashboardPage() {
       <PageHeader
         eyebrow="Server hosting panel"
         title="Dashboard"
-        description="Start servers, review runtime health, and check local cache readiness from one workspace."
-        actions={
-          <>
-            <Button onClick={load} disabled={refreshingHealth} icon={RefreshCw} variant="secondary">
-              Refresh
-            </Button>
-            <a
-              href={toHashPath("/servers")}
-              className="inline-flex h-10 items-center gap-2 rounded border border-copper bg-copper px-4 text-sm font-semibold text-carbon transition-colors hover:border-copper-hover hover:bg-copper-hover"
-            >
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              New server
-            </a>
-          </>
-        }
+        description="Manage local Minecraft servers from a focused, lightweight workspace."
       />
 
       {error && (
@@ -120,14 +101,6 @@ export function DashboardPage() {
           {error}
         </Alert>
       )}
-
-      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <StatTile label="Servers" value={servers.length} detail="tracked" tone="info" />
-        <StatTile label="Running" value={running} detail={starting ? `+${starting} starting` : "online"} tone="good" />
-        <StatTile label="Attention" value={attentionItems.length} detail={crashed ? `${crashed} crashed` : "clear"} tone={attentionItems.length ? "danger" : "good"} />
-        <StatTile label="Java" value={environment.validRuntimes} detail={`${environment.managedRuntimes} managed`} tone={environment.validRuntimes ? "good" : "warn"} />
-        <StatTile label="Software cache" value={environment.cachedSoftware} detail={formatBytes(environment.cacheBytes)} tone="info" />
-      </div>
 
       {servers.length === 0 ? (
         <EmptyState
@@ -145,7 +118,7 @@ export function DashboardPage() {
           }
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.45fr_0.75fr]">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.55fr_0.7fr]">
           <section className="min-w-0">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
@@ -199,10 +172,8 @@ export function DashboardPage() {
 }
 
 async function loadEnvironment(
-  setEnvironment: (summary: EnvironmentSummary) => void,
-  setRefreshingHealth: (refreshing: boolean) => void
+  setEnvironment: (summary: EnvironmentSummary) => void
 ) {
-  setRefreshingHealth(true);
   try {
     const [javaData, cacheData] = await Promise.all([
       api.get<JavaRuntimeListResponse>("/api/java/runtimes"),
@@ -216,8 +187,13 @@ async function loadEnvironment(
       cachedSoftware: cacheData.artifacts.length,
       cacheBytes: cacheData.artifacts.reduce((total, artifact) => total + artifact.sizeBytes, 0),
     });
-  } finally {
-    setRefreshingHealth(false);
+  } catch {
+    setEnvironment({
+      validRuntimes: 0,
+      managedRuntimes: 0,
+      cachedSoftware: 0,
+      cacheBytes: 0,
+    });
   }
 }
 

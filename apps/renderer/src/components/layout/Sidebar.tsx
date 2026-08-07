@@ -2,8 +2,6 @@ import clsx from "clsx";
 import { useEffect, useState } from "react";
 import {
   Activity,
-  ChevronLeft,
-  ChevronRight,
   Coffee,
   LayoutDashboard,
   Settings,
@@ -50,7 +48,21 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
           collapsed ? "md:justify-center md:px-3" : "gap-3 md:px-5"
         )}
       >
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-copper/35 bg-copper/10 shadow-[0_0_24px_rgba(121,217,40,0.16)]">
+        <button
+          type="button"
+          onClick={() => setCollapsed((value) => !value)}
+          className="group hidden h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-copper/35 bg-copper/10 shadow-[0_0_24px_rgba(121,217,40,0.16)] transition-colors hover:border-copper hover:bg-copper/20 md:flex"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          <img
+            src="./serverlab-icon.png"
+            alt=""
+            aria-hidden="true"
+            className="h-10 w-10 object-cover transition-transform group-hover:scale-105"
+          />
+        </button>
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-copper/35 bg-copper/10 shadow-[0_0_24px_rgba(121,217,40,0.16)] md:hidden">
           <img
             src="./serverlab-icon.png"
             alt=""
@@ -99,21 +111,6 @@ export function Sidebar({ mobileOpen, onMobileClose }: SidebarProps) {
           </a>
         ))}
       </nav>
-
-      <div className={clsx("hidden px-3 md:block", collapsed && "px-2")}>
-        <button
-          type="button"
-          onClick={() => setCollapsed((value) => !value)}
-          className={clsx(
-            "flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-border bg-rail text-xs font-semibold text-muted transition-colors hover:border-copper/60 hover:text-white",
-            !collapsed && "justify-start px-3"
-          )}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-          {!collapsed && <span>Collapse</span>}
-        </button>
-      </div>
 
       <div className="flex-1" />
 
