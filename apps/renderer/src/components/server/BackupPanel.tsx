@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Archive, RotateCcw, Trash2, X } from "lucide-react";
 import { api } from "../../lib/apiClient.js";
 import { getSocket } from "../../lib/socket.js";
 import { ConfirmModal } from "../ui/ConfirmModal.js";
-import { Alert, Card, EmptyState } from "../ui/Layout.js";
+import { Alert, Card, DangerZone, EmptyState } from "../ui/Layout.js";
 import { Button, IconButton } from "../ui/Button.js";
 import type { Backup, BackupListResponse } from "@serverlab/shared";
 
@@ -31,6 +31,7 @@ export function BackupPanel({ serverId }: BackupPanelProps) {
   const [confirmDelete, setConfirmDelete] = useState<Backup | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<Record<string, number>>({});
+  const reduceMotion = useReducedMotion();
 
   const fetchBackups = useCallback(async () => {
     setLoading(true);
@@ -138,9 +139,10 @@ export function BackupPanel({ serverId }: BackupPanelProps) {
           {Object.entries(progress).map(([backupId, pct]) => (
             <motion.div
               key={backupId}
-              initial={{ opacity: 0, height: 0 }}
+              initial={reduceMotion ? false : { opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
+              exit={reduceMotion ? undefined : { opacity: 0, height: 0 }}
+              transition={{ duration: reduceMotion ? 0 : 0.2 }}
               className="overflow-hidden"
             >
               <Card className="px-4 py-3">
@@ -184,7 +186,11 @@ export function BackupPanel({ serverId }: BackupPanelProps) {
                     </p>
                     <p className="mt-1 font-mono text-xs text-muted">{formatBytes(backup.sizeBytes)}</p>
                   </div>
-                  <div className="flex gap-2">
+                  <DangerZone
+                    title="Backup actions"
+                    description="Restore overwrites current files. Delete permanently removes this backup."
+                    compact
+                  >
                     <Button
                       onClick={() => setConfirmRestore(backup)}
                       disabled={restoring === backup.id || !!restoring}
@@ -201,7 +207,7 @@ export function BackupPanel({ serverId }: BackupPanelProps) {
                       disabled={deleting === backup.id}
                       onClick={() => setConfirmDelete(backup)}
                     />
-                  </div>
+                  </DangerZone>
                 </div>
               </Card>
             ))}

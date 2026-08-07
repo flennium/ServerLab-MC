@@ -95,7 +95,10 @@ export function ErrorBanner({
   compact?: boolean;
 }) {
   return (
-    <Alert tone={error.severity === "warning" ? "warning" : "danger"}>
+    <Alert
+      tone={error.severity === "warning" ? "warning" : "danger"}
+      placement={compact ? "inline" : "panel"}
+    >
       <div className="min-w-0">
         <p className="font-semibold">{error.userMessage}</p>
         {!compact && error.possibleSolution && (
@@ -128,9 +131,11 @@ function ErrorToastHost({ errors }: { errors: AppError[] }) {
   return (
     <div className="pointer-events-none fixed right-4 top-12 z-50 grid w-[min(28rem,calc(100vw-2rem))] gap-2">
       {errors.map((error) => (
-        <Card
+        <Alert
           key={error.id}
-          className="pointer-events-auto border-redstone/35 bg-panel/95 p-3 shadow-2xl"
+          tone={error.severity === "warning" ? "warning" : "danger"}
+          placement="toast"
+          className="pointer-events-auto bg-panel/95"
         >
           <div className="flex items-start gap-3">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-redstone" />
@@ -149,7 +154,7 @@ function ErrorToastHost({ errors }: { errors: AppError[] }) {
               onClick={() => dismissError(error.id)}
             />
           </div>
-        </Card>
+        </Alert>
       ))}
     </div>
   );

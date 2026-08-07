@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import {
   AlertTriangle,
   ArrowRight,
@@ -18,7 +18,7 @@ import { useServerStore } from "../store/serverStore.js";
 import { useStatsStore } from "../store/statsStore.js";
 import { StatusBadge } from "../components/ui/StatusBadge.js";
 import { ServerCardSkeleton } from "../components/ui/Skeleton.js";
-import { Alert, Card, EmptyState, PageHeader } from "../components/ui/Layout.js";
+import { Alert, Card, EmptyState, ManagementHeader } from "../components/ui/Layout.js";
 import { Button } from "../components/ui/Button.js";
 import { api } from "../lib/apiClient.js";
 import { toHashPath } from "../lib/router.js";
@@ -48,6 +48,7 @@ export function DashboardPage() {
     cachedSoftware: 0,
     cacheBytes: 0,
   });
+  const reduceMotion = useReducedMotion();
 
   const load = useCallback(() => {
     setLoading(true);
@@ -74,7 +75,7 @@ export function DashboardPage() {
   if (loading) {
     return (
       <div>
-        <PageHeader
+        <ManagementHeader
           eyebrow="Server hosting panel"
           title="Dashboard"
           description="Live status for the Minecraft servers on this machine."
@@ -90,7 +91,7 @@ export function DashboardPage() {
 
   return (
     <div>
-      <PageHeader
+      <ManagementHeader
         eyebrow="Server hosting panel"
         title="Dashboard"
         description="Manage local Minecraft servers from a focused, lightweight workspace."
@@ -141,9 +142,12 @@ export function DashboardPage() {
               {visibleServers.map((server, index) => (
                 <motion.div
                   key={server.id}
-                  initial={{ opacity: 0, y: 8 }}
+                  initial={reduceMotion ? false : { opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.18, delay: index * 0.02 }}
+                  transition={{
+                    duration: reduceMotion ? 0 : 0.18,
+                    delay: reduceMotion ? 0 : index * 0.02,
+                  }}
                 >
                   <ServerOverviewCard
                     server={server}

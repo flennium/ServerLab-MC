@@ -78,12 +78,17 @@ export function Console({ serverId }: ConsoleProps) {
     if (!searchMatches.length) return;
     const match = searchMatches[activeMatchIndex % searchMatches.length];
     const node = matchRefs.current.get(matchKey(match.lineIndex, match.start));
-    node?.scrollIntoView({ block: "center", behavior: "smooth" });
+    node?.scrollIntoView({
+      block: "center",
+      behavior: prefersReducedMotion() ? "auto" : "smooth",
+    });
   }, [activeMatchIndex, searchMatches]);
 
   useEffect(() => {
     if (autoScroll) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      bottomRef.current?.scrollIntoView({
+        behavior: prefersReducedMotion() ? "auto" : "smooth",
+      });
     }
   }, [lines, autoScroll]);
 
@@ -217,7 +222,9 @@ export function Console({ serverId }: ConsoleProps) {
               <Button
                 onClick={() => {
                   setAutoScroll(true);
-                  bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+                  bottomRef.current?.scrollIntoView({
+                    behavior: prefersReducedMotion() ? "auto" : "smooth",
+                  });
                 }}
                 icon={ArrowDownCircle}
                 variant="quiet"
@@ -451,7 +458,7 @@ function renderHighlightedText({
           else matchRefs.current.delete(key);
         }}
         className={clsx(
-          "rounded px-0.5",
+          "console-search-highlight rounded px-0.5 transition-colors motion-reduce:transition-none",
           isActive
             ? "bg-copper text-carbon"
             : "bg-glowstone/25 text-white"
@@ -469,6 +476,10 @@ function renderHighlightedText({
 
 function matchKey(lineIndex: number, start: number): string {
   return `${lineIndex}:${start}`;
+}
+
+function prefersReducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 function lineTone(text: string): string {

@@ -7,12 +7,31 @@ interface PageHeaderProps {
   description?: string;
   meta?: ReactNode;
   actions?: ReactNode;
+  breadcrumb?: ReactNode;
+  className?: string;
+  compact?: boolean;
 }
 
-export function PageHeader({ eyebrow, title, description, meta, actions }: PageHeaderProps) {
+export function ManagementHeader({
+  eyebrow,
+  title,
+  description,
+  meta,
+  actions,
+  breadcrumb,
+  className,
+  compact = false,
+}: PageHeaderProps) {
   return (
-    <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+    <header
+      className={clsx(
+        "flex flex-wrap items-start justify-between gap-4",
+        compact ? "mb-3" : "mb-5",
+        className
+      )}
+    >
       <div className="min-w-0">
+        {breadcrumb && <div className="mb-2">{breadcrumb}</div>}
         {eyebrow && (
           <p className="mb-1 font-mono text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-copper">
             {eyebrow}
@@ -29,8 +48,12 @@ export function PageHeader({ eyebrow, title, description, meta, actions }: PageH
         )}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
-    </div>
+    </header>
   );
+}
+
+export function PageHeader(props: PageHeaderProps) {
+  return <ManagementHeader {...props} />;
 }
 
 export function Card({
@@ -89,11 +112,13 @@ export function StatTile({
 
 export function Alert({
   tone = "info",
+  placement = "panel",
   children,
   action,
   className,
 }: {
   tone?: "info" | "danger" | "success" | "warning";
+  placement?: "inline" | "panel" | "toast";
   children: ReactNode;
   action?: ReactNode;
   className?: string;
@@ -104,11 +129,17 @@ export function Alert({
     success: "border-grass/40 bg-grass/10 text-grass",
     warning: "border-glowstone/40 bg-glowstone/10 text-glowstone",
   }[tone];
+  const placementClass = {
+    inline: "rounded border px-3 py-2 text-xs",
+    panel: "rounded-lg border px-4 py-3 text-sm",
+    toast: "rounded-lg border px-3 py-3 text-sm shadow-2xl",
+  }[placement];
 
   return (
     <div
       className={clsx(
-        "flex items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm",
+        "flex items-center justify-between gap-3",
+        placementClass,
         toneClass,
         className
       )}
@@ -116,6 +147,40 @@ export function Alert({
       <div className="min-w-0">{children}</div>
       {action}
     </div>
+  );
+}
+
+export function DangerZone({
+  title = "Danger zone",
+  description,
+  children,
+  className,
+  compact = false,
+}: {
+  title?: string;
+  description?: ReactNode;
+  children: ReactNode;
+  className?: string;
+  compact?: boolean;
+}) {
+  return (
+    <section
+      className={clsx(
+        "rounded-lg border border-redstone/35 bg-redstone/5",
+        compact ? "px-3 py-2" : "p-4",
+        className
+      )}
+    >
+      <div className={clsx("flex flex-wrap items-center justify-between gap-3", !compact && "mb-3")}>
+        <div className="min-w-0">
+          <h3 className="font-display text-sm font-semibold text-redstone">{title}</h3>
+          {description && (
+            <p className="mt-1 text-xs leading-5 text-muted">{description}</p>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">{children}</div>
+      </div>
+    </section>
   );
 }
 
