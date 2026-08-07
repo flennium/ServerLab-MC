@@ -21,7 +21,6 @@ import {
   Alert,
   Card,
   EmptyState,
-  PageHeader,
   StatTile,
 } from "../components/ui/Layout.js";
 import { Button } from "../components/ui/Button.js";
@@ -190,72 +189,96 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        eyebrow="Server deck"
-        title={server.name}
-        meta={<StatusBadge status={server.status} />}
-        description={`${server.software} ${server.version} on port ${server.port}`}
-        actions={
-          <>
-            {!isActive ? (
+      <section className="sticky top-0 z-20 -mx-4 border-b border-border bg-surface-1/95 px-4 pb-3 pt-1 shadow-[0_12px_35px_rgba(0,0,0,0.22)] backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+        <div className="mx-auto grid w-full max-w-7xl gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="mb-1 font-mono text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-copper">
+                Server deck
+              </p>
+              <div className="flex min-w-0 flex-wrap items-center gap-3">
+                <h1 className="truncate font-display text-2xl font-semibold tracking-normal text-white">
+                  {server.name}
+                </h1>
+                <StatusBadge status={server.status} />
+              </div>
+              <p className="mt-1 text-sm text-muted">
+                {server.software} {server.version} / port {server.port}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {!isActive ? (
+                <Button
+                  onClick={() => startServer(server.id)}
+                  icon={Play}
+                  variant="primary"
+                  size="sm"
+                >
+                  Start
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    onClick={() => stopServer(server.id)}
+                    icon={Square}
+                    variant="secondary"
+                    size="sm"
+                  >
+                    Stop
+                  </Button>
+                  <Button
+                    onClick={() => restartServer(server.id)}
+                    icon={RotateCcw}
+                    variant="secondary"
+                    size="sm"
+                  >
+                    Restart
+                  </Button>
+                </>
+              )}
+              <span className="hidden h-7 w-px bg-border sm:block" aria-hidden="true" />
               <Button
-                onClick={() => startServer(server.id)}
-                icon={Play}
-                variant="primary"
+                onClick={() => setConfirmDelete(true)}
+                icon={Trash2}
+                variant="danger"
+                size="sm"
               >
-                Start
+                Delete
               </Button>
-            ) : (
-              <>
-                <Button
-                  onClick={() => stopServer(server.id)}
-                  icon={Square}
-                  variant="secondary"
-                >
-                  Stop
-                </Button>
-                <Button
-                  onClick={() => restartServer(server.id)}
-                  icon={RotateCcw}
-                  variant="secondary"
-                >
-                  Restart
-                </Button>
-              </>
-            )}
-            <Button onClick={() => setConfirmDelete(true)} icon={Trash2} variant="danger">
-              Delete
-            </Button>
-          </>
-        }
-      />
+            </div>
+          </div>
 
-      <Card className="px-4 py-3">
-        <p className="truncate font-mono text-xs text-muted">{server.path}</p>
-      </Card>
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+            <StatTile label="RAM min" value={`${server.ramMinMb}`} detail="MB" className="py-2.5" />
+            <StatTile label="RAM max" value={`${server.ramMaxMb}`} detail="MB" tone="info" className="py-2.5" />
+            <StatTile
+              label="Port"
+              value={server.port}
+              detail={detailPortStatus?.available === false ? "conflict" : "ready"}
+              tone={detailPortStatus?.available === false ? "warn" : "neutral"}
+              className="py-2.5"
+            />
+            <StatTile
+              label="Auto-start"
+              value={server.autoStart ? "On" : "Off"}
+              tone={server.autoStart ? "good" : "neutral"}
+              className="py-2.5"
+            />
+          </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="RAM min" value={`${server.ramMinMb}`} detail="MB" />
-        <StatTile label="RAM max" value={`${server.ramMaxMb}`} detail="MB" tone="info" />
-        <StatTile
-          label="Port"
-          value={server.port}
-          detail={detailPortStatus?.available === false ? "conflict" : "ready"}
-          tone={detailPortStatus?.available === false ? "warn" : "neutral"}
-        />
-        <StatTile
-          label="Auto-start"
-          value={server.autoStart ? "On" : "Off"}
-          tone={server.autoStart ? "good" : "neutral"}
-        />
-      </div>
+          <div className="rounded-lg border border-border bg-carbon/60 px-3 py-2">
+            <p className="truncate font-mono text-xs text-muted">{server.path}</p>
+          </div>
 
-      <Tabs
-        items={TABS}
-        value={tab}
-        onChange={setTab}
-        label="Server sections"
-      />
+          <Tabs
+            items={TABS}
+            value={tab}
+            onChange={setTab}
+            label="Server sections"
+          />
+        </div>
+      </section>
 
       <AnimatePresence mode="wait">
         <motion.div

@@ -69,8 +69,8 @@ export function AppShell({ children }: AppShellProps) {
           mobileOpen={mobileSidebarOpen}
           onMobileClose={() => setMobileSidebarOpen(false)}
         />
-        <main className="min-w-0 flex-1 overflow-auto bg-gradient-to-b from-surface-1/95 to-carbon/95 px-4 py-4 sm:px-6 lg:px-8">
-          <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col py-2">
+        <main className="min-w-0 flex-1 overflow-auto overscroll-contain bg-gradient-to-b from-surface-1/95 to-carbon/95 px-4 py-4 sm:px-6 lg:px-8">
+          <div className="mx-auto flex w-full max-w-7xl flex-col">
             {children}
           </div>
         </main>
