@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { Minus, Square, X } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { Menu, Minus, Square, X } from "lucide-react";
 import { Sidebar } from "./Sidebar.tsx";
 import { IconButton } from "../ui/Button.js";
 
@@ -8,10 +8,20 @@ interface AppShellProps {
 }
 
 export function AppShell({ children }: AppShellProps) {
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
   return (
     <div className="operator-grid flex h-screen w-screen flex-col overflow-hidden bg-carbon text-white">
-      <header className="app-drag flex h-9 shrink-0 items-center justify-between border-b border-border bg-carbon/95 pl-4">
+      <header className="app-drag relative z-50 flex h-9 shrink-0 items-center justify-between border-b border-border bg-carbon/95 pl-2 sm:pl-4">
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="app-no-drag inline-flex h-7 w-7 items-center justify-center rounded border border-border bg-rail text-muted transition-colors hover:border-copper/60 hover:text-white md:hidden"
+            aria-label="Open sidebar"
+            onClick={() => setMobileSidebarOpen(true)}
+          >
+            <Menu className="h-4 w-4" aria-hidden="true" />
+          </button>
           <img
             src="./serverlab-icon.png"
             alt=""
@@ -47,7 +57,18 @@ export function AppShell({ children }: AppShellProps) {
         </div>
       </header>
       <div className="min-h-0 flex flex-1">
-        <Sidebar />
+        {mobileSidebarOpen && (
+          <button
+            type="button"
+            aria-label="Close sidebar"
+            className="fixed inset-x-0 bottom-0 top-9 z-30 bg-black/55 backdrop-blur-sm md:hidden"
+            onClick={() => setMobileSidebarOpen(false)}
+          />
+        )}
+        <Sidebar
+          mobileOpen={mobileSidebarOpen}
+          onMobileClose={() => setMobileSidebarOpen(false)}
+        />
         <main className="min-w-0 flex-1 overflow-auto bg-gradient-to-b from-surface-1/95 to-carbon/95 px-4 py-4 sm:px-6 lg:px-8">
           <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col py-2">
             {children}

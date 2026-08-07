@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.0.0-beta.14
+
+### Added
+
+- Added a collapsible desktop sidebar with icon-only mode, hover tooltips, persisted preference, and a mobile slide-out menu.
+- Added opt-in whole-server file search with async backend search, capped results, and visible relative paths.
+
+### Changed
+
+- Simplified the server Files tab by removing Quick Access and filter clutter.
+- Reloading an open file now refreshes content in place without closing the editor tab.
+- Reduced noisy file warnings and tightened dashboard labels for a cleaner hosting-panel feel.
+- Bumped app and workspace versions to `3.0.0-beta.14`.
+
 ## 3.0.0-beta.13
 
 ### Fixed

@@ -208,6 +208,12 @@ export interface FileListResponse {
   entries: FileEntry[];
 }
 
+export interface FileSearchResponse {
+  entries: FileEntry[];
+  total: number;
+  truncated: boolean;
+}
+
 export interface FileContentResponse {
   path: string;
   content: string;

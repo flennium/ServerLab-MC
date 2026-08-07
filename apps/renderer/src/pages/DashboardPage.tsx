@@ -80,9 +80,9 @@ export function DashboardPage() {
     return (
       <div>
         <PageHeader
-          eyebrow="Local ops deck"
+          eyebrow="Server hosting panel"
           title="Dashboard"
-          description="Fleet status for the Minecraft servers on this machine."
+          description="Live status for the Minecraft servers on this machine."
         />
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <ServerCardSkeleton />
@@ -96,9 +96,9 @@ export function DashboardPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="Local ops deck"
+        eyebrow="Server hosting panel"
         title="Dashboard"
-        description="Start servers, spot runtime issues, and check cached software without leaving the command center."
+        description="Start servers, review runtime health, and check local cache readiness from one workspace."
         actions={
           <>
             <Button onClick={load} disabled={refreshingHealth} icon={RefreshCw} variant="secondary">
@@ -149,10 +149,10 @@ export function DashboardPage() {
           <section className="min-w-0">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
-                <h2 className="font-display text-lg font-semibold text-white">Fleet rail</h2>
+                <h2 className="font-display text-lg font-semibold text-white">Server overview</h2>
                 <p className="text-sm text-muted">
                   {activeServers.length
-                    ? `${activeServers.length} active server${activeServers.length === 1 ? "" : "s"} at the top.`
+                    ? `${activeServers.length} active server${activeServers.length === 1 ? "" : "s"} pinned to the top.`
                     : "Stopped servers are ready when you are."}
                 </p>
               </div>
