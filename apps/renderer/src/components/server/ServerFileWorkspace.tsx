@@ -17,7 +17,6 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
-  HardDriveDownload,
   Home,
   RefreshCw,
   RotateCcw,
@@ -39,6 +38,7 @@ import type {
   FileContentResponse,
   FileEntry,
   FileListResponse,
+  FileSearchResponse,
   ServerStatus,
 } from "@serverlab/shared";
 
@@ -63,29 +63,10 @@ interface FileTab {
 interface WorkspacePrefs {
   openTabs: string[];
   activePath: string | null;
+  searchEntireServer?: boolean;
 }
 
-type FilterKey = "all" | "config" | "json" | "yaml" | "properties" | "logs" | "folders" | "large";
 type CreateMode = "file" | "folder";
-
-const COMMON_FILES = [
-  "server.properties",
-  "eula.txt",
-  "ops.json",
-  "whitelist.json",
-  "banned-players.json",
-];
-
-const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "config", label: "Config" },
-  { key: "json", label: "JSON" },
-  { key: "yaml", label: "YAML" },
-  { key: "properties", label: "Properties" },
-  { key: "logs", label: "Logs" },
-  { key: "folders", label: "Folders" },
-  { key: "large", label: "Large" },
-];
 
 const MAX_RENDERED_ROWS = 650;
 
@@ -100,7 +81,11 @@ export function ServerFileWorkspace({
   const [listError, setListError] = useState<AppError | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [searchValue, setSearchValue] = useState("");
-  const [filter, setFilter] = useState<FilterKey>("all");
+  const [searchEntireServer, setSearchEntireServer] = useState(false);
+  const [serverSearchResults, setServerSearchResults] = useState<FileEntry[]>([]);
+  const [serverSearchLoading, setServerSearchLoading] = useState(false);
+  const [serverSearchMeta, setServerSearchMeta] = useState<{ total: number; truncated: boolean } | null>(null);
+  const [serverSearchError, setServerSearchError] = useState<AppError | null>(null);
   const [tabs, setTabs] = useState<FileTab[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
   const [createMode, setCreateMode] = useState<CreateMode | null>(null);
@@ -153,9 +138,10 @@ export function ServerFileWorkspace({
     const prefs: WorkspacePrefs = {
       openTabs: tabs.map((tab) => tab.path),
       activePath,
+      searchEntireServer,
     };
     localStorage.setItem(storageKey, JSON.stringify(prefs));
-  }, [activePath, storageKey, tabs]);
+  }, [activePath, searchEntireServer, storageKey, tabs]);
 
   const openFile = useCallback(async (path: string, name = basename(path), options: { silent?: boolean } = {}) => {
     setActivePath(path);
@@ -223,6 +209,7 @@ export function ServerFileWorkspace({
     try {
       const prefs = JSON.parse(raw) as WorkspacePrefs;
       setActivePath(typeof prefs.activePath === "string" ? prefs.activePath : null);
+      setSearchEntireServer(Boolean(prefs.searchEntireServer));
       for (const path of Array.isArray(prefs.openTabs) ? prefs.openTabs.slice(0, 5) : []) {
         void openFile(path, basename(path), { silent: true });
       }
@@ -233,13 +220,61 @@ export function ServerFileWorkspace({
 
   const activeTab = tabs.find((tab) => tab.path === activePath) ?? null;
   const isRunning = serverStatus === "running" || serverStatus === "starting";
+  const trimmedSearch = searchValue.trim();
+
+  useEffect(() => {
+    if (!searchEntireServer || trimmedSearch.length < 2) {
+      setServerSearchResults([]);
+      setServerSearchMeta(null);
+      setServerSearchLoading(false);
+      setServerSearchError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setServerSearchLoading(true);
+    setServerSearchError(null);
+    const handle = window.setTimeout(() => {
+      api
+        .get<FileSearchResponse>(
+          `/api/servers/${serverId}/files/search?query=${encodeURIComponent(trimmedSearch)}&limit=250`
+        )
+        .then((result) => {
+          if (cancelled) return;
+          setServerSearchResults(result.entries);
+          setServerSearchMeta({ total: result.total, truncated: result.truncated });
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setServerSearchResults([]);
+          setServerSearchMeta(null);
+          setServerSearchError(
+            reportError(error, {
+              category: "file",
+              severity: "error",
+              userMessage: "ServerLab could not search this server.",
+              possibleSolution: "Try a narrower search or refresh the server files.",
+              source: "renderer:file-workspace",
+              action: "search-server-files",
+            })
+          );
+        })
+        .finally(() => {
+          if (!cancelled) setServerSearchLoading(false);
+        });
+    }, 280);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [reportError, searchEntireServer, serverId, trimmedSearch]);
 
   const visibleEntries = useMemo(() => {
-    const needle = searchValue.trim().toLowerCase();
-    return entries
-      .filter((entry) => matchesFilter(entry, filter))
-      .filter((entry) => !needle || entry.name.toLowerCase().includes(needle));
-  }, [entries, filter, searchValue]);
+    if (searchEntireServer && trimmedSearch.length >= 2) return serverSearchResults;
+    const needle = trimmedSearch.toLowerCase();
+    return entries.filter((entry) => !needle || entry.name.toLowerCase().includes(needle));
+  }, [entries, searchEntireServer, serverSearchResults, trimmedSearch]);
 
   async function saveTab(path: string, force = false) {
     const tab = tabs.find((item) => item.path === path);
@@ -256,9 +291,9 @@ export function ServerFileWorkspace({
                   id: `validation-${Date.now()}`,
                   category: "file",
                   severity: "warning",
-                  userMessage: "This configuration has validation warnings.",
-                  technicalDetails: validation.message ?? "Validation warning",
-                  possibleSolution: "Fix the highlighted issue or save again with Save anyway.",
+                  userMessage: "This file has a validation issue.",
+                  technicalDetails: validation.message ?? "Validation issue",
+                  possibleSolution: "Fix the highlighted line or save again with Save anyway.",
                   action: "save-file",
                   source: "renderer:file-workspace",
                   timestamp: new Date().toISOString(),
@@ -324,9 +359,60 @@ export function ServerFileWorkspace({
   }
 
   async function reloadTab(path: string) {
-    const name = basename(path);
-    setTabs((current) => current.filter((tab) => tab.path !== path));
-    await openFile(path, name);
+    const scroller = document.querySelector(".cm-scroller") as HTMLElement | null;
+    const scrollPosition = scroller
+      ? { top: scroller.scrollTop, left: scroller.scrollLeft }
+      : null;
+
+    setTabs((current) =>
+      current.map((tab) =>
+        tab.path === path ? { ...tab, loading: true, error: null, saveConflict: false } : tab
+      )
+    );
+
+    try {
+      const meta = await api.get<FileContentResponse>(
+        `/api/servers/${serverId}/files/content?path=${encodeURIComponent(path)}`
+      );
+      setTabs((current) =>
+        current.map((tab) =>
+          tab.path === path
+            ? {
+                ...tab,
+                content: meta.content,
+                original: meta.content,
+                name: basename(path),
+                meta,
+                loading: false,
+                error: null,
+                saveConflict: false,
+              }
+            : tab
+        )
+      );
+      window.requestAnimationFrame(() => {
+        if (!scrollPosition) return;
+        const nextScroller = document.querySelector(".cm-scroller") as HTMLElement | null;
+        if (nextScroller) {
+          nextScroller.scrollTop = scrollPosition.top;
+          nextScroller.scrollLeft = scrollPosition.left;
+        }
+      });
+    } catch (error) {
+      const appError = reportError(error, {
+        category: "file",
+        severity: "error",
+        userMessage: "ServerLab could not reload this file.",
+        possibleSolution: "Check that the file still exists, then refresh the folder.",
+        source: "renderer:file-workspace",
+        action: "reload-file",
+      });
+      setTabs((current) =>
+        current.map((tab) =>
+          tab.path === path ? { ...tab, loading: false, error: appError } : tab
+        )
+      );
+    }
   }
 
   function closeTab(path: string, force = false) {
@@ -479,13 +565,17 @@ export function ServerFileWorkspace({
   const rows = visibleEntries.slice(0, MAX_RENDERED_ROWS);
 
   return (
-    <div className="grid min-h-[620px] gap-4 xl:grid-cols-[minmax(300px,0.58fr)_minmax(560px,1.42fr)]">
+    <div className="grid min-h-[620px] gap-4 xl:grid-cols-[minmax(300px,0.54fr)_minmax(560px,1.46fr)]">
       <Card className="flex min-h-[520px] flex-col overflow-hidden">
         <div className="border-b border-border bg-carbon px-3 py-3">
-          <div className="mb-3 flex items-center justify-between gap-2">
+          <div className="mb-2 flex items-center justify-between gap-2">
             <div>
               <p className="font-display text-sm font-semibold text-white">Server files</p>
-              <p className="mt-0.5 text-xs text-muted">{entries.length} items in folder</p>
+              <p className="mt-0.5 text-xs text-muted">
+                {searchEntireServer && trimmedSearch.length >= 2
+                  ? `${serverSearchMeta?.total ?? serverSearchResults.length} server result${(serverSearchMeta?.total ?? serverSearchResults.length) === 1 ? "" : "s"}`
+                  : `${entries.length} item${entries.length === 1 ? "" : "s"} in this folder`}
+              </p>
             </div>
             <div className="flex gap-1">
               <IconButton icon={FilePlus2} label="Create file" onClick={() => setCreateMode("file")} />
@@ -494,32 +584,44 @@ export function ServerFileWorkspace({
             </div>
           </div>
 
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted" />
-            <TextInput
-              value={searchValue}
-              onChange={(event) => setSearchValue(event.target.value)}
-              placeholder="Search this folder"
-              className="h-9 pl-9 text-xs"
-            />
-          </div>
-
-          <div className="mt-2 flex gap-1 overflow-x-auto pb-1">
-            {FILTERS.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => setFilter(item.key)}
+          <div className="grid gap-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted" />
+              <TextInput
+                value={searchValue}
+                onChange={(event) => setSearchValue(event.target.value)}
+                placeholder={searchEntireServer ? "Search server files" : "Search this folder"}
+                className="h-9 pl-9 pr-20 text-xs"
+              />
+              {serverSearchLoading && (
+                <RefreshCw className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-copper" />
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setSearchEntireServer((value) => !value)}
+              className={clsx(
+                "flex h-8 items-center justify-between rounded border px-2.5 text-xs font-semibold transition-colors",
+                searchEntireServer
+                  ? "border-copper/60 bg-copper/15 text-copper"
+                  : "border-border bg-rail text-muted hover:text-white"
+              )}
+            >
+              <span>Search entire server</span>
+              <span
                 className={clsx(
-                  "shrink-0 rounded border px-2 py-1 text-[0.68rem] font-semibold transition-colors",
-                  filter === item.key
-                    ? "border-copper bg-copper/15 text-copper"
-                    : "border-border bg-rail text-muted hover:text-white"
+                  "h-4 w-7 rounded-full border p-0.5 transition-colors",
+                  searchEntireServer ? "border-copper bg-copper/25" : "border-border bg-carbon"
                 )}
               >
-                {item.label}
-              </button>
-            ))}
+                <span
+                  className={clsx(
+                    "block h-2.5 w-2.5 rounded-full bg-current transition-transform",
+                    searchEntireServer && "translate-x-3"
+                  )}
+                />
+              </span>
+            </button>
           </div>
         </div>
 
@@ -550,15 +652,10 @@ export function ServerFileWorkspace({
         )}
 
         {listError && <div className="p-3"><InlineError error={listError} /></div>}
+        {serverSearchError && <div className="p-3"><InlineError error={serverSearchError} /></div>}
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <QuickSections
-            currentPath={currentPath}
-            onOpenFile={(path) => openFile(path)}
-            onOpenFolder={loadDirectory}
-          />
-
-          {loading && (
+          {(loading || serverSearchLoading) && (
             <div className="grid gap-1 p-2">
               {[1, 2, 3, 4, 5, 6].map((index) => (
                 <div key={index} className="h-10 animate-pulse rounded bg-rail" />
@@ -566,19 +663,28 @@ export function ServerFileWorkspace({
             </div>
           )}
 
-          {!loading && rows.length === 0 && !listError && (
+          {!loading && !serverSearchLoading && rows.length === 0 && !listError && !serverSearchError && (
             <div className="px-4 py-10 text-center">
               <FolderOpen className="mx-auto mb-3 h-8 w-8 text-muted" />
-              <p className="font-semibold text-white">No files found</p>
-              <p className="mt-1 text-xs text-muted">Create a file or clear the search filter.</p>
+              <p className="font-semibold text-white">
+                {trimmedSearch ? "No matching files" : "This folder is empty"}
+              </p>
+              <p className="mt-1 text-xs text-muted">
+                {trimmedSearch
+                  ? searchEntireServer
+                    ? "Try a shorter filename or search the current folder."
+                    : "Try searching the entire server."
+                  : "Create a file or folder from the toolbar above."}
+              </p>
             </div>
           )}
 
-          {!loading &&
+          {!loading && !serverSearchLoading &&
             rows.map((entry) => (
               <FileTreeRow
                 key={entry.path}
                 entry={entry}
+                showPath={searchEntireServer && trimmedSearch.length >= 2}
                 selected={selectedPath === entry.path || activePath === entry.path}
                 renaming={renaming?.path === entry.path}
                 renameValue={renameValue}
@@ -591,9 +697,15 @@ export function ServerFileWorkspace({
               />
             ))}
 
-          {!loading && visibleEntries.length > MAX_RENDERED_ROWS && (
+          {!loading && !serverSearchLoading && searchEntireServer && serverSearchMeta?.truncated && (
             <p className="border-t border-border px-3 py-2 text-xs text-muted">
-              Showing first {MAX_RENDERED_ROWS} items. Search or filter to narrow this folder.
+              Showing the first {rows.length} matches. Narrow the search to see more.
+            </p>
+          )}
+
+          {!loading && !serverSearchLoading && !searchEntireServer && visibleEntries.length > MAX_RENDERED_ROWS && (
+            <p className="border-t border-border px-3 py-2 text-xs text-muted">
+              Showing first {MAX_RENDERED_ROWS} items. Search to narrow this folder.
             </p>
           )}
         </div>
@@ -799,7 +911,7 @@ function EditorPane({
         </div>
       )}
 
-      {validation?.message && validation.status !== "valid" && (
+      {validation?.message && (validation.status === "invalid" || validation.status === "warning") && (
         <Alert tone={validation.status === "invalid" ? "danger" : "warning"} className="m-3 mb-0">
           <span>
             {validation.line ? `Line ${validation.line}: ` : ""}
@@ -839,56 +951,6 @@ function EditorPane({
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-carbon px-3 py-2 font-mono text-xs text-muted">
         <span>{tab.meta ? formatBytes(tab.meta.sizeBytes) : "Loading"} {tab.meta?.isTruncated && `, previewing ${formatBytes(tab.meta.previewBytes ?? 0)}`}</span>
         <span>{tab.meta?.modifiedAt ? `Modified ${formatDate(tab.meta.modifiedAt)}` : "No metadata"}</span>
-      </div>
-    </div>
-  );
-}
-
-function QuickSections({
-  currentPath,
-  onOpenFile,
-  onOpenFolder,
-}: {
-  currentPath: string;
-  onOpenFile: (path: string) => void;
-  onOpenFolder: (path: string) => void;
-}) {
-  const shortcuts = [
-    { label: "Plugins", path: "plugins", icon: Folder },
-    { label: "Worlds", path: "world", icon: HardDriveDownload },
-    { label: "Logs", path: "logs", icon: FileText },
-  ];
-  if (currentPath) return null;
-
-  return (
-    <div className="border-b border-border bg-panel/40 px-3 py-3">
-      <p className="mb-2 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-muted">Quick access</p>
-      <div className="grid gap-1">
-        <div className="flex flex-wrap gap-1">
-          {COMMON_FILES.map((path) => (
-          <button
-            key={path}
-            type="button"
-            onClick={() => onOpenFile(path)}
-            className="rounded border border-border bg-rail px-2 py-1 text-xs font-mono text-muted hover:border-copper/60 hover:text-white"
-          >
-            {path}
-          </button>
-        ))}
-        </div>
-        <div className="mt-1 flex flex-wrap gap-1">
-          {shortcuts.map(({ label, path, icon: Icon }) => (
-            <button
-              key={path}
-              type="button"
-              onClick={() => onOpenFolder(path)}
-              className="inline-flex items-center gap-1 rounded border border-border bg-rail px-2 py-1 text-xs text-muted hover:border-copper/60 hover:text-white"
-            >
-              <Icon className="h-3.5 w-3.5" />
-              {label}
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );
@@ -959,6 +1021,7 @@ function FileContextMenu({
 
 function FileTreeRow({
   entry,
+  showPath,
   selected,
   renaming,
   renameValue,
@@ -970,6 +1033,7 @@ function FileTreeRow({
   onContextMenu,
 }: {
   entry: FileEntry;
+  showPath?: boolean;
   selected: boolean;
   renaming: boolean;
   renameValue: string;
@@ -1009,7 +1073,9 @@ function FileTreeRow({
           <div className="min-w-0">
             <p className="truncate font-mono text-xs text-white">{entry.name}</p>
             <div className="mt-0.5 flex items-center gap-2 text-[0.68rem] text-muted">
-              <span>{entry.isDirectory ? "Folder" : labelForType(entry.type)}</span>
+              <span className="truncate">
+                {showPath ? dirname(entry.path) || "root" : entry.isDirectory ? "Folder" : labelForType(entry.type)}
+              </span>
               {!entry.isDirectory && entry.sizeBytes != null && <span>{formatBytes(entry.sizeBytes)}</span>}
               {entry.readonly && <span className="text-glowstone">Read only</span>}
             </div>
@@ -1115,15 +1181,6 @@ function validateDraft(path: string, content: string): FileContentResponse["vali
     return { status: "unknown", message: "YAML is highlighted. Validate plugin configs carefully." };
   }
   return { status: "unknown", message: null };
-}
-
-function matchesFilter(entry: FileEntry, filter: FilterKey): boolean {
-  if (filter === "all") return true;
-  if (filter === "folders") return entry.isDirectory;
-  if (filter === "large") return entry.isLarge;
-  if (filter === "logs") return entry.type === "log";
-  if (filter === "config") return ["config", "json", "yaml", "properties"].includes(entry.type);
-  return entry.type === filter;
 }
 
 function basename(path: string): string {

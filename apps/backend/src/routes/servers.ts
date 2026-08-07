@@ -547,6 +547,20 @@ serverRoutes.get("/:id/files", async (req, res, next) => {
   }
 });
 
+// GET /api/servers/:id/files/search?query=name&path=some/dir
+serverRoutes.get("/:id/files/search", async (req, res, next) => {
+  try {
+    const fm = await getFileManager(req.params.id);
+    const query = (req.query.query as string) ?? "";
+    const relativePath = (req.query.path as string) ?? "";
+    const limit = Number(req.query.limit ?? 200);
+    const results = await fm.search(query, relativePath, Number.isFinite(limit) ? limit : 200);
+    res.json(results);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/servers/:id/files/content?path=file.txt
 serverRoutes.get("/:id/files/content", async (req, res, next) => {
   try {

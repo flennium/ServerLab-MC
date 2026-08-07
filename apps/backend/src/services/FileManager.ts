@@ -5,6 +5,7 @@ import archiver from "archiver";
 import type {
   FileContentResponse,
   FileEntry,
+  FileSearchResponse,
   WriteFileDto,
 } from "@serverlab/shared";
 import type { Response } from "express";
@@ -12,6 +13,7 @@ import type { Response } from "express";
 const MEDIUM_FILE_BYTES = 1024 * 1024;
 const LARGE_FILE_BYTES = 5 * 1024 * 1024;
 const PREVIEW_BYTES = 256 * 1024;
+const MAX_SEARCH_VISITS = 5000;
 
 export class FileConflictError extends Error {
   constructor() {
@@ -62,6 +64,52 @@ export class FileManager {
       if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
+  }
+
+  async search(query: string, relativePath = "", limit = 200): Promise<FileSearchResponse> {
+    const needle = query.trim().toLowerCase();
+    if (needle.length < 2) {
+      return { entries: [], total: 0, truncated: false };
+    }
+
+    const cappedLimit = Math.max(1, Math.min(limit, 500));
+    const root = this.resolve(relativePath);
+    const queue = [root];
+    const entries: FileEntry[] = [];
+    let total = 0;
+    let visited = 0;
+    let truncated = false;
+
+    while (queue.length > 0 && visited < MAX_SEARCH_VISITS) {
+      const dir = queue.shift()!;
+      visited += 1;
+      const children = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+      const relativeDir = path.relative(this.serverRoot, dir).replace(/\\/g, "/").toLowerCase();
+
+      for (const child of children) {
+        if (this.isHiddenFromFileBrowser(relativeDir, child.name)) continue;
+        const absolutePath = path.join(dir, child.name);
+        const stat = await fs.stat(absolutePath).catch(() => null);
+        const entry = this.toEntry(absolutePath, child.name, child.isDirectory(), stat);
+
+        if (entry.name.toLowerCase().includes(needle) || entry.path.toLowerCase().includes(needle)) {
+          total += 1;
+          if (entries.length < cappedLimit) entries.push(entry);
+        }
+
+        if (child.isDirectory()) queue.push(absolutePath);
+      }
+    }
+
+    truncated = queue.length > 0 || visited >= MAX_SEARCH_VISITS || total > entries.length;
+    return {
+      entries: entries.sort((a, b) => {
+        if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+        return a.path.localeCompare(b.path);
+      }),
+      total,
+      truncated,
+    };
   }
 
   async readFile(relativePath: string): Promise<string> {
@@ -214,6 +262,11 @@ export class FileManager {
       sizeBytes: stat && !isDirectory ? stat.size : null,
       modifiedAt: stat ? stat.mtime.toISOString() : new Date().toISOString(),
     };
+  }
+
+  private isHiddenFromFileBrowser(relativeDir: string, name: string): boolean {
+    if (relativeDir !== "plugins") return false;
+    return [".staging", ".disabled", ".trash", ".backups"].includes(name.toLowerCase());
   }
 }
 
