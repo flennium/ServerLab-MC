@@ -1,7 +1,9 @@
 import { useState, type ReactNode } from "react";
+import clsx from "clsx";
 import { Menu, Minus, Square, X } from "lucide-react";
 import { Sidebar } from "./Sidebar.tsx";
 import { IconButton } from "../ui/Button.js";
+import { serverRouteId, useHashRoute } from "../../lib/router.js";
 
 interface AppShellProps {
   children: ReactNode;
@@ -9,6 +11,8 @@ interface AppShellProps {
 
 export function AppShell({ children }: AppShellProps) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const route = useHashRoute();
+  const isServerDetail = serverRouteId(route) !== null;
 
   return (
     <div className="operator-grid flex h-screen w-screen flex-col overflow-hidden bg-carbon text-white">
@@ -69,8 +73,13 @@ export function AppShell({ children }: AppShellProps) {
           mobileOpen={mobileSidebarOpen}
           onMobileClose={() => setMobileSidebarOpen(false)}
         />
-        <main className="min-w-0 flex-1 overflow-auto overscroll-contain bg-gradient-to-b from-surface-1/95 to-carbon/95 px-4 py-4 sm:px-6 lg:px-8">
-          <div className="mx-auto flex w-full max-w-7xl flex-col">
+        <main
+          className={clsx(
+            "min-w-0 flex-1 overscroll-contain bg-gradient-to-b from-surface-1/95 to-carbon/95 px-4 py-4 sm:px-6 lg:px-8",
+            isServerDetail ? "min-h-0 overflow-hidden" : "overflow-auto"
+          )}
+        >
+          <div className={clsx("mx-auto flex w-full max-w-7xl flex-col", isServerDetail && "h-full min-h-0")}>
             {children}
           </div>
         </main>

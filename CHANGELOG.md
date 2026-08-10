@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.0.6
+
+### Fixed
+
+- Server detail pages now keep the server overview and controls outside the tab content scroll container.
+- Files, Console, Plugins, Monitor, Backups, and Settings now share an isolated scroll region without header overlap or duplicate-looking content.
+- Server detail layout now fills the available application height without extending the outer page scroll unexpectedly.
+
+### Changed
+
+- Bumped app and workspace versions to `3.0.6`.
+
 ## 3.0.5
 
 ### Added

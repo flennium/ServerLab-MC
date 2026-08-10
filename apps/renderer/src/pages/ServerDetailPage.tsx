@@ -191,9 +191,9 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex h-full min-h-0 flex-col gap-4">
       <ActionBar
-        sticky
+        className="shrink-0"
         eyebrow="Server deck"
         title={server.name}
         status={<StatusBadge status={server.status} />}
@@ -264,42 +264,44 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
           />
       </ActionBar>
 
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={tab}
-          className="relative z-0"
-          initial={reduceMotion ? false : { opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={reduceMotion ? undefined : { opacity: 0, y: -6 }}
-          transition={{ duration: reduceMotion ? 0 : 0.15 }}
-        >
-          <Suspense fallback={<Skeleton className="h-64 w-full" />}>
-            {tab === "console" && (
-              <Console serverId={server.id} serverStatus={server.status} />
-            )}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={tab}
+            className="relative z-0 min-h-full"
+            initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduceMotion ? undefined : { opacity: 0, y: -6 }}
+            transition={{ duration: reduceMotion ? 0 : 0.15 }}
+          >
+            <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+              {tab === "console" && (
+                <Console serverId={server.id} serverStatus={server.status} />
+              )}
 
-            {tab === "files" && (
-              <ServerFileWorkspace
-                serverId={server.id}
-                serverPath={server.path}
-                serverStatus={server.status}
-              />
-            )}
+              {tab === "files" && (
+                <ServerFileWorkspace
+                  serverId={server.id}
+                  serverPath={server.path}
+                  serverStatus={server.status}
+                />
+              )}
 
-            {tab === "plugins" && <PluginsPanel server={server} />}
+              {tab === "plugins" && <PluginsPanel server={server} />}
 
-            {tab === "monitor" && (
-              <PerformanceMonitor serverId={server.id} ramMaxMb={server.ramMaxMb} />
-            )}
+              {tab === "monitor" && (
+                <PerformanceMonitor serverId={server.id} ramMaxMb={server.ramMaxMb} />
+              )}
 
-            {tab === "backups" && <BackupPanel serverId={server.id} />}
+              {tab === "backups" && <BackupPanel serverId={server.id} />}
 
-            {tab === "settings" && (
-              <ServerSettings server={server} onDeleteServer={() => setConfirmDelete(true)} />
-            )}
-          </Suspense>
-        </motion.div>
-      </AnimatePresence>
+              {tab === "settings" && (
+                <ServerSettings server={server} onDeleteServer={() => setConfirmDelete(true)} />
+              )}
+            </Suspense>
+          </motion.div>
+        </AnimatePresence>
+      </div>
 
       {confirmDelete && (
         <ConfirmModal

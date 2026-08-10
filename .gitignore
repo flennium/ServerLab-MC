@@ -49,6 +49,7 @@ pino-*.log
 # Local planning prompts
 /UI UX redesign.md
 /docs/UI-UX-REDESIGN-AUDIT.md
+/docs/
 
 # Backups (generated at runtime)
 apps/backend/backups/
