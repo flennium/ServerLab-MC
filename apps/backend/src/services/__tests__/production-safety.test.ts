@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { FileConflictError, FileManager } from "../FileManager.js";
 import { parseStartupArgs } from "../ProcessArgs.js";
 import { parseJavaVersionOutput } from "../java/JavaRuntimeValidator.js";
+import { minimumJavaMajorForMinecraft } from "../java/JavaRecommendationService.js";
 import { assertAllowedHttpsUrl } from "../software/providers.js";
 import { portManagerService } from "../PortManagerService.js";
 import { sanitizePluginFileName } from "../plugins/PluginInstallService.js";
@@ -29,6 +30,20 @@ describe("Java runtime parsing", () => {
       version: "21.0.4",
       distribution: "Temurin",
     });
+  });
+});
+
+describe("Minecraft Java recommendations", () => {
+  it("requires Java 25 for Fabric-era Minecraft 1.21.9 and newer", () => {
+    expect(minimumJavaMajorForMinecraft("1.21.9")).toBe(25);
+    expect(minimumJavaMajorForMinecraft("1.21.11")).toBe(25);
+    expect(minimumJavaMajorForMinecraft("26.1")).toBe(25);
+  });
+
+  it("keeps earlier Minecraft versions on their supported Java baseline", () => {
+    expect(minimumJavaMajorForMinecraft("1.21.8")).toBe(21);
+    expect(minimumJavaMajorForMinecraft("1.20.4")).toBe(17);
+    expect(minimumJavaMajorForMinecraft("1.20.5")).toBe(21);
   });
 });
 

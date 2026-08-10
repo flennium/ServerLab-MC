@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.0.0-beta.17
+
+### Fixed
+
+- Corrected Java compatibility recommendations for Fabric and other providers without upstream Java metadata: Minecraft `1.21.9+` and `26.x` now require Java 25, while earlier `1.21.x` versions remain on Java 21.
+- Server startup now returns a clear Java Runtime Center action when the selected runtime is too old, instead of allowing Fabric to fail with `UnsupportedClassVersionError`.
+- Made small-file ETags include content hashes so same-size file edits are detected reliably during save conflict checks.
+
+### Changed
+
+- Updated the app and workspace version to `3.0.0-beta.17`.
+
 ## 3.0.0-beta.16
 
 ### Changed
