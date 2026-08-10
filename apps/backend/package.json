@@ -1,6 +1,6 @@
 {
   "name": "@serverlab/backend",
-  "version": "3.0.0-beta.15",
+  "version": "3.0.0-beta.16",
   "description": "ServerLab MC local backend - Express, Socket.IO, and Prisma",
   "private": true,
   "main": "dist/index.js",

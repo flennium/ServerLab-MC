@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.0.0-beta.16
+
+### Changed
+
+- Disabled console command entry while a server is stopped, starting, stopping, or crashed, with clear inline guidance instead of a backend failure.
+- Improved stopped-server command handling in REST and Socket.IO so packaged builds return a friendly actionable error instead of a generic production message.
+- Raised the sticky server management header above tab content to prevent file-manager empty states and breadcrumbs from bleeding over the server overview area.
+- Added timed dismissal support for alert banners and applied it to global error toasts, console command errors, Java Runtime Center messages, Settings messages, cache errors, plugin success messages, and backup errors.
+- Bumped app and workspace versions to `3.0.0-beta.16`.
+
 ## 3.0.0-beta.15
 
 ### Added

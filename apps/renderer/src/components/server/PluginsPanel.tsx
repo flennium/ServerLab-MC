@@ -269,7 +269,17 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
           </Alert>
         )}
 
-        {message && <Alert tone="success" className="m-3 mb-0">{message}</Alert>}
+        {message && (
+          <Alert
+            tone="success"
+            className="m-3 mb-0"
+            autoDismissMs={5000}
+            dismissKey={message}
+            onDismiss={() => setMessage(null)}
+          >
+            {message}
+          </Alert>
+        )}
         {error && <div className="m-3 mb-0"><InlineError error={error} /></div>}
 
         <div className="min-h-0 flex-1 overflow-y-auto p-3">

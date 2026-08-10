@@ -33,6 +33,13 @@ export function registerSocketHandlers(
       ) => {
         try {
           if (!command?.trim()) throw new Error("Command is required");
+          if (!serverManager.isRunning(serverId)) {
+            ack?.({
+              ok: false,
+              error: "Start the server before sending console commands.",
+            });
+            return;
+          }
           serverManager.sendCommand(serverId, command);
           ack?.({ ok: true });
         } catch (err) {

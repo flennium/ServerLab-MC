@@ -20,15 +20,17 @@ import { formatConsoleLine } from "../../lib/consoleFormat.js";
 import { useConsoleStore } from "../../store/consoleStore.js";
 import { Button, IconButton } from "../ui/Button.js";
 import { Alert } from "../ui/Layout.js";
+import type { ServerStatus } from "@serverlab/shared";
 
 interface ConsoleProps {
   serverId: string;
+  serverStatus?: ServerStatus;
 }
 
 const EMPTY_LINES: ReturnType<typeof useConsoleStore.getState>["linesByServer"][string] =
   [];
 
-export function Console({ serverId }: ConsoleProps) {
+export function Console({ serverId, serverStatus }: ConsoleProps) {
   const lines = useConsoleStore((state) => state.linesByServer[serverId] ?? EMPTY_LINES);
   const paused = useConsoleStore((state) => state.pausedByServer[serverId] ?? false);
   const clearLines = useConsoleStore((state) => state.clearLines);
@@ -46,6 +48,7 @@ export function Console({ serverId }: ConsoleProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const matchRefs = useRef(new Map<string, HTMLSpanElement>());
+  const canSendCommands = serverStatus === undefined || serverStatus === "running";
 
   const searchMatches = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -119,6 +122,10 @@ export function Console({ serverId }: ConsoleProps) {
   const sendCommand = useCallback(async () => {
     const command = input.trim();
     if (!command || sending) return;
+    if (!canSendCommands) {
+      setCommandError("Start the server before sending console commands.");
+      return;
+    }
     setHistory((previous) => [command, ...previous.slice(0, 49)]);
     setHistoryIdx(-1);
     setInput("");
@@ -155,7 +162,7 @@ export function Console({ serverId }: ConsoleProps) {
     } finally {
       setSending(false);
     }
-  }, [input, sending, serverId]);
+  }, [canSendCommands, input, sending, serverId]);
 
   function togglePaused() {
     setPaused(serverId, !paused);
@@ -299,8 +306,20 @@ export function Console({ serverId }: ConsoleProps) {
         )}
       </div>
 
+      {!canSendCommands && (
+        <Alert tone="warning" placement="inline" className="m-3 mb-0">
+          Console commands are disabled while this server is {serverStatus}.
+        </Alert>
+      )}
+
       {commandError && (
-        <Alert tone="danger" className="m-3 mb-0">
+        <Alert
+          tone="danger"
+          className="m-3 mb-0"
+          autoDismissMs={7000}
+          dismissKey={commandError}
+          onDismiss={() => setCommandError(null)}
+        >
           {commandError}
         </Alert>
       )}
@@ -352,8 +371,12 @@ export function Console({ serverId }: ConsoleProps) {
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={sending}
-          placeholder="Type a command and press Enter"
+          disabled={sending || !canSendCommands}
+          placeholder={
+            canSendCommands
+              ? "Type a command and press Enter"
+              : "Start the server to send commands"
+          }
           className="console-font min-w-0 flex-1 bg-transparent py-3 pr-3 text-white placeholder:text-muted focus:outline-none"
           aria-label="Console command input"
           spellCheck={false}
@@ -361,7 +384,7 @@ export function Console({ serverId }: ConsoleProps) {
         />
         <button
           onClick={sendCommand}
-          disabled={sending || !input.trim()}
+          disabled={sending || !input.trim() || !canSendCommands}
           className="inline-flex items-center gap-2 border-l border-border px-4 text-xs font-semibold text-muted transition-colors hover:bg-rail hover:text-white"
           aria-label="Send command"
         >

@@ -521,6 +521,16 @@ serverRoutes.post("/:id/command", async (req, res, next) => {
   try {
     const { command } = req.body as SendCommandDto;
     if (!command?.trim()) throw badRequest("command is required");
+    if (!serverManager.isRunning(req.params.id)) {
+      throw new HttpError(
+        409,
+        "Start the server before sending console commands.",
+        "server",
+        "warning",
+        "Console commands can only be sent while the Minecraft server process is running.",
+        ["retry", "copy-details", "dismiss"]
+      );
+    }
     serverManager.sendCommand(req.params.id, command);
     res.json({ message: "Command sent" });
   } catch (err) {
