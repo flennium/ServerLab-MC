@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.0.0-beta.19
+
+### Fixed
+
+- Improved Modrinth plugin discovery so projects are no longer hidden just because loader or Minecraft version metadata is incomplete or not yet updated.
+- Added paginated Modrinth search results with 40-result pages and a `Load more results` action for lower-ranked and less popular plugins.
+- Kept compatibility badges and install safeguards in place so broader discovery does not bypass server compatibility checks.
+
+### Changed
+
+- New plugin searches reset stale project details and select the first result from the current search.
+- Added an API-level strict compatibility search option for clients that explicitly need loader and version facets.
+- Bumped app and workspace versions to `3.0.0-beta.19`.
+
 ## 3.0.0-beta.18
 
 ### Changed

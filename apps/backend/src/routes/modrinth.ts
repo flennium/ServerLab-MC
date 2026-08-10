@@ -27,6 +27,7 @@ modrinthRoutes.get("/search", async (req, res, next) => {
           ? req.query.minecraftVersion
           : server?.version,
       category: typeof req.query.category === "string" ? req.query.category : undefined,
+      strictCompatibility: req.query.strictCompatibility === "true",
       sort: typeof req.query.sort === "string" ? req.query.sort : "relevance",
       offset: Number(req.query.offset ?? 0),
       limit: Number(req.query.limit ?? 20),
