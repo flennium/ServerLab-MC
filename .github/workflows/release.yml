@@ -6,6 +6,7 @@ on:
       - main
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,6 +16,9 @@ jobs:
     name: Tag versioned main commit
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      created: ${{ steps.version.outputs.created }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,6 +31,7 @@ jobs:
           node-version: 24
 
       - name: Create version tag if missing
+        id: version
         shell: bash
         env:
           GITHUB_SHA: ${{ github.sha }}
@@ -38,8 +43,10 @@ jobs:
           fi
 
           tag="v$version"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
           if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
             echo "Tag $tag already exists; no release tag created."
+            echo "created=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -47,6 +54,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$tag" "$GITHUB_SHA" -m "ServerLab MC $tag"
           git push origin "$tag"
+          echo "created=true" >> "$GITHUB_OUTPUT"
 
   branch:
     name: Branch push
@@ -58,12 +66,14 @@ jobs:
 
   windows:
     name: Windows installer
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs: version-tag
+    if: ${{ always() && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && needs.version-tag.outputs.created == 'true')) }}
     runs-on: windows-latest
     timeout-minutes: 45
 
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || needs.version-tag.outputs.tag }}
 
     steps:
       - name: Checkout
@@ -127,7 +137,7 @@ jobs:
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: serverlab-mc-windows-${{ github.ref_name }}
+          name: serverlab-mc-windows-${{ env.RELEASE_TAG }}
           path: |
             release/*.exe
             release/*.blockmap
@@ -138,9 +148,9 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ServerLab MC ${{ github.ref_name }}
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ServerLab MC ${{ env.RELEASE_TAG }}
+          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
           generate_release_notes: true
           files: |
             release/*.exe
