@@ -29,6 +29,7 @@ interface ConsoleProps {
 
 const EMPTY_LINES: ReturnType<typeof useConsoleStore.getState>["linesByServer"][string] =
   [];
+const MAX_RENDERED_LINES = 1000;
 
 export function Console({ serverId, serverStatus }: ConsoleProps) {
   const lines = useConsoleStore((state) => state.linesByServer[serverId] ?? EMPTY_LINES);
@@ -220,7 +221,7 @@ export function Console({ serverId, serverStatus }: ConsoleProps) {
             <div className="min-w-0">
               <p className="font-display text-sm font-semibold text-white">Console</p>
               <p className="truncate font-mono text-[0.68rem] uppercase tracking-[0.14em] text-muted">
-                {lines.length} lines {paused ? "/ paused" : "/ live"}
+                {lines.length === MAX_RENDERED_LINES ? `last ${MAX_RENDERED_LINES} lines` : `${lines.length} lines`} {paused ? "/ paused" : "/ live"}
               </p>
             </div>
           </div>

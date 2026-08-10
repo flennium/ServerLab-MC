@@ -81,43 +81,46 @@ export function SettingsPage() {
         description="Application metadata, local storage, and keyboard affordances."
       />
 
-      <div className="grid max-w-5xl grid-cols-1 gap-4 lg:grid-cols-2">
-        <SettingsCard icon={Info} title="About">
-          <div className="flex flex-col gap-3">
-            <LabelValue label="Application" value="ServerLab MC" />
-            <LabelValue label="Version" value={`v${version}`} />
-            <LabelValue label="Platform" value={platform} />
-            <LabelValue label="Engine" value="Electron + React + Node.js" />
+      <div className="flex max-w-5xl flex-col gap-6">
+        <section>
+          <SettingsSectionHeading title="General" description="Identity, local storage, and everyday keyboard controls." />
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <SettingsCard icon={Info} title="About">
+              <div className="flex flex-col gap-3">
+                <LabelValue label="Application" value="ServerLab MC" />
+                <LabelValue label="Version" value={`v${version}`} />
+                <LabelValue label="Platform" value={platform} />
+                <LabelValue label="Engine" value="Electron + React + Node.js" />
+              </div>
+            </SettingsCard>
+            <SettingsCard icon={Database} title="Local data">
+              <p className="mb-4 text-sm leading-6 text-muted">Server profiles and backups are stored on this machine.</p>
+              <Button onClick={handleOpenDataFolder} disabled={openingFolder} icon={FolderOpen} variant="secondary">
+                {openingFolder ? "Opening..." : "Open data folder"}
+              </Button>
+            </SettingsCard>
+            <SettingsCard icon={Keyboard} title="Keyboard">
+              <div className="flex flex-col gap-3">
+                <ShortcutRow keys={["Ctrl", "S"]} label="Save the open file" />
+                <ShortcutRow keys={["Up", "Down"]} label="Browse console command history" />
+                <ShortcutRow keys={["Enter"]} label="Send console command" />
+              </div>
+            </SettingsCard>
           </div>
-        </SettingsCard>
+        </section>
 
-        <SettingsCard icon={Database} title="Local data">
-          <p className="mb-4 text-sm leading-6 text-muted">
-            Server profiles and backups are stored on this machine.
-          </p>
-          <Button
-            onClick={handleOpenDataFolder}
-            disabled={openingFolder}
-            icon={FolderOpen}
-            variant="secondary"
-          >
-            {openingFolder ? "Opening..." : "Open data folder"}
-          </Button>
-        </SettingsCard>
-
-        <SettingsCard icon={Keyboard} title="Keyboard">
-          <div className="flex flex-col gap-3">
-            <ShortcutRow keys={["Ctrl", "S"]} label="Save the open file" />
-            <ShortcutRow keys={["Up", "Down"]} label="Browse console command history" />
-            <ShortcutRow keys={["Enter"]} label="Send console command" />
+        <section>
+          <SettingsSectionHeading title="Storage and support" description="Software cache, runtime diagnostics, and local error history." />
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <SoftwareCachePanel />
+            <ErrorHistoryPanel />
           </div>
-        </SettingsCard>
+        </section>
 
-        <TemplateSystemPanel />
-
-        <SoftwareCachePanel />
-
-        <ErrorHistoryPanel />
+        <section>
+          <SettingsSectionHeading title="Roadmap" description="Planned capabilities are shown separately from operational controls." />
+          <TemplateSystemPanel />
+        </section>
 
         <DeveloperPanel />
       </div>
@@ -489,6 +492,15 @@ function SettingsCard({
       </div>
       {children}
     </Card>
+  );
+}
+
+function SettingsSectionHeading({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="mb-3 border-b border-border pb-2">
+      <h2 className="font-display text-lg font-semibold text-white">{title}</h2>
+      <p className="mt-1 text-sm text-muted">{description}</p>
+    </div>
   );
 }
 

@@ -46,6 +46,10 @@ apps/data/
 logs/
 pino-*.log
 
+# Local planning prompts
+/UI UX redesign.md
+/docs/UI-UX-REDESIGN-AUDIT.md
+
 # Backups (generated at runtime)
 apps/backend/backups/
 

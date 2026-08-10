@@ -4,6 +4,7 @@ import { Archive, RotateCcw, Trash2, X } from "lucide-react";
 import { api } from "../../lib/apiClient.js";
 import { getSocket } from "../../lib/socket.js";
 import { ConfirmModal } from "../ui/ConfirmModal.js";
+import { Modal } from "../ui/Modal.js";
 import { Alert, Card, DangerZone, EmptyState } from "../ui/Layout.js";
 import { Button, IconButton } from "../ui/Button.js";
 import type { Backup, BackupListResponse } from "@serverlab/shared";
@@ -219,13 +220,23 @@ export function BackupPanel({ serverId }: BackupPanelProps) {
       </div>
 
       {confirmRestore && (
-        <ConfirmModal
-          title="Restore this backup?"
-          message={`This will overwrite the current server files with the backup from ${formatDate(confirmRestore.createdAt)}. A safety backup will be taken first.`}
-          confirmLabel="Restore"
-          onConfirm={() => handleRestore(confirmRestore)}
-          onCancel={() => setConfirmRestore(null)}
-        />
+        <Modal title="Review restore" onClose={() => setConfirmRestore(null)}>
+          <div className="flex flex-col gap-4">
+            <div className="rounded border border-glowstone/40 bg-glowstone/10 px-4 py-3 text-sm text-glowstone">
+              Restoring replaces the current server files. ServerLab creates a safety backup before it starts.
+            </div>
+            <div className="grid grid-cols-2 gap-3 rounded border border-border bg-surface-console px-4 py-4 text-sm">
+              <div><p className="text-xs text-muted">Created</p><p className="mt-1 font-semibold text-white">{formatDate(confirmRestore.createdAt)}</p></div>
+              <div><p className="text-xs text-muted">Size</p><p className="mt-1 font-mono font-semibold text-white">{formatBytes(confirmRestore.sizeBytes)}</p></div>
+              <div><p className="text-xs text-muted">Type</p><p className="mt-1 capitalize font-semibold text-white">{confirmRestore.type}</p></div>
+              <div className="min-w-0"><p className="text-xs text-muted">Backup location</p><p className="mt-1 truncate font-mono text-xs text-white">{confirmRestore.location}</p></div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button onClick={() => setConfirmRestore(null)} variant="secondary">Cancel</Button>
+              <Button onClick={() => handleRestore(confirmRestore)} icon={RotateCcw} variant="primary">Restore backup</Button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {confirmDelete && (
