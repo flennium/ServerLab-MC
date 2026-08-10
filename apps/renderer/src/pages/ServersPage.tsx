@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, Boxes, Folder, Plus, Server as ServerIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowRight, Boxes, Folder, Plus, Search, Server as ServerIcon } from "lucide-react";
 import { useServerStore } from "../store/serverStore.js";
 import { StatusBadge } from "../components/ui/StatusBadge.js";
 import { ServerRowSkeleton } from "../components/ui/Skeleton.js";
 import { CreateServerModal } from "../components/server/CreateServerModal.js";
 import { Alert, Card, EmptyState, ManagementHeader } from "../components/ui/Layout.js";
 import { Button } from "../components/ui/Button.js";
+import { TextInput } from "../components/ui/Form.js";
 import { toHashPath } from "../lib/router.js";
 
 export function ServersPage() {
@@ -13,6 +14,9 @@ export function ServersPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [sort, setSort] = useState<"name" | "status" | "port">("status");
 
   const load = useCallback(() => {
     setLoading(true);
@@ -25,6 +29,21 @@ export function ServersPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const visibleServers = useMemo(() => {
+    const statusWeight = { crashed: 0, starting: 1, running: 2, stopping: 3, stopped: 4 };
+    const needle = query.trim().toLowerCase();
+    return servers
+      .filter((server) => {
+        const matchesQuery = !needle || `${server.name} ${server.software} ${server.version} ${server.path}`.toLowerCase().includes(needle);
+        return matchesQuery && (statusFilter === "all" || server.status === statusFilter);
+      })
+      .sort((left, right) => {
+        if (sort === "name") return left.name.localeCompare(right.name);
+        if (sort === "port") return left.port - right.port;
+        return statusWeight[left.status] - statusWeight[right.status] || left.name.localeCompare(right.name);
+      });
+  }, [query, servers, sort, statusFilter]);
 
   return (
     <div>
@@ -71,7 +90,50 @@ export function ServersPage() {
           }
         />
       ) : (
-        <Card className="overflow-hidden">
+        <>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[220px] flex-1">
+              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted" aria-hidden="true" />
+              <TextInput
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search servers"
+                aria-label="Search servers"
+                className="h-9 pl-9 text-xs"
+              />
+            </div>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              aria-label="Filter servers by status"
+              className="h-9 rounded border border-border bg-rail px-3 text-xs text-white outline-none focus:border-copper"
+            >
+              <option value="all">All statuses</option>
+              <option value="running">Running</option>
+              <option value="starting">Starting</option>
+              <option value="stopped">Stopped</option>
+              <option value="crashed">Crashed</option>
+            </select>
+            <select
+              value={sort}
+              onChange={(event) => setSort(event.target.value as typeof sort)}
+              aria-label="Sort servers"
+              className="h-9 rounded border border-border bg-rail px-3 text-xs text-white outline-none focus:border-copper"
+            >
+              <option value="status">Sort: status</option>
+              <option value="name">Sort: name</option>
+              <option value="port">Sort: port</option>
+            </select>
+          </div>
+          {visibleServers.length === 0 ? (
+            <EmptyState
+              icon={<Search className="h-9 w-9" aria-hidden="true" />}
+              title="No matching servers"
+              description="Try a different name, framework, version, or status filter."
+              action={<Button onClick={() => { setQuery(""); setStatusFilter("all"); }} variant="secondary">Clear filters</Button>}
+            />
+          ) : (
+          <Card className="overflow-hidden">
           <div className="hidden grid-cols-[minmax(220px,1.4fr)_minmax(160px,0.8fr)_120px_110px_120px] gap-4 border-b border-border px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-muted lg:grid">
             <span>Server</span>
             <span>Runtime</span>
@@ -80,7 +142,7 @@ export function ServersPage() {
             <span className="text-right">Open</span>
           </div>
           <div className="divide-y divide-border">
-            {servers.map((server) => (
+            {visibleServers.map((server) => (
               <a
                 key={server.id}
                 href={toHashPath(`/servers/${encodeURIComponent(server.id)}`)}
@@ -104,6 +166,9 @@ export function ServersPage() {
                   <p className="mt-0.5 font-mono text-xs text-muted">
                     {server.ramMinMb}-{server.ramMaxMb} MB
                   </p>
+                  <p className="mt-1 text-xs text-muted">
+                    {server.javaRuntimeId ? "Managed Java" : "Manual Java"} · {server.autoStart ? "Auto-start on" : "Auto-start off"}
+                  </p>
                 </div>
 
                 <div className="font-mono text-sm text-white">{server.port}</div>
@@ -115,7 +180,9 @@ export function ServersPage() {
               </a>
             ))}
           </div>
-        </Card>
+          </Card>
+          )}
+        </>
       )}
 
       {showCreate && (

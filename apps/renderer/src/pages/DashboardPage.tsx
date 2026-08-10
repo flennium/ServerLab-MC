@@ -5,8 +5,6 @@ import {
   ArrowRight,
   Boxes,
   Clock3,
-  Database,
-  FolderOpen,
   Gauge,
   Play,
   Plus,
@@ -25,16 +23,12 @@ import { toHashPath } from "../lib/router.js";
 import type {
   JavaRuntimeListResponse,
   Server as ServerModel,
-  SoftwareArtifactListResponse,
 } from "@serverlab/shared";
 
 type ServerStats = ReturnType<typeof useStatsStore.getState>["stats"][string]["latest"];
 
 interface EnvironmentSummary {
   validRuntimes: number;
-  managedRuntimes: number;
-  cachedSoftware: number;
-  cacheBytes: number;
 }
 
 export function DashboardPage() {
@@ -44,9 +38,6 @@ export function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [environment, setEnvironment] = useState<EnvironmentSummary>({
     validRuntimes: 0,
-    managedRuntimes: 0,
-    cachedSoftware: 0,
-    cacheBytes: 0,
   });
   const reduceMotion = useReducedMotion();
 
@@ -65,7 +56,6 @@ export function DashboardPage() {
   }, [load]);
 
   const sortedServers = useMemo(() => orderServersForDashboard(servers), [servers]);
-  const autoStart = servers.filter((server) => server.autoStart).length;
   const activeServers = sortedServers.filter(
     (server) => server.status === "running" || server.status === "starting"
   );
@@ -119,7 +109,7 @@ export function DashboardPage() {
           }
         />
       ) : (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.55fr_0.7fr]">
+        <div className={attentionItems.length ? "grid grid-cols-1 gap-4 xl:grid-cols-[1.55fr_0.7fr]" : "grid grid-cols-1 gap-4"}>
           <section className="min-w-0">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
@@ -160,15 +150,11 @@ export function DashboardPage() {
             </div>
           </section>
 
-          <aside className="grid content-start gap-4">
-            <AttentionPanel items={attentionItems} />
-            <OpsPanel
-              autoStart={autoStart}
-              cachedSoftware={environment.cachedSoftware}
-              cacheBytes={environment.cacheBytes}
-              managedRuntimes={environment.managedRuntimes}
-            />
-          </aside>
+          {attentionItems.length > 0 && (
+            <aside className="grid content-start gap-4">
+              <AttentionPanel items={attentionItems} />
+            </aside>
+          )}
         </div>
       )}
     </div>
@@ -179,25 +165,11 @@ async function loadEnvironment(
   setEnvironment: (summary: EnvironmentSummary) => void
 ) {
   try {
-    const [javaData, cacheData] = await Promise.all([
-      api.get<JavaRuntimeListResponse>("/api/java/runtimes"),
-      api.get<SoftwareArtifactListResponse>("/api/software/cache"),
-    ]);
+    const javaData = await api.get<JavaRuntimeListResponse>("/api/java/runtimes");
     const validRuntimes = javaData.runtimes.filter((runtime) => runtime.status === "valid");
-    const managedRuntimes = validRuntimes.filter((runtime) => runtime.source === "managed");
-    setEnvironment({
-      validRuntimes: validRuntimes.length,
-      managedRuntimes: managedRuntimes.length,
-      cachedSoftware: cacheData.artifacts.length,
-      cacheBytes: cacheData.artifacts.reduce((total, artifact) => total + artifact.sizeBytes, 0),
-    });
+    setEnvironment({ validRuntimes: validRuntimes.length });
   } catch {
-    setEnvironment({
-      validRuntimes: 0,
-      managedRuntimes: 0,
-      cachedSoftware: 0,
-      cacheBytes: 0,
-    });
+    setEnvironment({ validRuntimes: 0 });
   }
 }
 
@@ -234,20 +206,6 @@ function buildAttentionItems(
       label: "No valid Java runtime",
       detail: "Install or scan Java before creating servers.",
       tone: "warn",
-    });
-  }
-  if (!environment.cachedSoftware) {
-    items.push({
-      label: "Software cache empty",
-      detail: "The first server creation will download a server jar.",
-      tone: "warn",
-    });
-  }
-  if (!items.length) {
-    items.push({
-      label: "Fleet is clear",
-      detail: "No crashed servers or missing runtime signals.",
-      tone: "good",
     });
   }
   return items;
@@ -362,43 +320,6 @@ function AttentionPanel({
   );
 }
 
-function OpsPanel({
-  autoStart,
-  cachedSoftware,
-  cacheBytes,
-  managedRuntimes,
-}: {
-  autoStart: number;
-  cachedSoftware: number;
-  cacheBytes: number;
-  managedRuntimes: number;
-}) {
-  return (
-    <Card className="p-4">
-      <div className="mb-3 flex items-center gap-2">
-        <Database className="h-4 w-4 text-copper" aria-hidden="true" />
-        <h2 className="font-display text-lg font-semibold text-white">Local resources</h2>
-      </div>
-      <div className="grid gap-2 text-sm">
-        <OpsRow label="Auto-start profiles" value={autoStart} />
-        <OpsRow label="Managed Java" value={managedRuntimes} />
-        <OpsRow label="Cached jars" value={cachedSoftware} />
-        <OpsRow label="Cache size" value={formatBytes(cacheBytes)} />
-      </div>
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <a href={toHashPath("/java")} className="inline-flex h-8 items-center justify-center gap-1.5 rounded border border-border bg-rail px-3 text-xs font-semibold text-white transition-colors hover:border-copper/60 hover:bg-surface-3">
-          Java
-          <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-        </a>
-        <a href={toHashPath("/settings")} className="inline-flex h-8 items-center justify-center gap-1.5 rounded border border-border bg-rail px-3 text-xs font-semibold text-white transition-colors hover:border-copper/60 hover:bg-surface-3">
-          Cache
-          <FolderOpen className="h-3.5 w-3.5" aria-hidden="true" />
-        </a>
-      </div>
-    </Card>
-  );
-}
-
 function ServerFact({
   icon: Icon,
   label,
@@ -414,15 +335,6 @@ function ServerFact({
       <span className="truncate">
         {label}: <span className="text-white">{value}</span>
       </span>
-    </div>
-  );
-}
-
-function OpsRow({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded border border-border bg-surface-console px-3 py-2">
-      <span className="text-muted">{label}</span>
-      <span className="font-mono text-xs font-semibold text-white">{value}</span>
     </div>
   );
 }
@@ -452,16 +364,4 @@ function MiniMetric({
       </p>
     </div>
   );
-}
-
-function formatBytes(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  let amount = value;
-  let unit = 0;
-  while (amount >= 1024 && unit < units.length - 1) {
-    amount /= 1024;
-    unit += 1;
-  }
-  return `${amount.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }

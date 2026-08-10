@@ -56,6 +56,7 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
   const [progress, setProgress] = useState<PluginInstallProgressPayload | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<AppError | null>(null);
+  const [viewMode, setViewMode] = useState<"installed" | "browse">("installed");
   const { reportError } = useError();
 
   const selectedVersion = useMemo(
@@ -251,8 +252,18 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
   }, [server.id]);
 
   return (
-    <div className="grid min-h-[620px] gap-4 xl:grid-cols-[minmax(320px,0.85fr)_minmax(520px,1.15fr)]">
-      <Card className="flex min-h-[520px] flex-col overflow-hidden">
+    <div className="flex flex-col gap-3">
+      <div className="flex w-fit items-center gap-1 rounded border border-border bg-rail p-1" role="tablist" aria-label="Plugin workspace">
+        <button type="button" role="tab" aria-selected={viewMode === "installed"} onClick={() => setViewMode("installed")} className={clsx("rounded px-3 py-1.5 text-xs font-semibold transition-colors", viewMode === "installed" ? "bg-copper text-carbon" : "text-muted hover:text-white")}>
+          Installed <span className="ml-1 font-mono">{plugins.length}</span>
+        </button>
+        <button type="button" role="tab" aria-selected={viewMode === "browse"} onClick={() => setViewMode("browse")} className={clsx("rounded px-3 py-1.5 text-xs font-semibold transition-colors", viewMode === "browse" ? "bg-copper text-carbon" : "text-muted hover:text-white")}>
+          Browse Modrinth
+        </button>
+      </div>
+
+      <div className="grid min-h-[620px] gap-4">
+      <Card className={clsx("flex min-h-[520px] flex-col overflow-hidden", viewMode !== "installed" && "hidden")}>
         <div className="border-b border-border bg-carbon px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -307,7 +318,7 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
         </div>
       </Card>
 
-      <Card className="flex min-h-[520px] flex-col overflow-hidden">
+      <Card className={clsx("flex min-h-[520px] flex-col overflow-hidden", viewMode !== "browse" && "hidden")}>
         <div className="border-b border-border bg-carbon px-4 py-3">
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_10rem_9rem_auto]">
             <div className="relative">
@@ -465,6 +476,7 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
           </div>
         </div>
       </Card>
+      </div>
     </div>
   );
 }

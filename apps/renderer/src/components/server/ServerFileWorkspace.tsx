@@ -561,6 +561,23 @@ export function ServerFileWorkspace({
     };
   }, [contextMenu]);
 
+  useEffect(() => {
+    function onWorkspaceKeyDown(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey) || !event.shiftKey) return;
+      const key = event.key.toLowerCase();
+      if (key === "n") {
+        event.preventDefault();
+        setCreateMode("file");
+        setCreateName("");
+      } else if (key === "f") {
+        event.preventDefault();
+        setSearchEntireServer(true);
+      }
+    }
+    window.addEventListener("keydown", onWorkspaceKeyDown);
+    return () => window.removeEventListener("keydown", onWorkspaceKeyDown);
+  }, []);
+
   const dirtyCount = tabs.filter((tab) => tab.content !== tab.original).length;
   const rows = visibleEntries.slice(0, MAX_RENDERED_ROWS);
 

@@ -64,6 +64,7 @@ export function JavaManagerPage() {
     (major) =>
       !runtimes.some((runtime) => runtime.major === major && runtime.status === "valid")
   );
+  const invalidManaged = managed.filter((runtime) => runtime.status !== "valid");
 
   const providerOptions = useMemo(
     () =>
@@ -291,6 +292,33 @@ export function JavaManagerPage() {
         >
           {message}
         </Alert>
+      )}
+
+      {(missingCore.length > 0 || invalidManaged.length > 0) && (
+        <Card className="mb-5 border-glowstone/35 bg-glowstone/5 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-display text-base font-semibold text-white">Recommended actions</p>
+              <p className="mt-1 text-sm text-muted">
+                {missingCore.length > 0
+                  ? `Java ${missingCore[0]} is missing for newer server versions.`
+                  : `${invalidManaged.length} managed runtime${invalidManaged.length === 1 ? " is" : "s are"} not valid.`}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {missingCore.length > 0 && (
+                <Button onClick={() => { setInstallMajor(missingCore[0]); window.scrollTo({ top: 0, behavior: "smooth" }); }} icon={Download} variant="primary" size="sm">
+                  Prepare Java {missingCore[0]}
+                </Button>
+              )}
+              {invalidManaged.length > 0 && (
+                <Button onClick={detect} icon={RefreshCw} variant="secondary" size="sm">
+                  Rescan runtimes
+                </Button>
+              )}
+            </div>
+          </div>
+        </Card>
       )}
 
       <div className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-[0.85fr_1.15fr]">

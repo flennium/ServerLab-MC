@@ -102,6 +102,7 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
   const [activeJavaInstallId, setActiveJavaInstallId] = useState<string | null>(null);
   const [serverRoot, setServerRoot] = useState("");
   const [customLocation, setCustomLocation] = useState(false);
+  const [step, setStep] = useState(1);
 
   const [form, setForm] = useState<CreateServerDto>({
     name: "",
@@ -359,6 +360,7 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
 
     try {
       setLoading(true);
+      setStep(5);
       await createServer({
         ...form,
         version: minecraftVersion,
@@ -380,123 +382,143 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
       onClose();
     } catch (error) {
       setError(error instanceof Error ? error.message : "Failed to create server");
+      setStep(4);
     } finally {
       setLoading(false);
     }
   }
 
+  function nextStep() {
+    setError(null);
+    if (step === 1 && (!form.name.trim() || !form.path.trim())) {
+      setError("Add a server name and folder before continuing.");
+      return;
+    }
+    if (step === 2 && (!selectedProvider?.enabled || !minecraftVersion || !buildId)) {
+      setError("Choose an available framework, Minecraft version, and build.");
+      return;
+    }
+    if (step === 3 && !manualJava && !javaRuntimeId) {
+      setError("Install or select a compatible Java runtime before continuing.");
+      return;
+    }
+    setStep((current) => Math.min(4, current + 1));
+  }
+
   return (
     <Modal title="New server" onClose={loading ? () => {} : onClose}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <Field label="Name" required>
-            <TextInput value={form.name} onChange={(event) => set("name", event.target.value)} placeholder="Survival development" required />
-          </Field>
-          <Field label="Server folder" required>
-            <div className="flex flex-col gap-2">
-              <div className="flex gap-2">
-                <TextInput
-                  value={form.path}
-                  onChange={(event) => set("path", event.target.value)}
-                  placeholder={serverRoot ? managedServerPath(serverRoot, form.name) : "Loading app server folder..."}
-                  className="flex-1"
-                  readOnly={!customLocation}
-                  required
-                />
-                <Button type="button" onClick={handleBrowse} icon={FolderOpen} variant="secondary" disabled={!customLocation}>
-                  Browse
-                </Button>
+        <div className="grid grid-cols-4 gap-2 border-b border-border pb-4">
+          {["Basics", "Software", "Java", "Review", "Install"].map((label, index) => {
+            const number = index + 1;
+            return (
+              <button
+                key={label}
+                type="button"
+                onClick={() => number < step && setStep(number)}
+                className={`border-b-2 pb-2 text-left text-xs font-semibold transition-colors ${number === step ? "border-copper text-white" : number < step ? "border-grass/60 text-grass" : "border-border text-muted"}`}
+              >
+                <span className="mr-1 font-mono">0{number}</span>{label}
+              </button>
+            );
+          })}
+        </div>
+
+        {step === 1 && (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <Field label="Name" required>
+              <TextInput value={form.name} onChange={(event) => set("name", event.target.value)} placeholder="Survival development" required />
+            </Field>
+            <Field label="Server folder" required>
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <TextInput value={form.path} onChange={(event) => set("path", event.target.value)} placeholder={serverRoot ? managedServerPath(serverRoot, form.name) : "Loading app server folder..."} className="flex-1" readOnly={!customLocation} required />
+                  <Button type="button" onClick={handleBrowse} icon={FolderOpen} variant="secondary" disabled={!customLocation}>Browse</Button>
+                </div>
+                <div className="rounded border border-border bg-surface-console px-3 py-2">
+                  <Switch label="Use custom server location" checked={customLocation} onChange={setCustomServerLocation} />
+                  {!customLocation && <p className="mt-2 text-xs text-muted">Servers are stored under the app data servers folder by default.</p>}
+                </div>
               </div>
-              <div className="rounded border border-border bg-surface-console px-3 py-2">
-                <Switch
-                  label="Use custom server location"
-                  checked={customLocation}
-                  onChange={setCustomServerLocation}
-                />
-                {!customLocation && (
-                  <p className="mt-2 text-xs text-muted">
-                    Servers are stored under the app data servers folder by default.
-                  </p>
-                )}
+            </Field>
+          </div>
+        )}
+
+        {step === 2 && (
+          <>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <Field label="Framework"><Select value={provider} onChange={(event) => setProvider(event.target.value as ServerFramework)}>{providers.map((item) => <option key={item.id} value={item.id}>{item.label}{!item.enabled ? " unavailable" : ""}</option>)}</Select></Field>
+              <Field label="Minecraft version"><Select value={minecraftVersion} disabled={!selectedProvider?.enabled || versions.length === 0} onChange={(event) => setMinecraftVersion(event.target.value)}>{versions.map((version) => <option key={version} value={version}>{version}</option>)}</Select></Field>
+              <Field label="Build"><Select value={buildId} disabled={!selectedProvider?.enabled || builds.length === 0} onChange={(event) => setBuildId(event.target.value)}>{builds.map((build) => <option key={build.id} value={build.id}>{build.label}{build.cached ? " cached" : ""}</option>)}</Select></Field>
+            </div>
+            {selectedProvider && !selectedProvider.enabled && <Alert tone="warning">{selectedProvider.reasonUnavailable}</Alert>}
+            {offline && <Alert tone="warning">Offline: cached software only.</Alert>}
+            <SoftwareStatus cached={selectedBuild?.cached === true} selectedBuild={selectedBuild} progress={softwareProgress} onCancel={handleCancelSoftwareDownload} cancellable={loading && softwareProgress?.stage === "downloading"} />
+          </>
+        )}
+
+        {step === 3 && (
+          <JavaRuntimePanel
+            manualJava={manualJava}
+            setManualJava={setManualJava}
+            javaPath={form.javaPath}
+            setJavaPath={(value) => set("javaPath", value)}
+            recommendation={recommendation}
+            runtimes={compatibleRuntimes}
+            selectedRuntimeId={javaRuntimeId}
+            setSelectedRuntimeId={(id) => { setJavaRuntimeId(id); const runtime = runtimes.find((item) => item.id === id); if (runtime) set("javaPath", runtime.executablePath); }}
+            progress={javaProgress}
+            installing={Boolean(activeJavaInstallId)}
+            onInstall={handleInstallJava}
+            onCancelInstall={handleCancelJavaInstall}
+            onScan={handleScanJava}
+          />
+        )}
+
+        {step === 4 && (
+          <>
+            <div className="rounded border border-border bg-surface-console px-4 py-3">
+              <p className="font-display text-base font-semibold text-white">Review server profile</p>
+              <div className="mt-3 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
+                <ReviewItem label="Name" value={form.name || "Not set"} />
+                <ReviewItem label="Software" value={`${provider} ${minecraftVersion || "Not set"}`} />
+                <ReviewItem label="Java" value={manualJava ? "Manual path" : recommendation ? `Java ${recommendation.requiredMajor}` : "Not selected"} />
+                <ReviewItem label="Port" value={String(form.port)} />
               </div>
             </div>
-          </Field>
-        </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <Field label="RAM min (MB)"><TextInput type="number" value={form.ramMinMb} onChange={(event) => set("ramMinMb", Number(event.target.value))} min={512} /></Field>
+              <Field label="RAM max (MB)"><TextInput type="number" value={form.ramMaxMb} onChange={(event) => set("ramMaxMb", Number(event.target.value))} min={512} /></Field>
+              <PortField value={form.port} onChange={(port) => set("port", port)} onStatusChange={setPortStatus} hint="ServerLab checks saved servers and active OS ports before creation." />
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1.2fr]">
+              <div className="rounded border border-border bg-surface-console px-3 py-3"><Switch label="Auto-start on app launch" checked={form.autoStart ?? false} onChange={(checked) => set("autoStart", checked)} /></div>
+              <label className="flex gap-3 rounded border border-border bg-surface-console px-3 py-3 text-sm">
+                <input type="checkbox" checked={eulaAccepted} onChange={(event) => setEulaAccepted(event.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-copper" />
+                <span className="leading-6 text-muted">I accept the <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noreferrer" className="font-semibold text-copper hover:text-copper-hover">Minecraft EULA</a>.</span>
+              </label>
+            </div>
+            <SoftwareStatus cached={selectedBuild?.cached === true} selectedBuild={selectedBuild} progress={softwareProgress} onCancel={handleCancelSoftwareDownload} cancellable={loading && softwareProgress?.stage === "downloading"} />
+          </>
+        )}
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <Field label="Framework">
-            <Select value={provider} onChange={(event) => setProvider(event.target.value as ServerFramework)}>
-              {providers.map((item) => <option key={item.id} value={item.id}>{item.label}{!item.enabled ? " unavailable" : ""}</option>)}
-            </Select>
-          </Field>
-          <Field label="Minecraft version">
-            <Select value={minecraftVersion} disabled={!selectedProvider?.enabled || versions.length === 0} onChange={(event) => setMinecraftVersion(event.target.value)}>
-              {versions.map((version) => <option key={version} value={version}>{version}</option>)}
-            </Select>
-          </Field>
-          <Field label="Build">
-            <Select value={buildId} disabled={!selectedProvider?.enabled || builds.length === 0} onChange={(event) => setBuildId(event.target.value)}>
-              {builds.map((build) => <option key={build.id} value={build.id}>{build.label}{build.cached ? " cached" : ""}</option>)}
-            </Select>
-          </Field>
-        </div>
-
-        {selectedProvider && !selectedProvider.enabled && <Alert tone="warning">{selectedProvider.reasonUnavailable}</Alert>}
-        {offline && <Alert tone="warning">Offline: cached software only.</Alert>}
-
-        <JavaRuntimePanel
-          manualJava={manualJava}
-          setManualJava={setManualJava}
-          javaPath={form.javaPath}
-          setJavaPath={(value) => set("javaPath", value)}
-          recommendation={recommendation}
-          runtimes={compatibleRuntimes}
-          selectedRuntimeId={javaRuntimeId}
-          setSelectedRuntimeId={(id) => {
-            setJavaRuntimeId(id);
-            const runtime = runtimes.find((item) => item.id === id);
-            if (runtime) set("javaPath", runtime.executablePath);
-          }}
-          progress={javaProgress}
-          installing={Boolean(activeJavaInstallId)}
-          onInstall={handleInstallJava}
-          onCancelInstall={handleCancelJavaInstall}
-          onScan={handleScanJava}
-        />
-
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <Field label="RAM min (MB)">
-            <TextInput type="number" value={form.ramMinMb} onChange={(event) => set("ramMinMb", Number(event.target.value))} min={512} />
-          </Field>
-          <Field label="RAM max (MB)">
-            <TextInput type="number" value={form.ramMaxMb} onChange={(event) => set("ramMaxMb", Number(event.target.value))} min={512} />
-          </Field>
-          <PortField
-            value={form.port}
-            onChange={(port) => set("port", port)}
-            onStatusChange={setPortStatus}
-            hint="ServerLab checks saved servers and active OS ports before creation."
-          />
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1.2fr]">
-          <div className="rounded border border-border bg-surface-console px-3 py-3">
-            <Switch label="Auto-start on app launch" checked={form.autoStart ?? false} onChange={(checked) => set("autoStart", checked)} />
+        {step === 5 && (
+          <div className="flex flex-col gap-4">
+            <div>
+              <p className="font-display text-lg font-semibold text-white">Creating server</p>
+              <p className="mt-1 text-sm text-muted">ServerLab is resolving the software, verifying the cache, and installing the server files.</p>
+            </div>
+            <SoftwareStatus cached={selectedBuild?.cached === true} selectedBuild={selectedBuild} progress={softwareProgress} onCancel={handleCancelSoftwareDownload} cancellable={loading && softwareProgress?.stage === "downloading"} />
           </div>
-          <label className="flex gap-3 rounded border border-border bg-surface-console px-3 py-3 text-sm">
-            <input type="checkbox" checked={eulaAccepted} onChange={(event) => setEulaAccepted(event.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-copper" />
-            <span className="leading-6 text-muted">
-              I accept the <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noreferrer" className="font-semibold text-copper hover:text-copper-hover">Minecraft EULA</a>.
-            </span>
-          </label>
-        </div>
-
-        <SoftwareStatus cached={selectedBuild?.cached === true} selectedBuild={selectedBuild} progress={softwareProgress} onCancel={handleCancelSoftwareDownload} cancellable={loading && softwareProgress?.stage === "downloading"} />
+        )}
         {error && <Alert tone="danger">{error}</Alert>}
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
           <Button type="button" onClick={onClose} disabled={loading} icon={X} variant="secondary">Cancel</Button>
-          <Button type="submit" disabled={!canCreate} icon={loading ? Download : Plus} variant="primary">{loading ? "Creating..." : "Create server"}</Button>
+          <div className="flex gap-2">
+            {step > 1 && <Button type="button" disabled={loading} onClick={() => { setError(null); setStep((current) => current - 1); }} variant="secondary">Back</Button>}
+            {step < 4 ? <Button type="button" onClick={nextStep} variant="primary">Continue</Button> : step === 4 ? <Button type="submit" disabled={!canCreate} icon={loading ? Download : Plus} variant="primary">{loading ? "Creating..." : "Create server"}</Button> : <Button type="button" disabled icon={Download} variant="primary">Installing...</Button>}
+          </div>
         </div>
       </form>
     </Modal>
@@ -644,6 +666,10 @@ function SoftwareStatus({
       {progress.error && <p className="mt-2 text-xs text-redstone">{progress.error}</p>}
     </div>
   );
+}
+
+function ReviewItem({ label, value }: { label: string; value: string }) {
+  return <div className="min-w-0"><p className="text-[0.68rem] uppercase tracking-[0.12em] text-muted">{label}</p><p className="mt-1 truncate font-semibold text-white">{value}</p></div>;
 }
 
 function formatBytes(value: number): string {

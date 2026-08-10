@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.0.0-beta.18
+
+### Changed
+
+- Applied the UI/UX audit across the main operational workflows while keeping the existing operator-console visual language.
+- Simplified the Dashboard around active server operations and actionable attention items; removed the secondary resource-stat panel.
+- Added server inventory search, status filtering, sorting, and clearer Java/auto-start readiness context.
+- Reworked server creation into Basics, Software, Java, Review, and Install stages with visible blockers and install progress.
+- Added a restore review surface showing backup date, size, type, location, and safety-backup messaging before overwrite.
+- Split the Plugins workspace into Installed and Browse Modrinth modes for faster scanning and fewer competing controls.
+- Grouped Settings into General, Storage and support, Roadmap, and Developer tools sections.
+- Added `Ctrl+Shift+N` to create a file and `Ctrl+Shift+F` to enable whole-server file search; console output now makes its bounded history explicit.
+- Ignored the local UI/UX audit prompt at `/docs/UI-UX-REDESIGN-AUDIT.md` so planning material is not published.
+- Bumped app and workspace versions to `3.0.0-beta.18`.
+
 ## 3.0.0-beta.17
 
 ### Fixed
