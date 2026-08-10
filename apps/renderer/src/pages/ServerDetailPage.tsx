@@ -266,13 +266,16 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
       <AnimatePresence mode="wait">
         <motion.div
           key={tab}
+          className="relative z-0"
           initial={reduceMotion ? false : { opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           exit={reduceMotion ? undefined : { opacity: 0, y: -6 }}
           transition={{ duration: reduceMotion ? 0 : 0.15 }}
         >
           <Suspense fallback={<Skeleton className="h-64 w-full" />}>
-            {tab === "console" && <Console serverId={server.id} />}
+            {tab === "console" && (
+              <Console serverId={server.id} serverStatus={server.status} />
+            )}
 
             {tab === "files" && (
               <ServerFileWorkspace
@@ -635,7 +638,16 @@ function ServerSettings({
           />
         </div>
 
-        {error && <Alert tone="danger">{error}</Alert>}
+        {error && (
+          <Alert
+            tone="danger"
+            autoDismissMs={8000}
+            dismissKey={error}
+            onDismiss={() => setError(null)}
+          >
+            {error}
+          </Alert>
+        )}
         {runtimeIssue && <Alert tone="warning">{runtimeIssue}</Alert>}
 
         <div className="flex flex-wrap items-center gap-3">

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
 
 interface PageHeaderProps {
@@ -113,16 +113,25 @@ export function StatTile({
 export function Alert({
   tone = "info",
   placement = "panel",
+  autoDismissMs,
+  dismissKey,
+  onDismiss,
   children,
   action,
   className,
 }: {
   tone?: "info" | "danger" | "success" | "warning";
   placement?: "inline" | "panel" | "toast";
+  autoDismissMs?: number;
+  dismissKey?: string;
+  onDismiss?: () => void;
   children: ReactNode;
   action?: ReactNode;
   className?: string;
 }) {
+  const [visible, setVisible] = useState(true);
+  const onDismissRef = useRef(onDismiss);
+  const resetKey = dismissKey ?? (typeof children === "string" ? children : undefined);
   const toneClass = {
     info: "border-lapis/40 bg-lapis/10 text-lapis",
     danger: "border-redstone/40 bg-redstone/10 text-redstone",
@@ -134,6 +143,22 @@ export function Alert({
     panel: "rounded-lg border px-4 py-3 text-sm",
     toast: "rounded-lg border px-3 py-3 text-sm shadow-2xl",
   }[placement];
+
+  useEffect(() => {
+    onDismissRef.current = onDismiss;
+  }, [onDismiss]);
+
+  useEffect(() => {
+    setVisible(true);
+    if (!autoDismissMs) return;
+    const timeout = window.setTimeout(() => {
+      setVisible(false);
+      onDismissRef.current?.();
+    }, autoDismissMs);
+    return () => window.clearTimeout(timeout);
+  }, [autoDismissMs, resetKey]);
+
+  if (!visible) return null;
 
   return (
     <div

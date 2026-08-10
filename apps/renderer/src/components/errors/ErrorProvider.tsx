@@ -136,6 +136,9 @@ function ErrorToastHost({ errors }: { errors: AppError[] }) {
           tone={error.severity === "warning" ? "warning" : "danger"}
           placement="toast"
           className="pointer-events-auto bg-panel/95"
+          autoDismissMs={error.severity === "critical" ? undefined : 9000}
+          dismissKey={error.id}
+          onDismiss={() => dismissError(error.id)}
         >
           <div className="flex items-start gap-3">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-redstone" />

@@ -129,6 +129,9 @@ export function BackupPanel({ serverId }: BackupPanelProps) {
         {error && (
           <Alert
             tone="danger"
+            autoDismissMs={8000}
+            dismissKey={error}
+            onDismiss={() => setError(null)}
             action={<IconButton icon={X} label="Dismiss backup error" onClick={() => setError(null)} />}
           >
             {error}

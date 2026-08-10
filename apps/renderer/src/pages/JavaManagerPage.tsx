@@ -267,6 +267,9 @@ export function JavaManagerPage() {
         <Alert
           tone="danger"
           className="mb-4"
+          autoDismissMs={8000}
+          dismissKey={error}
+          onDismiss={() => setError(null)}
           action={
             <IconButton
               icon={X}
@@ -279,7 +282,13 @@ export function JavaManagerPage() {
         </Alert>
       )}
       {message && (
-        <Alert tone="success" className="mb-4">
+        <Alert
+          tone="success"
+          className="mb-4"
+          autoDismissMs={5000}
+          dismissKey={message}
+          onDismiss={() => setMessage(null)}
+        >
           {message}
         </Alert>
       )}
@@ -321,7 +330,7 @@ export function JavaManagerPage() {
             </Field>
           </div>
           {cachedInstallTarget && (
-            <Alert tone="success" className="mt-4">
+            <Alert tone="success" className="mt-4" autoDismissMs={6000}>
               Java {installMajor} from {cachedInstallTarget.distribution} is already
               cached and will be reused after validation.
             </Alert>

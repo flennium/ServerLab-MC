@@ -200,7 +200,17 @@ function ErrorHistoryPanel() {
         </div>
       </div>
 
-      {message && <Alert tone="success" className="mb-3">{message}</Alert>}
+      {message && (
+        <Alert
+          tone="success"
+          className="mb-3"
+          autoDismissMs={5000}
+          dismissKey={message}
+          onDismiss={() => setMessage(null)}
+        >
+          {message}
+        </Alert>
+      )}
 
       {errors.length === 0 ? (
         <div className="rounded border border-border bg-rail px-4 py-8 text-center">
@@ -329,7 +339,17 @@ function DeveloperPanel() {
         </div>
       </div>
 
-      {message && <Alert tone="success" className="mb-3">{message}</Alert>}
+      {message && (
+        <Alert
+          tone="success"
+          className="mb-3"
+          autoDismissMs={5000}
+          dismissKey={message}
+          onDismiss={() => setMessage(null)}
+        >
+          {message}
+        </Alert>
+      )}
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div className="rounded border border-border bg-surface-console px-3 py-3">
@@ -566,7 +586,17 @@ function SoftwareCachePanel() {
         </div>
       </div>
 
-      {error && <Alert tone="danger" className="mb-4">{error}</Alert>}
+      {error && (
+        <Alert
+          tone="danger"
+          className="mb-4"
+          autoDismissMs={8000}
+          dismissKey={error}
+          onDismiss={() => setError(null)}
+        >
+          {error}
+        </Alert>
+      )}
 
       <div className="grid gap-5">
         <CacheSection
