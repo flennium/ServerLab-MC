@@ -105,12 +105,12 @@ jobs:
       - name: Verify release assets
         shell: pwsh
         run: |
-          $installer = Get-ChildItem -Path release -Filter "ServerLab MC Setup *.exe" | Select-Object -First 1
+          $installer = Get-ChildItem -Path release -Filter "ServerLab-MC-Setup-*.exe" | Select-Object -First 1
           if (-not $installer) {
             throw "Installer was not created."
           }
 
-          $blockmap = Get-ChildItem -Path release -Filter "ServerLab MC Setup *.exe.blockmap" | Select-Object -First 1
+          $blockmap = Get-ChildItem -Path release -Filter "ServerLab-MC-Setup-*.exe.blockmap" | Select-Object -First 1
           if (-not $blockmap) {
             throw "Installer blockmap was not created."
           }

@@ -42,6 +42,19 @@ function requireText(value: unknown, field: string): string {
   return value.trim();
 }
 
+async function ensureUniqueServerName(name: string, excludeId?: string): Promise<void> {
+  const normalized = name.trim().toLocaleLowerCase();
+  const servers = await prisma.server.findMany({
+    select: { id: true, name: true },
+  });
+  const duplicate = servers.find(
+    (server) => server.id !== excludeId && server.name.trim().toLocaleLowerCase() === normalized
+  );
+  if (duplicate) {
+    throw badRequest("A server with this name already exists.", "server");
+  }
+}
+
 function optionalInt(
   value: unknown,
   field: string,
@@ -178,6 +191,7 @@ serverRoutes.post("/", async (req, res, next) => {
   try {
     const body = req.body as CreateServerDto;
     validateCreateServer(body);
+    await ensureUniqueServerName(body.name);
     let version = body.version;
     let software = body.software;
 
@@ -274,6 +288,9 @@ serverRoutes.patch("/:id", async (req, res, next) => {
     }
     if (body.port !== undefined) {
       await portManagerService.assertAvailableForServer(body.port, req.params.id);
+    }
+    if (body.name !== undefined) {
+      await ensureUniqueServerName(requireText(body.name, "name"), req.params.id);
     }
     const server = await prisma.server.update({
       where: { id: req.params.id },

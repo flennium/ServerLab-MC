@@ -9,6 +9,7 @@ export type UpdateStatus =
 
 export interface AppUpdateInfo {
   version: string;
+  releaseUrl: string;
   releaseDate: string | null;
   releaseNotes: string | null;
   downloadSize: number | null;

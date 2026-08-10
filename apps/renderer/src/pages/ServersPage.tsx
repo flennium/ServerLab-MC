@@ -159,6 +159,7 @@ export function ServersPage() {
                     <Folder className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     <span className="truncate font-mono">{server.path}</span>
                   </div>
+                  <p className="mt-1 text-xs text-muted">Created {formatServerDate(server.createdAt)}</p>
                 </div>
 
                 <div className="text-sm capitalize text-white">
@@ -195,4 +196,11 @@ export function ServersPage() {
       )}
     </div>
   );
+}
+
+function formatServerDate(value: Date | string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "Unknown"
+    : date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }

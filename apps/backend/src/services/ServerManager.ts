@@ -302,7 +302,19 @@ class ServerManager {
 
   async stop(serverId: string, options: { timeoutMs?: number } = {}): Promise<void> {
     const entry = this.running.get(serverId);
-    if (!entry) throw new Error(`Server ${serverId} is not running`);
+    if (!entry) {
+      const server = await prisma.server.findUnique({
+        where: { id: serverId },
+        select: { status: true },
+      });
+      if (server && server.status !== "stopped") {
+        await this.setStatus(serverId, "stopped");
+      }
+      portManagerService.releasePort({ ownerType: "server", ownerId: serverId });
+      await this.clearProcessRegistry();
+      logger.info({ serverId }, "Stop requested for an already-exited server");
+      return;
+    }
 
     entry.stopRequested = true;
     await this.setStatus(serverId, "stopping");

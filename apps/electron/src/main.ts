@@ -379,6 +379,7 @@ function normalizeUpdateInfo(info: ElectronUpdateInfo): AppUpdateInfo {
   const downloadSize = info.files?.reduce((total, file) => total + (file.size ?? 0), 0) || null;
   return {
     version: info.version,
+    releaseUrl: `https://github.com/flennium/ServerLab-MC/releases/tag/v${info.version}`,
     releaseDate: info.releaseDate ?? null,
     releaseNotes: safeReleaseNotes(info.releaseNotes),
     downloadSize,
@@ -523,13 +524,11 @@ function reportUpdaterError(error: unknown): void {
 async function checkForUpdates(): Promise<UpdateCheckResult> {
   if (isDev) return { status: "not-available", info: null };
   if (Date.now() - lastUpdateCheckAt < 60_000) {
-    throw createElectronError({
-      category: "update",
-      severity: "warning",
-      userMessage: "Please wait before checking for updates again.",
-      possibleSolution: "Try again in a few seconds.",
-      action: "check-for-updates",
+    writeUpdaterLog("check-skipped-cooldown", {
+      currentVersion: app.getVersion(),
+      lastCheckedAt: updateSettings.lastCheckedAt,
     });
+    return { status: "not-available", info: null };
   }
   lastUpdateCheckAt = Date.now();
   updateSettings.lastCheckedAt = new Date().toISOString();

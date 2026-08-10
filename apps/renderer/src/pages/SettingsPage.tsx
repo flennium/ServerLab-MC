@@ -163,6 +163,12 @@ function UpdatePanel() {
         setStatus("available");
         setRunningServers([]);
       }),
+      bridge.onUpdaterNotAvailable(() => {
+        setUpdate(null);
+        setProgress(null);
+        setRunningServers([]);
+        setStatus("not-available");
+      }),
       bridge.onUpdaterProgress((nextProgress) => {
         setProgress(nextProgress);
         setStatus("downloading");
@@ -196,7 +202,7 @@ function UpdatePanel() {
     try {
       const result = await bridge.checkForUpdates();
       setStatus(result.status);
-      if (result.info) setUpdate(result.info);
+      setUpdate(result.info);
       if (result.status === "not-available") setMessage("You are running the latest stable release.");
     } catch {
       setStatus("error");
@@ -285,9 +291,9 @@ function UpdatePanel() {
               </span>
             </div>
             {update.releaseNotes && (
-              <pre className="mt-3 max-h-28 overflow-auto whitespace-pre-wrap border-t border-border pt-3 text-xs leading-5 text-muted">
-                {update.releaseNotes}
-              </pre>
+              <div className="mt-3 max-h-28 overflow-auto border-t border-border pt-3 text-xs leading-5 text-muted">
+                {renderReleaseNotes(update.releaseNotes, update.releaseUrl)}
+              </div>
             )}
             <div className="mt-3 flex flex-wrap gap-2">
               {status === "available" && <Button onClick={downloadUpdate} icon={Download} variant="primary" size="sm">Download update</Button>}
@@ -327,6 +333,30 @@ function UpdatePanel() {
       </div>
     </SettingsCard>
   );
+}
+
+function renderReleaseNotes(notes: string, releaseUrl: string): ReactNode {
+  return notes.split(/\r?\n/).map((line, index) => {
+    const match = line.match(/^\s*Full Changelog:\s*(v?\d+\.\d+\.\d+)\.\.\.(v?\d+\.\d+\.\d+)\s*$/i);
+    if (match) {
+      const compareUrl = `https://github.com/flennium/ServerLab-MC/compare/${match[1]}...${match[2]}`;
+      return (
+        <p key={`${line}-${index}`}>
+          Full Changelog: {" "}
+          <a href={compareUrl} target="_blank" rel="noreferrer" className="font-semibold text-copper hover:text-copper-hover">
+            {match[1]}...{match[2]}
+          </a>
+        </p>
+      );
+    }
+
+    if (!line.trim()) return <div key={`${line}-${index}`} className="h-2" />;
+    return (
+      <p key={`${line}-${index}`}>
+        {line} {index === 0 && <a href={releaseUrl} target="_blank" rel="noreferrer" className="ml-1 text-copper hover:text-copper-hover">Release page</a>}
+      </p>
+    );
+  });
 }
 
 function ErrorHistoryPanel() {

@@ -48,6 +48,7 @@ declare global {
       stopAndInstallUpdate: () => Promise<UpdateInstallResult>;
       skipUpdate: (version: string) => Promise<UpdateSettings>;
       onUpdaterUpdateAvailable: (handler: (info: AppUpdateInfo) => void) => () => void;
+      onUpdaterNotAvailable: (handler: () => void) => () => void;
       onUpdaterProgress: (handler: (progress: UpdateProgress) => void) => () => void;
       onUpdaterDownloaded: (handler: (info: AppUpdateInfo) => void) => () => void;
       onUpdaterError: (handler: (error: UpdateErrorPayload) => void) => () => void;

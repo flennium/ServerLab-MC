@@ -1,6 +1,6 @@
 {
   "name": "@serverlab/renderer",
-  "version": "3.0.3",
+  "version": "3.0.4",
   "description": "ServerLab MC React renderer",
   "private": true,
   "type": "module",

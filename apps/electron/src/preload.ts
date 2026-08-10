@@ -78,6 +78,11 @@ contextBridge.exposeInMainWorld("serverlab", {
     ipcRenderer.on("updater:update-available", listener);
     return () => ipcRenderer.removeListener("updater:update-available", listener);
   },
+  onUpdaterNotAvailable: (handler: () => void): (() => void) => {
+    const listener = () => handler();
+    ipcRenderer.on("updater:not-available", listener);
+    return () => ipcRenderer.removeListener("updater:not-available", listener);
+  },
   onUpdaterProgress: (handler: (progress: UpdateProgress) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, progress: UpdateProgress) => handler(progress);
     ipcRenderer.on("updater:progress", listener);
