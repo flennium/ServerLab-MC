@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.0.1
+
+### Added
+
+- Added a Settings updater panel with stable-channel checks, download progress, release notes, skip-version control, and update recovery actions.
+- Added persisted updater preferences for automatic checks, downloads, and installs.
+- Added a server-safety gate that requires managed Minecraft servers to stop before installation, with a graceful stop-and-install action.
+- Added structured updater diagnostics in `%APPDATA%/ServerLab MC/logs/updater.log` with rotation and prerelease filtering.
+
+### Fixed
+
+- Prerelease and alpha versions are never recommended or installed by the stable updater.
+- Update IPC is restricted to typed settings, check, download, install, and progress/error events.
+
+### Changed
+
+- Bumped app and workspace versions to `3.0.1`.
+
 ## 3.0.0
 
 ### Added
