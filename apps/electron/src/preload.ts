@@ -37,6 +37,15 @@ contextBridge.exposeInMainWorld("serverlab", {
 
   getDiagnostics: (): Promise<AppDiagnostics> => ipcRenderer.invoke("app:diagnostics"),
 
+  openInstallDirectory: (): Promise<void> => ipcRenderer.invoke("app:openInstallDirectory"),
+
+  resetData: (options: {
+    settings?: boolean;
+    cache?: boolean;
+    temporary?: boolean;
+    logs?: boolean;
+  }): Promise<{ removed: string[] }> => ipcRenderer.invoke("app:resetData", options),
+
   getPlatform: (): string => process.platform,
 
   openDevTools: (): Promise<void> => ipcRenderer.invoke("window:openDevTools"),

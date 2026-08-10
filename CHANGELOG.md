@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.0.2
+
+### Added
+
+- Added installer lifecycle safeguards for update, repair, reset, uninstall, and clean application-data removal workflows.
+- Added Settings Troubleshooting actions for opening install/data folders, exporting logs, resetting settings, and clearing software/Java caches.
+- Added installer and uninstaller activity logs under the local application data directory.
+
+### Fixed
+
+- Reset and uninstall actions now protect Minecraft servers, backups, templates, and worlds by design.
+- Added strict Electron-side validation for reset targets and install-folder access.
+
+### Changed
+
+- Bumped app and workspace versions to `3.0.2`.
+
 ## 3.0.1
 
 ### Added

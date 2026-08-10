@@ -26,6 +26,13 @@ declare global {
         backendOrigin: string;
         dataDir: string;
       }>;
+      openInstallDirectory: () => Promise<void>;
+      resetData: (options: {
+        settings?: boolean;
+        cache?: boolean;
+        temporary?: boolean;
+        logs?: boolean;
+      }) => Promise<{ removed: string[] }>;
       getPlatform: () => string;
       openDevTools: () => Promise<void>;
       closeDevTools: () => Promise<void>;

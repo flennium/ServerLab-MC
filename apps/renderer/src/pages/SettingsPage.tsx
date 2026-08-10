@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Search,
   Trash2,
+  Wrench,
 } from "lucide-react";
 import { Button } from "../components/ui/Button.js";
 import { Alert, Card, DangerZone, ManagementHeader } from "../components/ui/Layout.js";
@@ -118,6 +119,7 @@ export function SettingsPage() {
         <section>
           <SettingsSectionHeading title="Storage and support" description="Software cache, runtime diagnostics, and local error history." />
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <InstallerToolsPanel />
             <SoftwareCachePanel />
             <ErrorHistoryPanel />
           </div>
@@ -669,6 +671,106 @@ function TemplateSystemPanel() {
             </div>
           ))}
         </div>
+      )}
+    </SettingsCard>
+  );
+}
+
+function InstallerToolsPanel() {
+  const [pendingAction, setPendingAction] = useState<"settings" | "cache" | null>(null);
+  const [working, setWorking] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function openDataFolder() {
+    try {
+      const { path } = await api.get<{ path: string }>("/api/data-path");
+      await window.serverlab?.openPath?.(path);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Failed to open the data folder.");
+    }
+  }
+
+  async function resetData() {
+    if (!pendingAction || !window.serverlab?.resetData) return;
+    setWorking(true);
+    setError(null);
+    try {
+      const options = pendingAction === "settings"
+        ? { settings: true, temporary: true }
+        : { cache: true, temporary: true };
+      await window.serverlab.resetData(options);
+      setMessage(
+        pendingAction === "settings"
+          ? "Application settings and temporary files were reset."
+          : "Software and Java caches were cleared."
+      );
+      setPendingAction(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The reset could not be completed.");
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  return (
+    <SettingsCard icon={Wrench} title="Troubleshooting">
+      <p className="mb-4 text-sm leading-6 text-muted">
+        Recovery tools affect only application files. Servers, backups, templates, and worlds are never removed by these actions.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={openDataFolder} icon={FolderOpen} variant="secondary" size="sm">
+          Open data folder
+        </Button>
+        <Button
+          onClick={() => window.serverlab?.openInstallDirectory?.()}
+          icon={FolderOpen}
+          variant="secondary"
+          size="sm"
+        >
+          Open install folder
+        </Button>
+        <Button
+          onClick={() => void window.serverlab?.exportLogs?.()}
+          icon={Download}
+          variant="secondary"
+          size="sm"
+        >
+          Export logs
+        </Button>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
+        <Button onClick={() => setPendingAction("settings")} icon={RefreshCw} variant="quiet" size="sm">
+          Reset settings
+        </Button>
+        <Button onClick={() => setPendingAction("cache")} icon={Trash2} variant="danger" size="sm">
+          Clear caches
+        </Button>
+      </div>
+      {message && (
+        <Alert tone="success" className="mt-3" autoDismissMs={5000} dismissKey={message} onDismiss={() => setMessage(null)}>
+          {message}
+        </Alert>
+      )}
+      {error && (
+        <Alert tone="danger" className="mt-3" autoDismissMs={7000} dismissKey={error} onDismiss={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+      {pendingAction && (
+        <ConfirmModal
+          title={pendingAction === "settings" ? "Reset application settings?" : "Clear software and Java caches?"}
+          message={
+            pendingAction === "settings"
+              ? "This resets ServerLab preferences and temporary files. Servers, backups, templates, and server metadata remain untouched."
+              : "This removes cached server software and managed Java runtimes. Existing server folders remain safe, but affected runtimes or software must be downloaded again."
+          }
+          confirmLabel={pendingAction === "settings" ? "Reset settings" : "Clear caches"}
+          danger={pendingAction === "cache"}
+          loading={working}
+          onConfirm={() => void resetData()}
+          onCancel={() => !working && setPendingAction(null)}
+        />
       )}
     </SettingsCard>
   );
