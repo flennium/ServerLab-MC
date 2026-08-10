@@ -1,5 +1,24 @@
 # Changelog
 
+## 3.0.0
+
+### Added
+
+- First stable production release of ServerLab MC.
+- Complete local server management workflow for creation, lifecycle control, console, files, plugins, backups, Java runtimes, software cache, ports, and settings.
+
+### Improved
+
+- Refined the dashboard, server management, file manager, console, Java Runtime Center, and plugin workflows for faster everyday operation.
+- Added reliable cached software/runtime reuse, real download progress, compatibility guidance, centralized errors, and safer local process/file handling.
+- Prepared stable GitHub release publishing and updater metadata for the Windows installer.
+
+### Fixed
+
+- Resolved installation state synchronization, Fabric Java compatibility, port conflicts, file save conflicts, console lifecycle errors, and Modrinth plugin discovery gaps.
+- Removed remaining beta-only wording from the active product surface.
+- Bumped app and workspace versions to `3.0.0`.
+
 ## 3.0.0-beta.19
 
 ### Fixed

@@ -81,26 +81,26 @@ templateRoutes.get("/capabilities", (_req, res) => {
 
 templateRoutes.post("/import", (_req, res) => {
   res.status(501).json({
-    error: "Template import is planned for a future beta",
+    error: "Template import is planned for a future release",
   });
 });
 
 templateRoutes.get("/:id/export", (_req, res) => {
   res.status(501).json({
-    error: "Template export is planned for a future beta",
+    error: "Template export is planned for a future release",
   });
 });
 
 templateRoutes.post("/:id/check-updates", (_req, res) => {
   res.status(501).json({
-    error: "Template update checks are planned for a future beta",
+    error: "Template update checks are planned for a future release",
   });
 });
 
 templateRoutes.post("/:id/install", async (_req, res, next) => {
   try {
     res.status(501).json({
-      error: "Template installation is not available in this beta",
+    error: "Template installation is not available in this release",
     });
   } catch (err) {
     next(err);
