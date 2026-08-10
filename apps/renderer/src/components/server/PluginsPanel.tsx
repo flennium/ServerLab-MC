@@ -49,6 +49,7 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
   const [category, setCategory] = useState("");
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<ModrinthProjectSearchHit[]>([]);
+  const [totalResults, setTotalResults] = useState(0);
   const [selectedProject, setSelectedProject] = useState<ModrinthProjectSearchHit | null>(null);
   const [versions, setVersions] = useState<ModrinthVersion[]>([]);
   const [selectedVersionId, setSelectedVersionId] = useState("");
@@ -87,7 +88,7 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
     }
   }
 
-  async function searchProjects() {
+  async function searchProjects({ append = false }: { append?: boolean } = {}) {
     setSearching(true);
     setError(null);
     try {
@@ -95,12 +96,23 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
         serverId: server.id,
         query,
         sort,
-        limit: "20",
+        offset: String(append ? results.length : 0),
+        limit: "40",
       });
       if (category.trim()) params.set("category", category.trim());
+      if (!append) {
+        setSelectedProject(null);
+        setVersions([]);
+        setSelectedVersionId("");
+      }
       const data = await api.get<ModrinthSearchResponse>(`/api/modrinth/search?${params.toString()}`);
-      setResults(data.hits);
-      if (!selectedProject && data.hits[0]) void openProject(data.hits[0]);
+      setResults((current) => {
+        if (!append) return data.hits;
+        const existingIds = new Set(current.map((project) => project.id));
+        return [...current, ...data.hits.filter((project) => !existingIds.has(project.id))];
+      });
+      setTotalResults(data.totalHits);
+      if (!append && data.hits[0]) void openProject(data.hits[0]);
     } catch (err) {
       setError(
         reportError(err, {
@@ -344,7 +356,7 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
               placeholder="Category"
               className="h-9 text-xs"
             />
-            <Button onClick={searchProjects} disabled={searching} icon={Search} variant="primary" size="sm">
+            <Button onClick={() => void searchProjects()} disabled={searching} icon={Search} variant="primary" size="sm">
               {searching ? "Searching" : "Search"}
             </Button>
           </div>
@@ -354,7 +366,8 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
           <div className="min-h-0 overflow-y-auto border-b border-border md:border-b-0 md:border-r">
             {results.length === 0 ? (
               <div className="px-4 py-10 text-center text-sm text-muted">
-                Search results appear here.
+                Search results appear here. Compatibility is shown on each result, so projects with
+                incomplete version metadata are not hidden.
               </div>
             ) : (
               results.map((project) => (
@@ -377,6 +390,19 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
                   </p>
                 </button>
               ))
+            )}
+            {results.length > 0 && results.length < totalResults && (
+              <div className="border-t border-border p-3">
+                <Button
+                  onClick={() => void searchProjects({ append: true })}
+                  disabled={searching}
+                  variant="secondary"
+                  size="sm"
+                  className="w-full"
+                >
+                  {searching ? "Loading results" : `Load more results (${results.length}/${totalResults})`}
+                </Button>
+              </div>
             )}
           </div>
 

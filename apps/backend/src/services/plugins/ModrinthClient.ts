@@ -94,6 +94,7 @@ export interface ModrinthSearchInput {
   loader?: string;
   minecraftVersion?: string;
   category?: string;
+  strictCompatibility?: boolean;
   sort?: string;
   offset?: number;
   limit?: number;
@@ -250,8 +251,10 @@ export class ModrinthClient {
 
 function buildFacets(input: ModrinthSearchInput): string[][] {
   const facets = [["project_type:plugin"]];
-  if (input.loader) facets.push([`categories:${input.loader}`]);
-  if (input.minecraftVersion) facets.push([`versions:${input.minecraftVersion}`]);
+  if (input.strictCompatibility && input.loader) facets.push([`categories:${input.loader}`]);
+  if (input.strictCompatibility && input.minecraftVersion) {
+    facets.push([`versions:${input.minecraftVersion}`]);
+  }
   if (input.category) facets.push([`categories:${input.category}`]);
   return facets;
 }
