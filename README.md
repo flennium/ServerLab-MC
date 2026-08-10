@@ -6,7 +6,7 @@
 
 Create, run, monitor, back up, and maintain local Minecraft servers from one polished operator console.
 
-[![Release](https://img.shields.io/github/v/release/flennium/ServerLab-MC?include_prereleases&label=release)](https://github.com/flennium/ServerLab-MC/releases)
+[![Release](https://img.shields.io/github/v/release/flennium/ServerLab-MC?label=release)](https://github.com/flennium/ServerLab-MC/releases)
 [![License](https://img.shields.io/github/license/flennium/ServerLab-MC)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows-2563eb)](#requirements)
 [![Node](https://img.shields.io/badge/node-20%2B-22c55e)](#requirements)
@@ -17,7 +17,7 @@ Create, run, monitor, back up, and maintain local Minecraft servers from one pol
 
 ServerLab MC is an Electron desktop app backed by a local Node.js service and a React renderer. It is built for people who run Minecraft servers locally and want a focused interface for server creation, Java runtime management, console access, files, backups, monitoring, and cached server software downloads.
 
-Current beta: `3.0.0-beta.19`
+Current release: `3.0.0`
 
 ## Highlights
 
@@ -175,8 +175,8 @@ Before publishing a release:
 GitHub Actions builds and publishes Windows releases from version tags.
 
 ```powershell
-git tag v3.0.0-beta.19
-git push origin v3.0.0-beta.19
+git tag v3.0.0
+git push origin v3.0.0
 ```
 
 The `Build and Publish Release` workflow runs `npm ci`, lint, CI-safe tests, and the Windows installer build. It uploads the installer, blockmap, and `latest.yml` to the GitHub Releases page.
