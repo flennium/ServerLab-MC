@@ -211,7 +211,7 @@ export function Console({ serverId, serverStatus }: ConsoleProps) {
         : "-";
 
   return (
-    <div className="flex h-[calc(100vh-17rem)] min-h-[420px] flex-col overflow-hidden rounded-lg border border-border bg-surface-console shadow-2xl">
+    <div className="flex h-[min(52vh,500px)] min-h-[300px] flex-col overflow-hidden rounded-lg border border-border bg-surface-console shadow-2xl">
       <div className="border-b border-border bg-carbon">
         <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5">
           <div className="flex min-w-0 items-center gap-2">

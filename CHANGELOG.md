@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.3
+
+### Fixed
+
+- Stable updater checks now ignore equal or older releases instead of showing the installed version as available.
+- Deliberately stopped Minecraft processes now settle on `Stopped` instead of being reported as crashed when Java exits with a non-zero code.
+- Sticky server headers now use an opaque stacking layer so console, files, plugins, monitor, backups, and settings content cannot bleed through while scrolling.
+- Reduced the console work area height so server management sections remain easier to scan.
+
+### Changed
+
+- Bumped app and workspace versions to `3.0.3`.
+
 ## 3.0.2
 
 ### Added
