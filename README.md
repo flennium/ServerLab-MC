@@ -191,9 +191,10 @@ Updater diagnostics are stored locally at `%APPDATA%\\ServerLab MC\\logs\\update
 
 ## Automated Releases
 
-GitHub Actions builds and publishes Windows releases from version tags.
+GitHub Actions builds and publishes Windows releases from version tags. When a versioned commit is pushed to `main`, the workflow reads the root package version, creates the matching tag if it does not exist, and starts the release build automatically.
 
 ```powershell
+# Manual recovery path when a tag needs to be recreated or retried:
 git tag v3.0.3
 git push origin v3.0.3
 ```
