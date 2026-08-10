@@ -19,6 +19,7 @@ const HOST = "127.0.0.1";
 const BACKEND_PORT = 3001;
 const RENDERER_PORT = 5173;
 const DATA_DIR = path.join(ROOT, "data");
+const PROCESS_STATE_PATH = path.join(DATA_DIR, "dev-processes.json");
 const SHARED_SRC_DIR = path.join(ROOT, "packages", "shared", "src");
 
 function appEnv(extra = {}) {
@@ -74,6 +75,29 @@ function spawnProc(command, args, cwd, label, colorCode, env = process.env) {
     if (code && code !== 0) console.error(`${prefix}exited with code ${code}`);
   });
   return proc;
+}
+
+function writeProcessState(children) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(
+    PROCESS_STATE_PATH,
+    JSON.stringify(
+      {
+        repoRoot: ROOT,
+        updatedAt: new Date().toISOString(),
+        processes: children
+          .filter((child) => child?.pid)
+          .map((child) => ({ pid: child.pid, startedAt: new Date().toISOString() })),
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+}
+
+function clearProcessState() {
+  fs.rmSync(PROCESS_STATE_PATH, { force: true });
 }
 
 function canConnect(port, host = HOST) {
@@ -175,16 +199,33 @@ function execSync(command, args, cwd, env = process.env) {
       shell: false,
       stdio: "inherit",
     });
-    proc.on("exit", (code) =>
+    proc.once("error", reject);
+    proc.once("close", (code) =>
       code === 0 ? resolve() : reject(new Error(`${command} exited ${code}`))
     );
   });
 }
 
-function shutdown(children) {
-  for (const child of children) {
-    if (child && !child.killed) child.kill("SIGTERM");
+async function stopChildren(children) {
+  const activeChildren = children.filter((child) => child && child.pid && !child.killed);
+  if (process.platform === "win32") {
+    await Promise.all(
+      activeChildren.map(
+        (child) =>
+          new Promise((resolve) => {
+            const killer = spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+              windowsHide: true,
+              stdio: "ignore",
+            });
+            killer.once("close", resolve);
+            killer.once("error", resolve);
+          })
+      )
+    );
+  } else {
+    for (const child of activeChildren) child.kill("SIGTERM");
   }
+  clearProcessState();
 }
 
 function removeStaleSharedSourceOutput() {
@@ -203,51 +244,58 @@ async function main() {
 
   const children = [];
 
-  fs.mkdirSync(path.join(DATA_DIR, "backups"), { recursive: true });
-  fs.mkdirSync(path.join(DATA_DIR, "logs"), { recursive: true });
-  removeStaleSharedSourceOutput();
+  try {
+    fs.mkdirSync(path.join(DATA_DIR, "backups"), { recursive: true });
+    fs.mkdirSync(path.join(DATA_DIR, "logs"), { recursive: true });
+    removeStaleSharedSourceOutput();
 
-  console.log("Preparing local data directories... ready\n");
+    console.log("Preparing local data directories... ready\n");
 
-  const renderer = spawnProc(
-    "npx",
-    ["vite", "--host", HOST],
-    path.join(ROOT, "apps/renderer"),
-    "renderer",
-    34,
-    appEnv()
-  );
-  children.push(renderer);
+    const renderer = spawnProc(
+      "npx",
+      ["vite", "--host", HOST],
+      path.join(ROOT, "apps/renderer"),
+      "renderer",
+      34,
+      appEnv()
+    );
+    children.push(renderer);
+    writeProcessState(children);
 
-  process.stdout.write(`Waiting for Vite (${HOST}:${RENDERER_PORT})... `);
-  await waitForPort(RENDERER_PORT);
-  console.log("ready\n");
+    process.stdout.write(`Waiting for Vite (${HOST}:${RENDERER_PORT})... `);
+    await waitForPort(RENDERER_PORT);
+    console.log("ready\n");
 
-  process.stdout.write("Compiling Electron main process... ");
-  await execSync("npx", ["tsc"], path.join(ROOT, "apps/electron"));
-  await execSync("node", ["scripts/build-electron-stage.mjs"], ROOT);
-  console.log("ready\n");
+    process.stdout.write("Compiling Electron main process... ");
+    await execSync("npx", ["tsc"], path.join(ROOT, "apps/electron"));
+    await execSync("node", ["scripts/build-electron-stage.mjs"], ROOT);
+    console.log("ready\n");
 
-  console.log("Launching Electron...\n");
-  const electronTool = electronCommand();
-  const electron = spawnProc(electronTool.command, electronTool.args, ROOT, "electron", 35, appEnv());
-  children.push(electron);
+    console.log("Launching Electron...\n");
+    const electronTool = electronCommand();
+    const electron = spawnProc(electronTool.command, electronTool.args, ROOT, "electron", 35, appEnv());
+    children.push(electron);
+    writeProcessState(children);
 
-  process.stdout.write(`Waiting for Electron backend (${HOST}:${BACKEND_PORT})... `);
-  await waitForPort(BACKEND_PORT);
-  console.log("ready\n");
+    process.stdout.write(`Waiting for Electron backend (${HOST}:${BACKEND_PORT})... `);
+    await waitForPort(BACKEND_PORT);
+    console.log("ready\n");
 
-  electron.on("exit", () => {
-    console.log("\n[launcher] Electron closed - shutting down all processes");
-    shutdown(children);
-    process.exit(0);
-  });
+    electron.on("exit", (code) => {
+      console.log("\n[launcher] Electron closed - shutting down all processes");
+      void stopChildren(children).finally(() => process.exit(code ?? 0));
+    });
 
-  process.on("SIGINT", () => {
-    console.log("\n[launcher] SIGINT - shutting down");
-    shutdown(children);
-    process.exit(0);
-  });
+    const handleSignal = () => {
+      console.log("\n[launcher] Shutdown signal - stopping ServerLab processes");
+      void stopChildren(children).finally(() => process.exit(0));
+    };
+    process.once("SIGINT", handleSignal);
+    process.once("SIGTERM", handleSignal);
+  } catch (error) {
+    await stopChildren(children);
+    throw error;
+  }
 }
 
 main().catch((err) => {

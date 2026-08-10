@@ -8,6 +8,7 @@ param()
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "..")).Path
+$processStatePath = Join-Path $RepoRoot "data\dev-processes.json"
 $ports = @(3001, 5173)
 $processIds = New-Object System.Collections.Generic.HashSet[int]
 
@@ -16,14 +17,24 @@ function Test-ServerLabProcess($processInfo) {
     return $false
   }
 
-  return (
-    $processInfo.CommandLine -like "*$RepoRoot*" -or
-    $processInfo.CommandLine -like "*ServerLab MC*" -or
-    $processInfo.CommandLine -like "*serverlab-mc*" -or
-    $processInfo.CommandLine -like "*apps\backend\dist\index.js*" -or
-    $processInfo.CommandLine -like "*release\win-unpacked\resources\backend\dist\index.js*" -or
-    $processInfo.CommandLine -like "*vite\bin\vite.js*"
-  )
+  return $processInfo.CommandLine -like "*$RepoRoot*"
+}
+
+if (Test-Path -LiteralPath $processStatePath) {
+  try {
+    $state = Get-Content -LiteralPath $processStatePath -Raw | ConvertFrom-Json
+    if ($state.repoRoot -eq $RepoRoot) {
+      foreach ($entry in @($state.processes)) {
+        if (-not $entry.pid) { continue }
+        $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId=$([int]$entry.pid)" -ErrorAction SilentlyContinue
+        if (Test-ServerLabProcess $processInfo) {
+          [void]$processIds.Add([int]$entry.pid)
+        }
+      }
+    }
+  } catch {
+    Write-Warning "Could not read the ServerLab dev process state file. Falling back to verified port owners."
+  }
 }
 
 foreach ($port in $ports) {
@@ -41,12 +52,6 @@ foreach ($port in $ports) {
     }
 }
 
-Get-WmiObject Win32_Process |
-  Where-Object { Test-ServerLabProcess $_ } |
-  ForEach-Object {
-    [void]$processIds.Add([int]$_.ProcessId)
-  }
-
 foreach ($processId in $processIds) {
   $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
   if (-not $process) {
@@ -54,8 +59,10 @@ foreach ($processId in $processIds) {
   }
 
   if ($PSCmdlet.ShouldProcess("$($process.ProcessName) ($processId)", "Stop ServerLab dev process")) {
-    Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+    & taskkill.exe /PID $processId /T /F | Out-Null
   }
 }
+
+Remove-Item -LiteralPath $processStatePath -Force -ErrorAction SilentlyContinue
 
 Write-Host "ServerLab MC dev processes stopped."
