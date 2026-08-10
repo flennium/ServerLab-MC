@@ -381,9 +381,14 @@ export function JavaManagerPage() {
               installed={!missingCore.includes(17)}
             />
             <GuidanceRow
-              label="Minecraft 1.20.5+"
+              label="Minecraft 1.20.5-1.21.8"
               value="Java 21"
               installed={!missingCore.includes(21)}
+            />
+            <GuidanceRow
+              label="Minecraft 1.21.9+"
+              value="Java 25"
+              installed={!missingCore.includes(25)}
             />
           </div>
         </Card>

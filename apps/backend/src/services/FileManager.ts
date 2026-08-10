@@ -134,7 +134,8 @@ export class FileManager {
       language: languageFor(relativePath),
       sizeBytes: stat.size,
       modifiedAt: stat.mtime.toISOString(),
-      etag: etagFor(stat, buffer.byteLength === stat.size ? buffer : undefined),
+      // Include content for small files so same-size edits are always detected.
+      etag: etagFor(stat, isLarge ? undefined : buffer),
       readonly,
       restartHint: restartHintFor(relativePath),
       validation: validateContent(relativePath, content, binary),

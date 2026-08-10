@@ -13,6 +13,7 @@ import {
 import { javaRuntimeRegistry } from "./java/JavaRuntimeRegistry.js";
 import { javaRuntimeValidator } from "./java/JavaRuntimeValidator.js";
 import { javaRecommendationService } from "./java/JavaRecommendationService.js";
+import { HttpError } from "../middleware/error.js";
 import type { ServerDeleteProgressPayload, ServerStatus } from "@serverlab/shared";
 
 interface RunningServer {
@@ -117,7 +118,8 @@ class ServerManager {
     software: string;
   }): Promise<string> {
     if (server.javaOverrideMode === "manual" || !server.javaRuntimeId) {
-      await javaRuntimeValidator.validateExecutable(server.javaPath);
+      const validated = await javaRuntimeValidator.validateExecutable(server.javaPath);
+      await this.assertJavaCompatible(server, validated.major);
       return server.javaPath;
     }
 
@@ -131,24 +133,32 @@ class ServerManager {
       );
     }
 
+    await this.assertJavaCompatible(server, validated.major);
+
+    await javaRuntimeRegistry.touchUsed(validated.id);
+    return validated.executablePath;
+  }
+
+  private async assertJavaCompatible(
+    server: { version: string; software: string; allowUnsupportedJava: boolean },
+    major: number
+  ): Promise<void> {
     const recommendation = await javaRecommendationService.recommend({
       minecraftVersion: server.version,
       software: server.software,
     });
-    if (
-      !javaRecommendationService.isCompatible(
-        validated.major,
-        recommendation.requiredMajor,
-        server.allowUnsupportedJava
-      )
-    ) {
-      throw new Error(
-        `This server needs Java ${recommendation.requiredMajor}. Selected runtime is Java ${validated.major}.`
-      );
+    if (javaRecommendationService.isCompatible(major, recommendation.requiredMajor, server.allowUnsupportedJava)) {
+      return;
     }
 
-    await javaRuntimeRegistry.touchUsed(validated.id);
-    return validated.executablePath;
+    throw new HttpError(
+      409,
+      `Java ${recommendation.requiredMajor} is required for ${server.software} ${server.version}.`,
+      "java",
+      "warning",
+      `Install or select Java ${recommendation.requiredMajor} in the Java Runtime Center, then start the server again.`,
+      ["retry", "open-java-center", "copy-details", "dismiss"]
+    );
   }
 
   private async setStatus(serverId: string, status: ServerStatus) {

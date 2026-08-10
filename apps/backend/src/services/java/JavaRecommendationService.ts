@@ -17,7 +17,7 @@ export class JavaRecommendationService {
     software: ServerSoftware | string;
   }): Promise<JavaRecommendationResponse> {
     const metadataMajor = await this.tryProviderMetadata(input.minecraftVersion, input.software);
-    const requiredMajor = metadataMajor ?? this.fallbackMajor(input.minecraftVersion);
+    const requiredMajor = metadataMajor ?? minimumJavaMajorForMinecraft(input.minecraftVersion);
     const confidence = metadataMajor ? "metadata" : requiredMajor ? "rules" : "unknown";
     const recommendedMajor = requiredMajor ?? 21;
     const installedRuntimes = await javaRuntimeRegistry.listRuntimes();
@@ -71,20 +71,27 @@ export class JavaRecommendationService {
     }
   }
 
-  private fallbackMajor(version: string): number | null {
-    const normalized = version.trim();
-    if (/^26\./.test(normalized)) return 21;
-    const match = normalized.match(/^1\.(\d+)(?:\.(\d+))?/);
-    if (!match) return null;
-    const minor = Number(match[1]);
-    const patch = Number(match[2] ?? 0);
+}
 
-    if (minor >= 21) return 21;
-    if (minor === 20 && patch >= 5) return 21;
-    if (minor >= 18) return 17;
-    if (minor === 17) return 16;
-    return 8;
-  }
+/**
+ * Fallback compatibility rules for providers without their own Java metadata.
+ * Minecraft 1.21.9 and newer ship server classes compiled for Java 25, while
+ * 1.21.8 and earlier in the 1.21 line remain Java 21-compatible.
+ */
+export function minimumJavaMajorForMinecraft(version: string): number | null {
+  const normalized = version.trim();
+  if (/^26(?:\.|$)/.test(normalized)) return 25;
+
+  const match = normalized.match(/^1\.(\d+)(?:\.(\d+))?/);
+  if (!match) return null;
+
+  const minor = Number(match[1]);
+  const patch = Number(match[2] ?? 0);
+  if (minor > 21 || (minor === 21 && patch >= 9)) return 25;
+  if (minor === 21 || (minor === 20 && patch >= 5)) return 21;
+  if (minor >= 18) return 17;
+  if (minor === 17) return 16;
+  return 8;
 }
 
 export const javaRecommendationService = new JavaRecommendationService();
