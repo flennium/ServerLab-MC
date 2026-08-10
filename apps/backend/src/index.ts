@@ -24,6 +24,7 @@ import { javaInstallService } from "./services/java/JavaInstallService.js";
 import { pluginInstallService } from "./services/plugins/PluginInstallService.js";
 import { setPluginSocketServer } from "./services/plugins/pluginEvents.js";
 import { serverManager } from "./services/ServerManager.js";
+import { errorService } from "./services/ErrorService.js";
 import type { ServerToClientEvents, ClientToServerEvents } from "@serverlab/shared";
 
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
@@ -86,7 +87,18 @@ async function start(): Promise<void> {
     if (error.code === "EADDRINUSE") {
       logger.error({ port: PORT, host: HOST }, "Backend port is already in use");
     }
-    throw error;
+    const appError = errorService.createFromUnknown(error, {
+      category: "network",
+      severity: "critical",
+      userMessage: error.code === "EADDRINUSE"
+        ? `The backend port ${PORT} is already in use.`
+        : "The local backend could not start.",
+      possibleSolution: "Close the process using the port and restart ServerLab MC.",
+      source: "backend:startup",
+      action: "listen",
+      recoveries: ["retry", "open-logs", "copy-details", "dismiss"],
+    });
+    void errorService.record(appError).finally(() => process.exit(1));
   });
 
   httpServer.listen(PORT, HOST, () => {
@@ -95,16 +107,64 @@ async function start(): Promise<void> {
     logger.info(`Data directory: ${dataDir}`);
     softwareCacheService.cleanupTmp().catch((err) => {
       logger.warn({ err }, "Failed to clean software cache tmp directory");
+      void errorService.record(errorService.createFromUnknown(err, {
+        category: "download",
+        severity: "warning",
+        userMessage: "Temporary software download files could not be cleaned up.",
+        possibleSolution: "Restart ServerLab MC and try again.",
+        source: "backend:startup",
+        action: "cleanup-software-cache",
+      }));
     });
     javaInstallService.cleanupTmp().catch((err) => {
       logger.warn({ err }, "Failed to clean Java runtime tmp directory");
+      void errorService.record(errorService.createFromUnknown(err, {
+        category: "java",
+        severity: "warning",
+        userMessage: "Temporary Java download files could not be cleaned up.",
+        possibleSolution: "Restart ServerLab MC and try again.",
+        source: "backend:startup",
+        action: "cleanup-java-cache",
+      }));
     });
     pluginInstallService.cleanupStaging().catch((err) => {
       logger.warn({ err }, "Failed to clean plugin staging directories");
+      void errorService.record(errorService.createFromUnknown(err, {
+        category: "plugin",
+        severity: "warning",
+        userMessage: "Temporary plugin files could not be cleaned up.",
+        possibleSolution: "Restart ServerLab MC and try again.",
+        source: "backend:startup",
+        action: "cleanup-plugin-staging",
+      }));
     });
     startMonitor();
   });
 }
+
+process.on("unhandledRejection", (reason) => {
+  const error = errorService.createFromUnknown(reason, {
+    category: "unknown",
+    severity: "error",
+    userMessage: "A background backend operation failed.",
+    possibleSolution: "Retry the action and check Error history if it continues.",
+    source: "backend:process",
+    action: "unhandled-rejection",
+  });
+  void errorService.record(error);
+});
+
+process.on("uncaughtException", (reason) => {
+  const error = errorService.createFromUnknown(reason, {
+    category: "unknown",
+    severity: "critical",
+    userMessage: "The local backend encountered a critical error.",
+    possibleSolution: "Restart ServerLab MC and open Error history if it happens again.",
+    source: "backend:process",
+    action: "uncaught-exception",
+  });
+  void errorService.record(error).finally(() => process.exit(1));
+});
 
 start().catch((err) => {
   logger.error({ err }, "Backend startup failed");
@@ -116,6 +176,14 @@ process.on("SIGTERM", async () => {
   stopMonitor();
   await serverManager.stopAll({ wait: true, timeoutMs: 20_000 }).catch((error) => {
     logger.warn({ error }, "Failed to stop all Minecraft servers during shutdown");
+    void errorService.record(errorService.createFromUnknown(error, {
+      category: "server",
+      severity: "warning",
+      userMessage: "Some Minecraft servers did not stop cleanly.",
+      possibleSolution: "Check the server processes before launching again.",
+      source: "backend:shutdown",
+      action: "stop-all-servers",
+    }));
   });
   httpServer.close(() => process.exit(0));
 });

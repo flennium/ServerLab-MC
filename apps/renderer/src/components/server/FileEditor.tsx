@@ -8,6 +8,7 @@ import { Save, X } from "lucide-react";
 import { api } from "../../lib/apiClient.js";
 import { Alert } from "../ui/Layout.js";
 import { Button, IconButton } from "../ui/Button.js";
+import { reportError } from "../../lib/errorStore.js";
 import type { FileContentResponse } from "@serverlab/shared";
 
 interface FileEditorProps {
@@ -55,7 +56,13 @@ export function FileEditor({ serverId, filePath, fileName, onClose }: FileEditor
         setOriginal(content);
       })
       .catch((error) =>
-        setError(error instanceof Error ? error.message : "Failed to load file")
+        setError(reportError(error, {
+          category: "file",
+          userMessage: "The file could not be opened.",
+          possibleSolution: "Refresh the file list or check its permissions.",
+          source: "renderer:file-editor",
+          action: "open-file",
+        }).userMessage)
       )
       .finally(() => setLoading(false));
   }, [serverId, filePath]);
@@ -75,7 +82,13 @@ export function FileEditor({ serverId, filePath, fileName, onClose }: FileEditor
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Save failed");
+      setError(reportError(error, {
+        category: "file",
+        userMessage: "The file could not be saved.",
+        possibleSolution: "Check permissions and whether the file changed on disk.",
+        source: "renderer:file-editor",
+        action: "save-file",
+      }).userMessage);
     } finally {
       setSaving(false);
     }

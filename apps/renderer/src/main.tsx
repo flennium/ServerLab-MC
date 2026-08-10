@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { App } from "./App.tsx";
 import { useConsoleStore } from "./store/consoleStore.js";
 import { useServerStore } from "./store/serverStore.js";
+import { reportError } from "./lib/errorStore.js";
 import "./styles/globals.css";
 
 class RootErrorBoundary extends React.Component<
@@ -75,10 +76,19 @@ function initSocketWithRetry(attempts = 5, delay = 1500) {
     useServerStore.getState().initSocket(),
     useConsoleStore.getState().initSocket(),
   ]).catch((err) => {
-    console.warn("[socket] init failed, retrying...", err);
     if (attempts > 1) {
       setTimeout(() => initSocketWithRetry(attempts - 1, delay), delay);
+      return;
     }
+    reportError(err, {
+      category: "network",
+      severity: "error",
+      userMessage: "ServerLab could not connect to its live server events.",
+      possibleSolution: "Retry the connection or restart ServerLab MC.",
+      source: "renderer:startup",
+      action: "socket-init",
+      recoveries: ["retry", "open-logs", "copy-details", "dismiss"],
+    });
   });
 }
 

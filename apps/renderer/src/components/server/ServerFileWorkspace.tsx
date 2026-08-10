@@ -527,7 +527,18 @@ export function ServerFileWorkspace({
   }
 
   async function copyPath(path: string) {
-    await navigator.clipboard?.writeText(path).catch(() => {});
+    try {
+      await navigator.clipboard?.writeText(path);
+    } catch (error) {
+      reportError(error, {
+        category: "renderer",
+        severity: "warning",
+        userMessage: "The file path could not be copied.",
+        possibleSolution: "Copy the path from the file row manually.",
+        source: "renderer:file-workspace",
+        action: "copy-file-path",
+      });
+    }
   }
 
   function openEntry(entry: FileEntry) {

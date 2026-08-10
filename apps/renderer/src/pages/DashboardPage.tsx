@@ -20,6 +20,7 @@ import { Alert, Card, EmptyState, ManagementHeader } from "../components/ui/Layo
 import { Button } from "../components/ui/Button.js";
 import { api } from "../lib/apiClient.js";
 import { toHashPath } from "../lib/router.js";
+import { reportError } from "../lib/errorStore.js";
 import type {
   JavaRuntimeListResponse,
   Server as ServerModel,
@@ -46,7 +47,13 @@ export function DashboardPage() {
     setError(null);
     Promise.all([fetchServers(), loadEnvironment(setEnvironment)])
       .catch((error) =>
-        setError(error instanceof Error ? error.message : "Failed to load dashboard")
+        setError(reportError(error, {
+          category: "server",
+          userMessage: "The dashboard could not be loaded.",
+          possibleSolution: "Retry after the local backend is ready.",
+          source: "renderer:dashboard",
+          action: "load-dashboard",
+        }).userMessage)
       )
       .finally(() => setLoading(false));
   }, [fetchServers]);
@@ -168,7 +175,15 @@ async function loadEnvironment(
     const javaData = await api.get<JavaRuntimeListResponse>("/api/java/runtimes");
     const validRuntimes = javaData.runtimes.filter((runtime) => runtime.status === "valid");
     setEnvironment({ validRuntimes: validRuntimes.length });
-  } catch {
+  } catch (error) {
+    reportError(error, {
+      category: "java",
+      severity: "warning",
+      userMessage: "Java runtime status could not be checked.",
+      possibleSolution: "Open Java Runtime Center to rescan runtimes.",
+      source: "renderer:dashboard",
+      action: "load-java-summary",
+    });
     setEnvironment({ validRuntimes: 0 });
   }
 }

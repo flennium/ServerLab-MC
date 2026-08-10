@@ -54,6 +54,12 @@ function mapCategory(message: string, source?: string): AppErrorCategory {
   const text = `${source ?? ""} ${message}`.toLowerCase();
   if (text.includes("java")) return "java";
   if (text.includes("download") || text.includes("cache")) return "download";
+  if (text.includes("plugin") || text.includes("modrinth")) return "plugin";
+  if (text.includes("update") || text.includes("updater")) return "update";
+  if (text.includes("config") || text.includes("eula")) return "config";
+  if (text.includes("port") || text.includes("bind") || text.includes("address already in use")) {
+    return "network";
+  }
   if (text.includes("file") || text.includes("path") || text.includes("folder"))
     return "file";
   if (text.includes("server")) return "server";

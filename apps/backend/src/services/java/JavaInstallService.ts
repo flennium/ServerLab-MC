@@ -8,6 +8,7 @@ import { spawn } from "child_process";
 import extractZip from "extract-zip";
 import { prisma } from "../../lib/prisma.js";
 import { logger } from "../../lib/logger.js";
+import { errorService } from "../ErrorService.js";
 import { getSoftwareSocketServer } from "../software/softwareEvents.js";
 import {
   APP_USER_AGENT,
@@ -176,6 +177,16 @@ export class JavaInstallService {
       const cancelled = active?.cancelled === true;
       await fsp.rm(tmpPath, { force: true }).catch(() => {});
       const message = error instanceof Error ? error.message : "Java install failed";
+      if (!cancelled) {
+        void errorService.record(errorService.createFromUnknown(error, {
+          category: "java",
+          severity: "error",
+          userMessage: "Java runtime installation failed.",
+          possibleSolution: "Retry the installation or choose another provider.",
+          source: "backend:java-install",
+          action: "install-java",
+        }));
+      }
       const failed = await this.updateInstall(installId, {
         status: cancelled ? "cancelled" : "failed",
         stage: cancelled ? "cancelled" : "failed",

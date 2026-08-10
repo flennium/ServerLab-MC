@@ -9,6 +9,7 @@ import type {
   PluginInstallStatus,
   PluginInstallStage,
 } from "./models.js";
+import type { AppError } from "./errors.js";
 
 export interface ConsoleOutputPayload {
   serverId: string;
@@ -115,6 +116,6 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
   "console:command": (
     payload: ConsoleCommandPayload,
-    ack?: (result: { ok: boolean; error?: string }) => void
+    ack?: (result: { ok: boolean; error?: AppError }) => void
   ) => void;
 }

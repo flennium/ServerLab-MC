@@ -7,6 +7,7 @@ import { ConfirmModal } from "../ui/ConfirmModal.js";
 import { Modal } from "../ui/Modal.js";
 import { Alert, Card, DangerZone, EmptyState } from "../ui/Layout.js";
 import { Button, IconButton } from "../ui/Button.js";
+import { reportError } from "../../lib/errorStore.js";
 import type { Backup, BackupListResponse } from "@serverlab/shared";
 
 interface BackupPanelProps {
@@ -42,7 +43,13 @@ export function BackupPanel({ serverId }: BackupPanelProps) {
       );
       setBackups(backups);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Failed to load backups");
+      setError(reportError(error, {
+        category: "file",
+        userMessage: "Backups could not be loaded.",
+        possibleSolution: "Retry the backup list or check the server folder.",
+        source: "renderer:backups",
+        action: "load-backups",
+      }).userMessage);
     } finally {
       setLoading(false);
     }
@@ -69,7 +76,14 @@ export function BackupPanel({ serverId }: BackupPanelProps) {
       };
       socket.on("backup:progress", handler);
       cleanup = () => socket.off("backup:progress", handler);
-    });
+    }).catch((error) => reportError(error, {
+      category: "network",
+      severity: "warning",
+      userMessage: "Live backup progress is unavailable.",
+      possibleSolution: "Retry after the backend reconnects.",
+      source: "renderer:backups",
+      action: "subscribe-backup-progress",
+    }));
 
     return () => cleanup();
   }, [serverId, fetchBackups]);
@@ -80,7 +94,13 @@ export function BackupPanel({ serverId }: BackupPanelProps) {
     try {
       await api.post(`/api/servers/${serverId}/backups`, { type: "manual" });
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Backup failed");
+      setError(reportError(error, {
+        category: "file",
+        userMessage: "The backup could not be created.",
+        possibleSolution: "Check available disk space and try again.",
+        source: "renderer:backups",
+        action: "create-backup",
+      }).userMessage);
       setCreating(false);
     }
   }
@@ -93,7 +113,13 @@ export function BackupPanel({ serverId }: BackupPanelProps) {
       await api.post(`/api/backups/${backup.id}/restore`);
       fetchBackups();
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Restore failed");
+      setError(reportError(error, {
+        category: "file",
+        userMessage: "The backup could not be restored.",
+        possibleSolution: "Stop the server and try restoring again.",
+        source: "renderer:backups",
+        action: "restore-backup",
+      }).userMessage);
     } finally {
       setRestoring(null);
     }
@@ -106,7 +132,13 @@ export function BackupPanel({ serverId }: BackupPanelProps) {
       await api.delete(`/api/backups/${backup.id}`);
       setBackups((current) => current.filter((item) => item.id !== backup.id));
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Delete failed");
+      setError(reportError(error, {
+        category: "file",
+        userMessage: "The backup could not be deleted.",
+        possibleSolution: "Check that the backup is not being used and try again.",
+        source: "renderer:backups",
+        action: "delete-backup",
+      }).userMessage);
     } finally {
       setDeleting(null);
     }

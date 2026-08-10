@@ -245,7 +245,7 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
     void searchProjects();
     // Load the current server's plugin workspace when the tab mounts or the server changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [server.id]);
+  }, [reportError, server.id]);
 
   useEffect(() => {
     let cleanup = () => {};
@@ -253,15 +253,31 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
       const handler = (payload: PluginInstallProgressPayload) => {
         if (payload.serverId !== server.id) return;
         setProgress(payload);
+        if (payload.status === "failed" && payload.error) {
+          reportError(payload.error, {
+            category: "plugin",
+            userMessage: "The plugin operation failed.",
+            possibleSolution: "Retry the operation or review the plugin compatibility details.",
+            source: "renderer:plugins",
+            action: `plugin-${payload.action}`,
+          });
+        }
         if (payload.status === "completed" || payload.status === "failed" || payload.status === "cancelled") {
           window.setTimeout(() => setProgress(null), 1200);
         }
       };
       socket.on("plugin:install-progress", handler);
       cleanup = () => socket.off("plugin:install-progress", handler);
-    });
+    }).catch((error) => reportError(error, {
+      category: "network",
+      severity: "warning",
+      userMessage: "Live plugin installation updates are unavailable.",
+      possibleSolution: "Retry after the backend reconnects.",
+      source: "renderer:plugins",
+      action: "subscribe-plugin-progress",
+    }));
     return () => cleanup();
-  }, [server.id]);
+  }, [reportError, server.id]);
 
   return (
     <div className="flex flex-col gap-3">

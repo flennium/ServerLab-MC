@@ -22,6 +22,7 @@ import { Alert, Card, DangerZone, ManagementHeader } from "../components/ui/Layo
 import { ConfirmModal } from "../components/ui/ConfirmModal.js";
 import { LabelValue, Switch } from "../components/ui/Form.js";
 import { api } from "../lib/apiClient.js";
+import { reportError } from "../lib/errorStore.js";
 import {
   APP_VERSION,
   type AppErrorEvent,
@@ -63,7 +64,14 @@ export function SettingsPage() {
       window.serverlab
         .getAppVersion()
         .then(setVersion)
-        .catch(() => {});
+        .catch((error) => reportError(error, {
+          category: "electron",
+          severity: "warning",
+          userMessage: "The installed app version could not be read.",
+          possibleSolution: "Restart ServerLab MC and try again.",
+          source: "renderer:settings",
+          action: "read-app-version",
+        }));
     }
   }, []);
 
@@ -74,6 +82,14 @@ export function SettingsPage() {
         const { path } = await api.get<{ path: string }>("/api/data-path");
         await window.serverlab.openPath(path);
       }
+    } catch (error) {
+      reportError(error, {
+        category: "file",
+        userMessage: "The app data folder could not be opened.",
+        possibleSolution: "Check that the local backend is running and try again.",
+        source: "renderer:settings",
+        action: "open-data-folder",
+      });
     } finally {
       setOpeningFolder(false);
     }
@@ -108,6 +124,9 @@ export function SettingsPage() {
             <SettingsCard icon={Keyboard} title="Keyboard">
               <div className="flex flex-col gap-3">
                 <ShortcutRow keys={["Ctrl", "S"]} label="Save the open file" />
+                <ShortcutRow keys={["Ctrl", "F"]} label="Search the console" />
+                <ShortcutRow keys={["Ctrl", "Shift", "F"]} label="Search the entire server" />
+                <ShortcutRow keys={["Ctrl", "Shift", "N"]} label="Create a new file" />
                 <ShortcutRow keys={["Up", "Down"]} label="Browse console command history" />
                 <ShortcutRow keys={["Enter"]} label="Send console command" />
               </div>
@@ -156,7 +175,14 @@ function UpdatePanel() {
     const bridge = window.serverlab;
     if (!bridge?.getUpdaterSettings) return;
 
-    void bridge.getUpdaterSettings().then(setSettings).catch(() => {});
+    void bridge.getUpdaterSettings().then(setSettings).catch((error) => reportError(error, {
+      category: "update",
+      severity: "warning",
+      userMessage: "Update settings could not be loaded.",
+      possibleSolution: "Restart ServerLab MC and try again.",
+      source: "renderer:updates",
+      action: "load-update-settings",
+    }));
     const cleanups = [
       bridge.onUpdaterUpdateAvailable((info) => {
         setUpdate(info);
@@ -204,7 +230,14 @@ function UpdatePanel() {
       setStatus(result.status);
       setUpdate(result.info);
       if (result.status === "not-available") setMessage("You are running the latest stable release.");
-    } catch {
+    } catch (error) {
+      reportError(error, {
+        category: "update",
+        userMessage: "ServerLab could not check for updates.",
+        possibleSolution: "Check your connection and try again.",
+        source: "renderer:updates",
+        action: "check-for-updates",
+      });
       setStatus("error");
       setMessage("ServerLab could not check for updates. Check your connection and try again.");
     }
@@ -216,7 +249,14 @@ function UpdatePanel() {
     setStatus("downloading");
     try {
       await window.serverlab.downloadUpdate();
-    } catch {
+    } catch (error) {
+      reportError(error, {
+        category: "update",
+        userMessage: "The update download failed.",
+        possibleSolution: "Check your connection and try the download again.",
+        source: "renderer:updates",
+        action: "download-update",
+      });
       setStatus("error");
       setMessage("The update download failed. Your current version is still running.");
     }
@@ -235,7 +275,14 @@ function UpdatePanel() {
         return;
       }
       setMessage("ServerLab is restarting to finish the update.");
-    } catch {
+    } catch (error) {
+      reportError(error, {
+        category: "update",
+        userMessage: "The update could not be installed.",
+        possibleSolution: "Close running servers and try the update again.",
+        source: "renderer:updates",
+        action: "install-update",
+      });
       setStatus("error");
       setMessage("The update could not be installed. Your current version is still running.");
     }
@@ -243,17 +290,37 @@ function UpdatePanel() {
 
   async function updateSetting(key: keyof Pick<UpdateSettings, "autoCheck" | "autoDownload" | "autoInstall">, value: boolean) {
     if (!window.serverlab?.setUpdaterSettings) return;
-    const next = await window.serverlab.setUpdaterSettings({ [key]: value });
-    setSettings(next);
+    try {
+      const next = await window.serverlab.setUpdaterSettings({ [key]: value });
+      setSettings(next);
+    } catch (error) {
+      reportError(error, {
+        category: "update",
+        userMessage: "The update setting could not be saved.",
+        possibleSolution: "Try changing the setting again.",
+        source: "renderer:updates",
+        action: "save-update-setting",
+      });
+    }
   }
 
   async function skipVersion() {
     if (!update || !window.serverlab?.skipUpdate) return;
-    const next = await window.serverlab.skipUpdate(update.version);
-    setSettings(next);
-    setUpdate(null);
-    setStatus("idle");
-    setMessage(`Version ${update.version} will not be recommended again.`);
+    try {
+      const next = await window.serverlab.skipUpdate(update.version);
+      setSettings(next);
+      setUpdate(null);
+      setStatus("idle");
+      setMessage(`Version ${update.version} will not be recommended again.`);
+    } catch (error) {
+      reportError(error, {
+        category: "update",
+        userMessage: "The update could not be skipped.",
+        possibleSolution: "Try again after restarting ServerLab MC.",
+        source: "renderer:updates",
+        action: "skip-update",
+      });
+    }
   }
 
   return (
@@ -363,6 +430,7 @@ function ErrorHistoryPanel() {
   const [errors, setErrors] = useState<AppErrorEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageTone, setMessageTone] = useState<"success" | "warning">("success");
 
   async function load() {
     setLoading(true);
@@ -372,6 +440,17 @@ function ErrorHistoryPanel() {
         ? await window.serverlab.getErrorHistory()
         : await api.get<ErrorHistoryResponse>("/api/errors?limit=100&includeCleared=true");
       setErrors(data.errors);
+    } catch (error) {
+      reportError(error, {
+        category: "renderer",
+        severity: "warning",
+        userMessage: "Error history is unavailable while the local backend is offline.",
+        possibleSolution: "Restart ServerLab MC and try again.",
+        source: "renderer:error-history",
+        action: "load-error-history",
+      });
+      setMessageTone("warning");
+      setMessage("Error history is unavailable while the local backend is offline.");
     } finally {
       setLoading(false);
     }
@@ -382,36 +461,90 @@ function ErrorHistoryPanel() {
   }, []);
 
   async function clearAll() {
-    if (window.serverlab?.clearErrorHistory) {
-      await window.serverlab.clearErrorHistory();
-    } else {
-      await api.post("/api/errors/clear");
+    try {
+      if (window.serverlab?.clearErrorHistory) {
+        await window.serverlab.clearErrorHistory();
+      } else {
+        await api.post("/api/errors/clear");
+      }
+      setErrors([]);
+      setMessageTone("success");
+      setMessage("Error history cleared.");
+    } catch (error) {
+      reportError(error, {
+        category: "renderer",
+        severity: "warning",
+        userMessage: "Error history could not be cleared.",
+        possibleSolution: "Reconnect the local backend and try again.",
+        source: "renderer:error-history",
+        action: "clear-error-history",
+      });
+      setMessageTone("warning");
+      setMessage("Error history is unavailable while the local backend is offline.");
     }
-    setErrors([]);
-    setMessage("Error history cleared.");
   }
 
   async function copyError(error: AppErrorEvent) {
-    await navigator.clipboard.writeText(JSON.stringify(error, null, 2));
-    setMessage("Error details copied.");
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(error, null, 2));
+      setMessageTone("success");
+      setMessage("Error details copied.");
+    } catch (cause) {
+      reportError(cause, {
+        category: "renderer",
+        severity: "warning",
+        userMessage: "Error details could not be copied.",
+        possibleSolution: "Select the details manually and copy them.",
+        source: "renderer:error-history",
+        action: "copy-error-details",
+      });
+    }
   }
 
   async function clearOne(id: string) {
-    await api.post(`/api/errors/${id}/clear`);
-    setErrors((current) =>
-      current.map((error) =>
-        error.id === id ? { ...error, clearedAt: new Date().toISOString() } : error
-      )
-    );
-    setMessage("Error cleared.");
+    try {
+      await api.post(`/api/errors/${id}/clear`);
+      setErrors((current) =>
+        current.map((error) =>
+          error.id === id ? { ...error, clearedAt: new Date().toISOString() } : error
+        )
+      );
+      setMessageTone("success");
+      setMessage("Error cleared.");
+    } catch (error) {
+      reportError(error, {
+        category: "renderer",
+        severity: "warning",
+        userMessage: "The error could not be cleared.",
+        possibleSolution: "Reconnect the local backend and try again.",
+        source: "renderer:error-history",
+        action: "clear-error",
+      });
+      setMessageTone("warning");
+      setMessage("Error history is unavailable while the local backend is offline.");
+    }
   }
 
   async function exportLogs() {
-    const logs = window.serverlab?.exportLogs
-      ? await window.serverlab.exportLogs()
-      : await api.get("/api/logs/export");
-    await navigator.clipboard.writeText(JSON.stringify(logs, null, 2));
-    setMessage("Logs copied.");
+    try {
+      const logs = window.serverlab?.exportLogs
+        ? await window.serverlab.exportLogs()
+        : await api.get("/api/logs/export");
+      await navigator.clipboard.writeText(JSON.stringify(logs, null, 2));
+      setMessageTone("success");
+      setMessage("Logs copied.");
+    } catch (error) {
+      reportError(error, {
+        category: "renderer",
+        severity: "warning",
+        userMessage: "Logs could not be exported.",
+        possibleSolution: "Reconnect the local backend and try again.",
+        source: "renderer:error-history",
+        action: "export-logs",
+      });
+      setMessageTone("warning");
+      setMessage("Logs are unavailable while the local backend is offline.");
+    }
   }
 
   return (
@@ -436,7 +569,7 @@ function ErrorHistoryPanel() {
 
       {message && (
         <Alert
-          tone="success"
+          tone={messageTone}
           className="mb-3"
           autoDismissMs={5000}
           dismissKey={message}
@@ -538,7 +671,15 @@ function DeveloperPanel() {
       ]);
       if (nextDiagnostics) setDiagnostics(nextDiagnostics);
       setPorts(portResponse.ports);
-    } catch {
+    } catch (error) {
+      reportError(error, {
+        category: "network",
+        severity: "warning",
+        userMessage: "Diagnostics could not be loaded.",
+        possibleSolution: "Restart ServerLab MC and refresh diagnostics.",
+        source: "renderer:developer-tools",
+        action: "load-diagnostics",
+      });
       setBackendHealth("offline");
     }
   }
@@ -549,8 +690,19 @@ function DeveloperPanel() {
 
   async function copyDiagnostics() {
     if (!diagnostics) return;
-    await navigator.clipboard.writeText(JSON.stringify({ diagnostics, backendHealth, ports }, null, 2));
-    setMessage("Diagnostics copied.");
+    try {
+      await navigator.clipboard.writeText(JSON.stringify({ diagnostics, backendHealth, ports }, null, 2));
+      setMessage("Diagnostics copied.");
+    } catch (cause) {
+      reportError(cause, {
+        category: "renderer",
+        severity: "warning",
+        userMessage: "Diagnostics could not be copied.",
+        possibleSolution: "Select the diagnostics manually and copy them.",
+        source: "renderer:developer-tools",
+        action: "copy-diagnostics",
+      });
+    }
   }
 
   return (
@@ -663,7 +815,14 @@ function TemplateSystemPanel() {
     api
       .get<TemplateCapabilityResponse>("/api/templates/capabilities")
       .then(setCapabilities)
-      .catch(() => {});
+      .catch((error) => reportError(error, {
+        category: "template",
+        severity: "warning",
+        userMessage: "Future feature status could not be loaded.",
+        possibleSolution: "Refresh Settings to try again.",
+        source: "renderer:roadmap",
+        action: "load-roadmap",
+      }));
   }, []);
 
   return (
@@ -717,7 +876,13 @@ function InstallerToolsPanel() {
       const { path } = await api.get<{ path: string }>("/api/data-path");
       await window.serverlab?.openPath?.(path);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Failed to open the data folder.");
+      setError(reportError(cause, {
+        category: "file",
+        userMessage: "The app data folder could not be opened.",
+        possibleSolution: "Check the local backend and app folder permissions.",
+        source: "renderer:troubleshooting",
+        action: "open-data-folder",
+      }).userMessage);
     }
   }
 
@@ -737,7 +902,13 @@ function InstallerToolsPanel() {
       );
       setPendingAction(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The reset could not be completed.");
+      setError(reportError(cause, {
+        category: "file",
+        userMessage: "The reset could not be completed.",
+        possibleSolution: "Close active operations and try again.",
+        source: "renderer:troubleshooting",
+        action: "reset-app-data",
+      }).userMessage);
     } finally {
       setWorking(false);
     }
@@ -865,7 +1036,13 @@ function SoftwareCachePanel() {
       }
       setRuntimeUsage(usage);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Failed to load cache");
+      setError(reportError(error, {
+        category: "download",
+        userMessage: "The software cache could not be loaded.",
+        possibleSolution: "Refresh the cache or restart ServerLab MC.",
+        source: "renderer:software-cache",
+        action: "load-cache",
+      }).userMessage);
     } finally {
       setLoading(false);
     }
@@ -877,8 +1054,18 @@ function SoftwareCachePanel() {
 
   async function revealCache() {
     if (!window.serverlab?.openPath) return;
-    const { path } = await api.get<{ path: string }>("/api/software/cache/path");
-    await window.serverlab.openPath(path);
+    try {
+      const { path } = await api.get<{ path: string }>("/api/software/cache/path");
+      await window.serverlab.openPath(path);
+    } catch (error) {
+      reportError(error, {
+        category: "file",
+        userMessage: "The software cache folder could not be opened.",
+        possibleSolution: "Check the app data folder permissions and try again.",
+        source: "renderer:software-cache",
+        action: "open-software-cache",
+      });
+    }
   }
 
   async function removeArtifact(id: string) {
@@ -887,7 +1074,13 @@ function SoftwareCachePanel() {
       await api.delete(`/api/software/cache/${id}`);
       await load();
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Failed to remove artifact");
+      setError(reportError(error, {
+        category: "download",
+        userMessage: "The cached software could not be removed.",
+        possibleSolution: "Check whether a server is using it and try again.",
+        source: "renderer:software-cache",
+        action: "remove-software-cache",
+      }).userMessage);
     }
   }
 
@@ -897,13 +1090,29 @@ function SoftwareCachePanel() {
       await api.delete(`/api/java/runtimes/${id}`);
       await load();
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Failed to remove Java runtime");
+      setError(reportError(error, {
+        category: "java",
+        userMessage: "The cached Java runtime could not be removed.",
+        possibleSolution: "Reassign servers using it and try again.",
+        source: "renderer:software-cache",
+        action: "remove-java-cache",
+      }).userMessage);
     }
   }
 
   async function revealRuntime(runtime: JavaRuntime) {
     if (!window.serverlab?.openPath) return;
-    await window.serverlab.openPath(runtime.path);
+    try {
+      await window.serverlab.openPath(runtime.path);
+    } catch (error) {
+      reportError(error, {
+        category: "file",
+        userMessage: "The Java runtime folder could not be opened.",
+        possibleSolution: "Check the runtime path and app permissions.",
+        source: "renderer:software-cache",
+        action: "open-java-runtime",
+      });
+    }
   }
 
   return (

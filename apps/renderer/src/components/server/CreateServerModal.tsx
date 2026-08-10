@@ -8,6 +8,7 @@ import { Field, Select, Switch, TextInput } from "../ui/Form.js";
 import { PortField } from "./PortField.js";
 import { api } from "../../lib/apiClient.js";
 import { getSocket } from "../../lib/socket.js";
+import { reportError } from "../../lib/errorStore.js";
 import {
   isSuccessfulJobStatus,
   shouldKeepJobProgress,
@@ -153,7 +154,13 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
   );
 
   useEffect(() => {
-    loadRuntimes();
+    void loadRuntimes().catch((error) => setError(reportError(error, {
+      category: "java",
+      userMessage: "Java runtimes could not be loaded.",
+      possibleSolution: "Open Java Runtime Center and retry the scan.",
+      source: "renderer:create-server",
+      action: "load-java-runtimes",
+    }).userMessage));
     api
       .get<{ path: string }>("/api/data-path")
       .then(({ path }) => {
@@ -164,7 +171,14 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
           path: managedServerPath(root, current.name),
         }));
       })
-      .catch(() => {});
+      .catch((error) => reportError(error, {
+        category: "file",
+        severity: "warning",
+        userMessage: "The default server folder could not be detected.",
+        possibleSolution: "Choose a server folder manually before continuing.",
+        source: "renderer:create-server",
+        action: "resolve-server-folder",
+      }));
     api
       .get<SoftwareProviderListResponse>("/api/software/providers")
       .then(({ providers }) => {
@@ -172,11 +186,24 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
         const firstEnabled = providers.find((item) => item.enabled);
         if (firstEnabled) setProvider(firstEnabled.id);
       })
-      .catch((error) => setError(error instanceof Error ? error.message : "Failed to load providers"));
+      .catch((error) => setError(reportError(error, {
+        category: "download",
+        userMessage: "Server software providers could not be loaded.",
+        possibleSolution: "Check the connection and try again.",
+        source: "renderer:create-server",
+        action: "load-software-providers",
+      }).userMessage));
     api
       .get<PortSuggestionResponse>("/api/ports/suggest?start=25565")
       .then(({ port }) => set("port", port))
-      .catch(() => {});
+      .catch((error) => reportError(error, {
+        category: "network",
+        severity: "warning",
+        userMessage: "An available server port could not be suggested.",
+        possibleSolution: "Enter a port manually and check its availability.",
+        source: "renderer:create-server",
+        action: "suggest-server-port",
+      }));
   }, []);
 
   useEffect(() => {
@@ -205,7 +232,13 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
         setMinecraftVersion(first);
         setForm((current) => ({ ...current, version: first }));
       })
-      .catch((error) => setError(error instanceof Error ? error.message : "Failed to load versions"));
+      .catch((error) => setError(reportError(error, {
+        category: "download",
+        userMessage: "Minecraft versions could not be loaded.",
+        possibleSolution: "Check the provider connection and try again.",
+        source: "renderer:create-server",
+        action: "load-software-versions",
+      }).userMessage));
   }, [provider, providers]);
 
   useEffect(() => {
@@ -222,7 +255,13 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
         setOffline(offline);
         setBuildId(builds.find((build) => build.recommended)?.id ?? builds[0]?.id ?? "");
       })
-      .catch((error) => setError(error instanceof Error ? error.message : "Failed to load builds"));
+      .catch((error) => setError(reportError(error, {
+        category: "download",
+        userMessage: "Server software builds could not be loaded.",
+        possibleSolution: "Choose another version or retry the request.",
+        source: "renderer:create-server",
+        action: "load-software-builds",
+      }).userMessage));
   }, [minecraftVersion, provider, selectedProvider?.enabled]);
 
   useEffect(() => {
@@ -238,7 +277,17 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
           if (next.compatibleRuntime) set("javaPath", next.compatibleRuntime.executablePath);
         }
       })
-      .catch(() => setRecommendation(null));
+      .catch((error) => {
+        setRecommendation(null);
+        reportError(error, {
+          category: "java",
+          severity: "warning",
+          userMessage: "Java compatibility could not be checked.",
+          possibleSolution: "Select a runtime manually or retry the compatibility check.",
+          source: "renderer:create-server",
+          action: "load-java-recommendation",
+        });
+      });
   }, [minecraftVersion, provider, runtimes.length, manualJava]);
 
   useEffect(() => {
@@ -250,6 +299,15 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
         const softwareHandler = (payload: SoftwareDownloadProgressPayload) => {
           if (payload.downloadId !== activeDownloadId) return;
           setSoftwareProgress(payload);
+          if (payload.status === "failed" && payload.error) {
+            reportError(payload.error, {
+              category: "download",
+              userMessage: "Server software download failed.",
+              possibleSolution: "Retry the download or use a cached version.",
+              source: "renderer:create-server",
+              action: "download-server-software",
+            });
+          }
           if (!shouldKeepJobProgress(payload.status)) {
             setActiveDownloadId(null);
             setSoftwareProgress(null);
@@ -260,6 +318,15 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
         const javaHandler = (payload: JavaInstallProgressPayload) => {
           if (payload.installId !== activeJavaInstallId) return;
           setJavaProgress(payload);
+          if (payload.status === "failed" && payload.error) {
+            reportError(payload.error, {
+              category: "java",
+              userMessage: "Java installation failed.",
+              possibleSolution: "Retry the installation or select another runtime.",
+              source: "renderer:create-server",
+              action: "install-java",
+            });
+          }
           if (isSuccessfulJobStatus(payload.status)) {
             setActiveJavaInstallId(null);
             setJavaProgress(null);
@@ -275,7 +342,14 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
           socket.off("java:install-progress", javaHandler);
         };
       })
-      .catch(() => {});
+      .catch((error) => reportError(error, {
+        category: "network",
+        severity: "warning",
+        userMessage: "Download progress updates are unavailable.",
+        possibleSolution: "The installation can continue; retry if progress stops.",
+        source: "renderer:create-server",
+        action: "subscribe-install-progress",
+      }));
     return () => {
       disposed = true;
       cleanup?.();
@@ -328,7 +402,13 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
         set("javaPath", result.runtime.executablePath);
       }
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Failed to install Java runtime");
+      setError(reportError(error, {
+        category: "java",
+        userMessage: "Java installation failed.",
+        possibleSolution: "Retry the installation or select another runtime.",
+        source: "renderer:create-server",
+        action: "install-java",
+      }).userMessage);
       setActiveJavaInstallId(null);
     }
   }
@@ -381,7 +461,13 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
       setSoftwareProgress(null);
       onClose();
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Failed to create server");
+      setError(reportError(error, {
+        category: "server",
+        userMessage: "The server could not be created.",
+        possibleSolution: "Review the server folder, port, Java runtime, and EULA selection.",
+        source: "renderer:create-server",
+        action: "create-server",
+      }).userMessage);
       setStep(4);
     } finally {
       setLoading(false);

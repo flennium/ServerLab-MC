@@ -187,6 +187,37 @@ function backendJson<T>(
   });
 }
 
+function reportElectronProcessError(
+  reason: unknown,
+  action: string,
+  severity: AppErrorSeverity = "error"
+): void {
+  const appError = createElectronError({
+    category: "electron",
+    severity,
+    userMessage: severity === "critical"
+      ? "ServerLab MC encountered a critical application error."
+      : "A ServerLab desktop operation failed.",
+    technicalDetails: reason instanceof Error ? reason.stack ?? reason.message : String(reason),
+    possibleSolution: "Restart ServerLab MC and open diagnostics if it happens again.",
+    source: "electron:process",
+    action,
+  });
+  writeLaunchLog(`[process:error] ${appError.action} ${appError.technicalDetails ?? appError.userMessage}`);
+  void backendJson("/api/errors", {
+    method: "POST",
+    body: JSON.stringify(appError),
+  }).catch(() => {});
+}
+
+process.on("unhandledRejection", (reason) => {
+  reportElectronProcessError(reason, "unhandled-rejection");
+});
+
+process.on("uncaughtException", (reason) => {
+  reportElectronProcessError(reason, "uncaught-exception", "critical");
+});
+
 function pathInside(candidate: string, root: string): boolean {
   const resolvedCandidate = path.resolve(candidate);
   const resolvedRoot = path.resolve(root);
@@ -720,11 +751,19 @@ function startBackend(): void {
 
   backendProcess.on("error", (error) => {
     writeLaunchLog(`[backend:error] ${error.message}`);
+    reportElectronProcessError(error, "start-backend", "critical");
   });
 
   backendProcess.on("exit", (code, signal) => {
     console.log(`[backend] exited code=${code} signal=${signal}`);
     writeLaunchLog(`[backend] exited code=${code} signal=${signal}`);
+    if (code && code !== 0) {
+      reportElectronProcessError(
+        new Error(`Backend exited with code ${code}${signal ? ` (${signal})` : ""}`),
+        "backend-exit",
+        "critical"
+      );
+    }
     backendProcess = null;
   });
 }
@@ -779,7 +818,10 @@ async function runMigrations(): Promise<void> {
       console.log("[migrate:err]", d.toString().trim())
     );
     proc.on("exit", () => resolve());
-    proc.on("error", () => resolve());
+    proc.on("error", (error) => {
+      reportElectronProcessError(error, "run-migrations", "error");
+      resolve();
+    });
   });
 }
 
@@ -819,6 +861,11 @@ function createWindow(): void {
 
   mainWindow.webContents.on("did-fail-load", (_e, errorCode, errorDesc, url) => {
     console.error(`[renderer] Failed to load: ${url} - ${errorCode} ${errorDesc}`);
+    reportElectronProcessError(
+      new Error(`${errorCode}: ${errorDesc} (${url})`),
+      "load-renderer",
+      "critical"
+    );
   });
 
   mainWindow.webContents.on("console-message", (_e, level, message, line, sourceId) => {

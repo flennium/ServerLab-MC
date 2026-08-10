@@ -19,6 +19,7 @@ import { ConfirmModal } from "../ui/ConfirmModal.js";
 import { Alert } from "../ui/Layout.js";
 import { Button, IconButton } from "../ui/Button.js";
 import { TextInput } from "../ui/Form.js";
+import { reportError } from "../../lib/errorStore.js";
 import type { FileEntry, FileListResponse } from "@serverlab/shared";
 
 interface FileManagerProps {
@@ -54,7 +55,13 @@ export function FileManager({ serverId, onOpenFile }: FileManagerProps) {
         setCurrentPath(path);
         setSelected(null);
       } catch (error) {
-        setError(error instanceof Error ? error.message : "Failed to load directory");
+        setError(reportError(error, {
+          category: "file",
+          userMessage: "The server folder could not be loaded.",
+          possibleSolution: "Refresh the folder or check the server path.",
+          source: "renderer:file-manager",
+          action: "list-files",
+        }).userMessage);
       } finally {
         setLoading(false);
       }
@@ -83,7 +90,13 @@ export function FileManager({ serverId, onOpenFile }: FileManagerProps) {
       setPendingDelete(null);
       load(currentPath);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Delete failed");
+      setError(reportError(error, {
+        category: "file",
+        userMessage: "The file could not be deleted.",
+        possibleSolution: "Check permissions and try again.",
+        source: "renderer:file-manager",
+        action: "delete-file",
+      }).userMessage);
       setPendingDelete(null);
     }
   }
@@ -101,7 +114,13 @@ export function FileManager({ serverId, onOpenFile }: FileManagerProps) {
       setRenaming(null);
       load(currentPath);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Rename failed");
+      setError(reportError(error, {
+        category: "file",
+        userMessage: "The file could not be renamed.",
+        possibleSolution: "Choose a valid name that is not already in use.",
+        source: "renderer:file-manager",
+        action: "rename-file",
+      }).userMessage);
       setRenaming(null);
     }
   }
@@ -118,7 +137,13 @@ export function FileManager({ serverId, onOpenFile }: FileManagerProps) {
       setNewFolderName("");
       load(currentPath);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Create folder failed");
+      setError(reportError(error, {
+        category: "file",
+        userMessage: "The folder could not be created.",
+        possibleSolution: "Choose a valid folder name and try again.",
+        source: "renderer:file-manager",
+        action: "create-folder",
+      }).userMessage);
     }
   }
 

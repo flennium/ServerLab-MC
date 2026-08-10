@@ -2,6 +2,7 @@ import type { Server as IOServer } from "socket.io";
 import type { ServerToClientEvents, ClientToServerEvents } from "@serverlab/shared";
 import { serverManager } from "../services/ServerManager.js";
 import { logger } from "../lib/logger.js";
+import { errorService } from "../services/ErrorService.js";
 
 export function registerSocketHandlers(
   io: IOServer<ClientToServerEvents, ServerToClientEvents>
@@ -32,21 +33,47 @@ export function registerSocketHandlers(
         ack?: (result: { ok: boolean; error?: string }) => void
       ) => {
         try {
-          if (!command?.trim()) throw new Error("Command is required");
-          if (!serverManager.isRunning(serverId)) {
-            ack?.({
-              ok: false,
-              error: "Start the server before sending console commands.",
+          if (!command?.trim()) {
+            const error = errorService.createFromUnknown("Command is required", {
+              category: "server",
+              severity: "warning",
+              userMessage: "Enter a console command first.",
+              possibleSolution: "Type a command and press Enter.",
+              source: "backend:socket",
+              action: "console-command",
             });
+            void errorService.record(error);
+            ack?.({ ok: false, error });
+            return;
+          }
+          if (!serverManager.isRunning(serverId)) {
+            const error = errorService.createFromUnknown("Server is not running", {
+              category: "server",
+              severity: "warning",
+              userMessage: "Start the server before sending console commands.",
+              possibleSolution: "Start the server, then send the command again.",
+              source: "backend:socket",
+              action: "console-command",
+            });
+            void errorService.record(error);
+            ack?.({ ok: false, error });
             return;
           }
           serverManager.sendCommand(serverId, command);
           ack?.({ ok: true });
         } catch (err) {
           logger.warn({ err, serverId }, "console:command failed");
+          const error = errorService.createFromUnknown(err, {
+            category: "server",
+            userMessage: "The console command could not be sent.",
+            possibleSolution: "Check the server state and try again.",
+            source: "backend:socket",
+            action: "console-command",
+          });
+          void errorService.record(error);
           ack?.({
             ok: false,
-            error: err instanceof Error ? err.message : "Command failed",
+            error,
           });
         }
       }

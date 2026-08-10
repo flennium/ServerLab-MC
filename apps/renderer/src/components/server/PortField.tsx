@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { CheckCircle2, RefreshCw, ShieldAlert } from "lucide-react";
 import { api } from "../../lib/apiClient.js";
+import { reportError } from "../../lib/errorStore.js";
 import { Button } from "../ui/Button.js";
 import { Field, TextInput } from "../ui/Form.js";
 import type { PortCheckResponse, PortStatus } from "@serverlab/shared";
@@ -45,9 +46,17 @@ export function PortField({
           setStatus(status);
           onStatusChange?.(status);
         })
-        .catch(() => {
+        .catch((error) => {
           setStatus(null);
           onStatusChange?.(null);
+          reportError(error, {
+            category: "network",
+            severity: "warning",
+            userMessage: "Port availability could not be checked.",
+            possibleSolution: "Check the port manually or retry in a moment.",
+            source: "renderer:port-field",
+            action: "check-port",
+          });
         })
         .finally(() => setChecking(false));
     }, 350);

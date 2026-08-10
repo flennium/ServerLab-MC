@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { api } from "../lib/apiClient.js";
 import { getSocket } from "../lib/socket.js";
+import { reportError } from "../lib/errorStore.js";
 import { Alert, Card, DangerZone, ManagementHeader, StatTile } from "../components/ui/Layout.js";
 import { Button, IconButton } from "../components/ui/Button.js";
 import { ConfirmModal } from "../components/ui/ConfirmModal.js";
@@ -94,6 +95,15 @@ export function JavaManagerPage() {
         const handler = (payload: JavaInstallProgressPayload) => {
           if (payload.installId !== installingId) return;
           setProgress(payload);
+          if (payload.status === "failed" && payload.error) {
+            reportError(payload.error, {
+              category: "java",
+              userMessage: "Java installation failed.",
+              possibleSolution: "Retry the installation or choose another runtime provider.",
+              source: "renderer:java",
+              action: "install-java",
+            });
+          }
           if (payload.status === "completed") {
             setInstallingId(null);
             setMessage(getTerminalJobMessage(payload.status, `Java ${payload.major}`));
@@ -110,7 +120,16 @@ export function JavaManagerPage() {
         socket.on("java:install-progress", handler);
         cleanup = () => socket.off("java:install-progress", handler);
       })
-      .catch(() => {});
+      .catch((error) => {
+        reportError(error, {
+          category: "network",
+          severity: "warning",
+          userMessage: "Live Java installation updates are unavailable.",
+          possibleSolution: "Retry after the backend reconnects.",
+          source: "renderer:java",
+          action: "subscribe-java-progress",
+        });
+      });
     return () => cleanup?.();
   }, [installingId]);
 
@@ -132,7 +151,13 @@ export function JavaManagerPage() {
       }
       setServerUsage(usage);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Failed to load Java runtimes");
+      setError(reportError(error, {
+        category: "java",
+        userMessage: "Java runtimes could not be loaded.",
+        possibleSolution: "Rescan runtimes or restart ServerLab MC.",
+        source: "renderer:java",
+        action: "load-java-runtimes",
+      }).userMessage);
     } finally {
       setLoading(false);
     }
@@ -147,7 +172,13 @@ export function JavaManagerPage() {
       await load();
       setMessage("System Java runtimes scanned.");
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Java detection failed");
+      setError(reportError(error, {
+        category: "java",
+        userMessage: "System Java detection failed.",
+        possibleSolution: "Check Java installation permissions and try again.",
+        source: "renderer:java",
+        action: "detect-java",
+      }).userMessage);
     } finally {
       setLoading(false);
     }
@@ -197,7 +228,13 @@ export function JavaManagerPage() {
       }
       await load();
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Java installation failed");
+      setError(reportError(error, {
+        category: "java",
+        userMessage: "Java installation failed.",
+        possibleSolution: "Retry the download or choose another runtime provider.",
+        source: "renderer:java",
+        action: "install-java",
+      }).userMessage);
       setInstallingId(null);
     }
   }
@@ -216,7 +253,13 @@ export function JavaManagerPage() {
       await load();
       setMessage(`Java ${runtime.major} validated.`);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Runtime validation failed");
+      setError(reportError(error, {
+        category: "java",
+        userMessage: "The Java runtime could not be validated.",
+        possibleSolution: "Rescan or repair the runtime before using it.",
+        source: "renderer:java",
+        action: "validate-java",
+      }).userMessage);
     }
   }
 
@@ -227,7 +270,13 @@ export function JavaManagerPage() {
       await load();
       setMessage(`Java ${runtime.major} removed.`);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Runtime removal failed");
+      setError(reportError(error, {
+        category: "java",
+        userMessage: "The Java runtime could not be removed.",
+        possibleSolution: "Reassign servers using it, then try again.",
+        source: "renderer:java",
+        action: "remove-java",
+      }).userMessage);
     }
   }
 

@@ -56,7 +56,7 @@ export function ErrorProvider({ children }: { children: React.ReactNode }) {
     () => ({
       reportError(error, fallback) {
         const appError = normalizeError(error, fallback);
-        pushError(appError, { report: appError.category === "renderer" });
+        pushError(appError, { report: true });
         return appError;
       },
       dismissError,
@@ -234,7 +234,19 @@ function runRecovery(
   if (action === "copy-details") {
     navigator.clipboard
       .writeText(JSON.stringify(error, null, 2))
-      .catch(() => {});
+      .catch((cause) => {
+        pushError(
+          normalizeError(cause, {
+            category: "renderer",
+            severity: "warning",
+            userMessage: "Error details could not be copied.",
+            possibleSolution: "Copy the details manually from Error history.",
+            source: "renderer:error-actions",
+            action: "copy-error-details",
+          }),
+          { report: true }
+        );
+      });
   }
   if (action === "dismiss") dismissError(error.id);
 }

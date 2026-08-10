@@ -8,6 +8,7 @@ import { Alert, Card, EmptyState, ManagementHeader } from "../components/ui/Layo
 import { Button } from "../components/ui/Button.js";
 import { TextInput } from "../components/ui/Form.js";
 import { toHashPath } from "../lib/router.js";
+import { reportError } from "../lib/errorStore.js";
 
 export function ServersPage() {
   const { servers, fetchServers } = useServerStore();
@@ -22,7 +23,13 @@ export function ServersPage() {
     setLoading(true);
     setError(null);
     fetchServers()
-      .catch((error) => setError(error instanceof Error ? error.message : "Failed to load"))
+      .catch((error) => setError(reportError(error, {
+        category: "server",
+        userMessage: "The server inventory could not be loaded.",
+        possibleSolution: "Retry after the local backend is ready.",
+        source: "renderer:servers",
+        action: "load-servers",
+      }).userMessage))
       .finally(() => setLoading(false));
   }, [fetchServers]);
 

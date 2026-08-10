@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import clsx from "clsx";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   ArrowLeft,
@@ -17,6 +18,7 @@ import { ConfirmModal } from "../components/ui/ConfirmModal.js";
 import { Skeleton } from "../components/ui/Skeleton.js";
 import { api } from "../lib/apiClient.js";
 import { getSocket } from "../lib/socket.js";
+import { reportError } from "../lib/errorStore.js";
 import {
   Alert,
   Card,
@@ -95,7 +97,15 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
   const reduceMotion = useReducedMotion();
 
   useEffect(() => {
-    fetchServers().finally(() => setLoading(false));
+    fetchServers()
+      .catch((error) => reportError(error, {
+        category: "server",
+        userMessage: "The server details could not be loaded.",
+        possibleSolution: "Retry after the local backend is ready.",
+        source: "renderer:server-detail",
+        action: "load-server-detail",
+      }))
+      .finally(() => setLoading(false));
   }, [fetchServers]);
 
   const server = servers.find((server) => server.id === serverId);
@@ -111,7 +121,17 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
     api
       .get<PortCheckResponse>(`/api/ports/check?${query.toString()}`)
       .then(({ status }) => setDetailPortStatus(status))
-      .catch(() => setDetailPortStatus(null));
+      .catch((error) => {
+        setDetailPortStatus(null);
+        reportError(error, {
+          category: "network",
+          severity: "warning",
+          userMessage: "Port status could not be checked.",
+          possibleSolution: "Refresh the server page to check it again.",
+          source: "renderer:server-detail",
+          action: "check-server-port",
+        });
+      });
   }, [currentServerId, currentServerPort]);
 
   useEffect(() => {
@@ -120,6 +140,15 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
     getSocket().then((socket) => {
       const handler = (payload: ServerDeleteProgressPayload) => {
         if (payload.serverId !== serverId) return;
+        if (payload.status === "failed") {
+          reportError(payload.error ?? payload.message, {
+            category: "server",
+            userMessage: "Server deletion failed.",
+            possibleSolution: "Review the server files and try deleting again.",
+            source: "renderer:server-detail",
+            action: "delete-server",
+          });
+        }
         setDeleteState({
           running: payload.status === "running",
           percent: payload.percent,
@@ -129,7 +158,14 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
       };
       socket.on("server:delete-progress", handler);
       cleanup = () => socket.off("server:delete-progress", handler);
-    });
+    }).catch((error) => reportError(error, {
+      category: "network",
+      severity: "warning",
+      userMessage: "Live server deletion progress is unavailable.",
+      possibleSolution: "Retry after the backend reconnects.",
+      source: "renderer:server-detail",
+      action: "subscribe-delete-progress",
+    }));
 
     return () => cleanup();
   }, [serverId]);
@@ -181,11 +217,18 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
       await deleteServer(serverId);
       navigate("/servers");
     } catch (error) {
+      const appError = reportError(error, {
+        category: "server",
+        userMessage: "The server could not be deleted.",
+        possibleSolution: "Stop the server and try deletion again.",
+        source: "renderer:server-detail",
+        action: "delete-server",
+      });
       setDeleteState({
         running: false,
         percent: 0,
-        message: error instanceof Error ? error.message : "Delete failed",
-        error: error instanceof Error ? error.message : "Delete failed",
+        message: appError.userMessage,
+        error: appError.userMessage,
       });
     }
   }
@@ -264,17 +307,31 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
           />
       </ActionBar>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+      <div
+        className={clsx(
+          "min-h-0 flex-1 overscroll-contain pr-1",
+          tab === "console" ? "overflow-hidden" : "overflow-y-auto"
+        )}
+      >
         <AnimatePresence mode="wait">
           <motion.div
             key={tab}
-            className="relative z-0 min-h-full"
+            className={clsx(
+              "relative z-0",
+              tab === "console" ? "h-full min-h-0" : "min-h-full"
+            )}
             initial={reduceMotion ? false : { opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={reduceMotion ? undefined : { opacity: 0, y: -6 }}
             transition={{ duration: reduceMotion ? 0 : 0.15 }}
           >
-            <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+            <Suspense
+              fallback={
+                <Skeleton
+                  className={tab === "console" ? "h-full min-h-0 w-full" : "h-64 w-full"}
+                />
+              }
+            >
               {tab === "console" && (
                 <Console serverId={server.id} serverStatus={server.status} />
               )}
@@ -417,7 +474,13 @@ function ServerSettings({
         setRecommendation(recommendationResponse);
       })
       .catch((error) =>
-        setError(error instanceof Error ? error.message : "Failed to load Java runtimes")
+        setError(reportError(error, {
+          category: "java",
+          userMessage: "Java runtimes could not be loaded.",
+          possibleSolution: "Open Java Runtime Center and retry the scan.",
+          source: "renderer:server-settings",
+          action: "load-java-runtimes",
+        }).userMessage)
       )
       .finally(() => setRuntimeLoading(false));
   }, [server.software, server.version]);
@@ -461,7 +524,13 @@ function ServerSettings({
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Save failed");
+      setError(reportError(error, {
+        category: "server",
+        userMessage: "Server settings could not be saved.",
+        possibleSolution: "Review the port and Java runtime, then try again.",
+        source: "renderer:server-settings",
+        action: "save-server-settings",
+      }).userMessage);
     } finally {
       setSaving(false);
     }

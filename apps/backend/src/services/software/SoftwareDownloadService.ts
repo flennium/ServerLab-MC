@@ -6,6 +6,7 @@ import path from "path";
 import crypto from "crypto";
 import { prisma } from "../../lib/prisma.js";
 import { logger } from "../../lib/logger.js";
+import { errorService } from "../ErrorService.js";
 import { softwareCacheService } from "./SoftwareCacheService.js";
 import { assertAllowedHttpsUrl, softwareProviderRegistry } from "./providers.js";
 import { getSoftwareSocketServer } from "./softwareEvents.js";
@@ -173,6 +174,16 @@ export class SoftwareDownloadService {
     } catch (error) {
       await fsp.rm(tmpPath, { force: true }).catch(() => {});
       const message = error instanceof Error ? error.message : "Download failed";
+      if (!this.active.get(downloadId)?.cancelled) {
+        void errorService.record(errorService.createFromUnknown(error, {
+          category: "download",
+          severity: "error",
+          userMessage: "Server software download failed.",
+          possibleSolution: "Retry the download or use a cached artifact.",
+          source: "backend:software-download",
+          action: "download-server-software",
+        }));
+      }
       const failed = await this.updateDownload(downloadId, {
         status: this.active.get(downloadId)?.cancelled ? "cancelled" : "failed",
         stage: this.active.get(downloadId)?.cancelled ? "cancelled" : "failed",

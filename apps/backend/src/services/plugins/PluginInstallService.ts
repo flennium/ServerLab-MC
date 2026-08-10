@@ -6,6 +6,7 @@ import path from "path";
 import crypto from "crypto";
 import { prisma } from "../../lib/prisma.js";
 import { logger } from "../../lib/logger.js";
+import { errorService } from "../ErrorService.js";
 import { HttpError } from "../../middleware/error.js";
 import { modrinthClient } from "./ModrinthClient.js";
 import { pluginCompatibilityService } from "./PluginCompatibilityService.js";
@@ -233,6 +234,16 @@ export class PluginInstallService {
       await fsp.rm(path.join(server.path, "plugins", ".staging", `${jobId}.jar.tmp`), { force: true }).catch(() => {});
       const active = this.active.get(jobId);
       const message = error instanceof Error ? error.message : "Plugin install failed";
+      if (!active?.cancelled) {
+        void errorService.record(errorService.createFromUnknown(error, {
+          category: "plugin",
+          severity: "error",
+          userMessage: "The plugin operation failed.",
+          possibleSolution: "Retry the operation or review compatibility and file permissions.",
+          source: "backend:plugin-install",
+          action: `plugin-${input.action}`,
+        }));
+      }
       const failed = await this.updateJob(jobId, {
         status: active?.cancelled ? "cancelled" : "failed",
         stage: active?.cancelled ? "cancelled" : "failed",

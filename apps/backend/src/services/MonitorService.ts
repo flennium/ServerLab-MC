@@ -1,6 +1,7 @@
 import si from "systeminformation";
 import { io } from "../index.js";
 import { logger } from "../lib/logger.js";
+import { errorService } from "./ErrorService.js";
 import type { ServerStatsPayload } from "@serverlab/shared";
 
 const POLL_INTERVAL_MS = 2000;
@@ -55,6 +56,15 @@ export function startMonitor() {
       }
     } catch (err) {
       logger.warn({ err }, "MonitorService poll error");
+      const error = errorService.createFromUnknown(err, {
+        category: "server",
+        severity: "warning",
+        userMessage: "Live server metrics are temporarily unavailable.",
+        possibleSolution: "Refresh the Monitor tab or restart the server.",
+        source: "backend:monitor",
+        action: "poll-server-metrics",
+      });
+      void errorService.record(error);
     }
   }, POLL_INTERVAL_MS);
 

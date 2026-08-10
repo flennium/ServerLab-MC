@@ -123,9 +123,19 @@ function notify(): void {
 export function pushError(error: AppError, options: { report?: boolean } = {}): void {
   errors = [error, ...errors.filter((item) => item.id !== error.id)].slice(0, 20);
   notify();
-  if (options.report && window.serverlab?.reportRendererError) {
+  if (options.report && typeof window !== "undefined" && window.serverlab?.reportRendererError) {
     window.serverlab.reportRendererError(error).catch(() => {});
   }
+}
+
+/** Normalize, publish, and persist a feature error while keeping local UI state available. */
+export function reportError(
+  value: unknown,
+  fallback: Partial<AppErrorCreateInput> = {}
+): AppError {
+  const appError = normalizeError(value, fallback);
+  pushError(appError, { report: true });
+  return appError;
 }
 
 export function dismissError(id: string): void {

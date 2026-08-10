@@ -14,6 +14,7 @@ import { javaRuntimeRegistry } from "./java/JavaRuntimeRegistry.js";
 import { javaRuntimeValidator } from "./java/JavaRuntimeValidator.js";
 import { javaRecommendationService } from "./java/JavaRecommendationService.js";
 import { HttpError } from "../middleware/error.js";
+import { errorService } from "./ErrorService.js";
 import type { ServerDeleteProgressPayload, ServerStatus } from "@serverlab/shared";
 
 interface RunningServer {
@@ -267,6 +268,16 @@ class ServerManager {
         .filter(Boolean)
         .forEach((line) => {
           if (PORT_BIND_ERROR_REGEX.test(line)) {
+            const appError = errorService.createFromUnknown(line, {
+              category: "network",
+              severity: "error",
+              userMessage: `Port ${server.port} is already in use.`,
+              possibleSolution: "Choose another server port or close the process using it.",
+              source: "backend:server-process",
+              action: "start-server",
+              recoveries: ["retry", "open-settings", "copy-details", "dismiss"],
+            });
+            void errorService.record(appError);
             io.emit("console:output", {
               serverId,
               line: `ServerLab detected a port conflict on ${server.port}. Choose another port in Settings or close the process using it.`,
@@ -292,6 +303,16 @@ class ServerManager {
 
     proc.on("error", async (err) => {
       logger.error({ err, serverId }, "Process error");
+      const appError = errorService.createFromUnknown(err, {
+        category: "server",
+        severity: "error",
+        userMessage: "The Minecraft server process failed.",
+        possibleSolution: "Review the console output and verify Java, files, and the configured port.",
+        source: "backend:server-process",
+        action: "start-server",
+        recoveries: ["retry", "open-logs", "copy-details", "dismiss"],
+      });
+      void errorService.record(appError);
       if (proc.pid) untrackPid(proc.pid);
       this.running.delete(serverId);
       portManagerService.releasePort({ ownerType: "server", ownerId: serverId });

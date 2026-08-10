@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { getSocket } from "../../lib/socket.js";
 import { api } from "../../lib/apiClient.js";
+import { reportError } from "../../lib/errorStore.js";
 import { formatConsoleLine } from "../../lib/consoleFormat.js";
 import { useConsoleStore } from "../../store/consoleStore.js";
 import { Button, IconButton } from "../ui/Button.js";
@@ -142,7 +143,7 @@ export function Console({ serverId, serverStatus }: ConsoleProps) {
         socket.emit("console:command", { serverId, command }, (result) => {
           window.clearTimeout(timeout);
           if (!result.ok) {
-            reject(new Error(result.error ?? "Command failed"));
+            reject(new Error(result.error?.userMessage ?? "Command failed"));
             return;
           }
           resolve();
@@ -152,13 +153,13 @@ export function Console({ serverId, serverStatus }: ConsoleProps) {
       try {
         await api.post(`/api/servers/${serverId}/command`, { command });
       } catch (fallbackError) {
-        setCommandError(
-          fallbackError instanceof Error
-            ? fallbackError.message
-            : error instanceof Error
-              ? error.message
-              : "Command failed"
-        );
+        setCommandError(reportError(fallbackError, {
+          category: "server",
+          userMessage: "The console command could not be sent.",
+          possibleSolution: "Start the server and try the command again.",
+          source: "renderer:console",
+          action: "send-console-command",
+        }).userMessage);
       }
     } finally {
       setSending(false);
@@ -211,7 +212,7 @@ export function Console({ serverId, serverStatus }: ConsoleProps) {
         : "-";
 
   return (
-    <div className="flex h-[min(52vh,500px)] min-h-[300px] flex-col overflow-hidden rounded-lg border border-border bg-surface-console shadow-2xl">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-surface-console shadow-2xl">
       <div className="border-b border-border bg-carbon">
         <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5">
           <div className="flex min-w-0 items-center gap-2">
