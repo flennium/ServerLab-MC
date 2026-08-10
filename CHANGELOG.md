@@ -1,5 +1,24 @@
 # Changelog
 
+## 3.0.4
+
+### Fixed
+
+- Fixed stable updater release assets so the installer filename in `latest.yml` matches the published GitHub asset.
+- Repeated update checks during the short request cooldown now return a normal recent-check state instead of a misleading connection error.
+- Cleared stale update cards when a check confirms that no newer stable release is available.
+- Made stopping an already-exited server idempotent so shutdown and update flows do not report a false server error.
+- Prevented duplicate server names, ignoring case and surrounding whitespace.
+
+### Added
+
+- Displayed server creation dates in the server list and server detail header.
+- Made updater release notes include clickable GitHub release and full changelog links.
+
+### Changed
+
+- Bumped app and workspace versions to `3.0.4`.
+
 ## 3.0.3
 
 ### Fixed

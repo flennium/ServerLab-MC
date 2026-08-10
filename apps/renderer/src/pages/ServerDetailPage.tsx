@@ -251,8 +251,9 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
             />
           </div>
 
-          <div className="rounded-lg border border-border bg-carbon/60 px-3 py-2">
-            <p className="truncate font-mono text-xs text-muted">{server.path}</p>
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-carbon/60 px-3 py-2">
+            <p className="min-w-0 truncate font-mono text-xs text-muted">{server.path}</p>
+            <span className="shrink-0 text-xs text-muted">Created {formatServerDate(server.createdAt)}</span>
           </div>
 
           <Tabs
@@ -673,4 +674,11 @@ function ServerSettings({
       </div>
     </Card>
   );
+}
+
+function formatServerDate(value: Date | string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "Unknown"
+    : date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }

@@ -2,6 +2,7 @@
 module.exports = {
   appId: "dev.serverlab.mc",
   productName: "ServerLab MC",
+  artifactName: "ServerLab-MC-Setup-${version}.${ext}",
   copyright: "Copyright (c) 2026 ServerLab MC",
 
   // Stage dir is a clean folder containing only main.js, preload.js, package.json
