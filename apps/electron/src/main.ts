@@ -196,6 +196,8 @@ function pathInside(candidate: string, root: string): boolean {
 
 function allowedOpenRoots(): string[] {
   const roots = [getDataDir()];
+  roots.push(isDev ? getDevRoot() : path.dirname(process.execPath));
+  roots.push(process.resourcesPath);
   const programFiles = [
     process.env.ProgramFiles,
     process.env["ProgramFiles(x86)"],
@@ -208,6 +210,50 @@ function allowedOpenRoots(): string[] {
   }
 
   return roots;
+}
+
+type ResetDataOptions = {
+  settings?: boolean;
+  cache?: boolean;
+  temporary?: boolean;
+  logs?: boolean;
+};
+
+function resetDataDirectories(input: ResetDataOptions): string[] {
+  const dataDir = getDataDir();
+  const removed: string[] = [];
+  const targets: Array<[keyof ResetDataOptions, string[]]> = [
+    ["settings", ["settings"]],
+    ["cache", ["software-cache", "java-runtimes"]],
+    ["logs", ["logs"]],
+  ];
+
+  for (const [option, directories] of targets) {
+    if (!input[option]) continue;
+    for (const directory of directories) {
+      const target = path.join(dataDir, directory);
+      if (!pathInside(target, dataDir) || target === dataDir) {
+        throw new Error(`Refusing to reset unsafe data path: ${target}`);
+      }
+      fs.rmSync(target, { recursive: true, force: true });
+      fs.mkdirSync(target, { recursive: true });
+      removed.push(directory);
+    }
+  }
+
+  if (input.temporary) {
+    for (const directory of ["software-cache/tmp", "java-runtimes/tmp"]) {
+      const target = path.join(dataDir, directory);
+      if (!pathInside(target, dataDir)) {
+        throw new Error(`Refusing to reset unsafe temporary path: ${target}`);
+      }
+      fs.rmSync(target, { recursive: true, force: true });
+      fs.mkdirSync(target, { recursive: true });
+      removed.push(directory);
+    }
+  }
+
+  return removed;
 }
 
 function getPrismaQueryEnginePath(): string {
@@ -790,6 +836,28 @@ safeIpcHandler("app:diagnostics", () => ({
   backendOrigin: `http://127.0.0.1:${backendPort}`,
   dataDir: getDataDir(),
 }));
+
+safeIpcHandler("app:openInstallDirectory", async () => {
+  const installDirectory = isDev ? getDevRoot() : path.dirname(process.execPath);
+  const error = await shell.openPath(installDirectory);
+  if (error) throw new Error(error);
+});
+
+safeIpcHandler("app:resetData", (input: ResetDataOptions) => {
+  if (!input || typeof input !== "object") {
+    throw new Error("Invalid reset options.");
+  }
+
+  for (const key of ["settings", "cache", "temporary", "logs"] as const) {
+    if (key in input && typeof input[key] !== "boolean") {
+      throw new Error(`Invalid reset option: ${key}.`);
+    }
+  }
+
+  const removed = resetDataDirectories(input);
+  writeLaunchLog(`[data] reset directories=${removed.join(",") || "none"}`);
+  return { removed };
+});
 
 safeIpcHandler("errors:report", async (error) =>
   backendJson("/api/errors", {
