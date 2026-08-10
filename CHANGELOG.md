@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.0.5
+
+### Added
+
+- Added explicit uninstall choices for settings, caches, logs, templates, Minecraft servers, and backups.
+- Added destructive-action confirmations for server and backup removal.
+- Added uninstall audit entries describing each data category kept or removed.
+
+### Fixed
+
+- Updates now preserve all user data without showing uninstall cleanup prompts.
+
+### Changed
+
+- Bumped app and workspace versions to `3.0.5`.
+
 ## 3.0.4
 
 ### Fixed
