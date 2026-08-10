@@ -17,12 +17,12 @@ Create, run, monitor, back up, and maintain local Minecraft servers from one pol
 
 ServerLab MC is an Electron desktop app backed by a local Node.js service and a React renderer. It is built for people who run Minecraft servers locally and want a focused interface for server creation, Java runtime management, console access, files, backups, monitoring, and cached server software downloads.
 
-Current release: `3.0.0`
+Current release: `3.0.1`
 
 ## Highlights
 
 - Create Minecraft servers with framework, version, build, RAM, port, and EULA handling.
-- Download Paper, Purpur, and Fabric server software with real byte-based progress.
+- Download Paper, Purpur, Folia, and Fabric server software with real byte-based progress.
 - Reuse cached server software while keeping every server folder independent.
 - Detect, install, validate, and assign Java runtimes per server.
 - Start, stop, restart, and monitor local server processes.
@@ -34,12 +34,20 @@ Current release: `3.0.0`
 
 ServerLab MC can resolve, download, cache, and install server software during server creation.
 
-| Provider | Status        | Notes                                            |
-| -------- | ------------- | ------------------------------------------------ |
-| Paper    | Supported     | Uses PaperMC provider metadata.                  |
-| Purpur   | Supported     | Uses Purpur provider metadata.                   |
-| Fabric   | Supported     | Uses Fabric Meta server launcher artifacts.      |
-| Spigot   | Not available | Reserved for a future legal BuildTools workflow. |
+| Software | Type | Status | Notes |
+| -------- | ---- | ------ | ----- |
+| Paper | Server | Supported | High-performance Bukkit-compatible server using PaperMC metadata for builds and downloads. |
+| Purpur | Server | Supported | Paper fork with additional gameplay and configuration features using Purpur metadata. |
+| Folia | Server | Supported | Regionized-multithreading Paper fork using PaperMC metadata. |
+| Fabric | Server | Supported | Lightweight mod-loader server using Fabric Meta launcher artifacts. |
+| Vanilla | Server | Planned | Official Mojang distribution with version manifest support. |
+| Spigot | Server | Planned | Requires a local BuildTools compilation workflow due to distribution restrictions. |
+| Forge | Server | Planned | Modded server platform requiring installer-based setup. |
+| NeoForge | Server | Planned | Modern Forge ecosystem with installer-based setup. |
+| Quilt | Server | Planned | Fabric-compatible mod loader using Quilt Meta services. |
+| Velocity | Proxy | Planned | Modern high-performance PaperMC proxy for multi-server networks. |
+| Waterfall | Proxy | Planned | BungeeCord-compatible proxy maintained by PaperMC. |
+| BungeeCord | Proxy | Planned | Legacy proxy solution for connecting multiple servers. |
 
 Cached server software is stored in the app data directory. When a server is created, ServerLab copies the cached artifact into that server folder as `server.jar`, so existing servers never depend on the cache.
 
@@ -168,18 +176,29 @@ Before publishing a release:
 5. Run `npm run package`.
 6. Smoke test a fresh install and an upgrade from existing data.
 7. Test server creation, cached software reuse, Java runtime selection, server start/stop, file editing, backups, and settings.
-8. Update release notes, create a version tag, and let GitHub Actions publish the release.
+8. Verify the updater metadata and stable-channel behavior in the packaged build.
+9. Update release notes, create a version tag, and let GitHub Actions publish the release.
+
+Use `npm run version:stable` to update the root and workspace package metadata before tagging a stable release.
+
+## Auto Updates
+
+Packaged ServerLab MC builds use `electron-updater` with the GitHub stable release feed. The Updates panel in Settings lets you check manually, control automatic checks, downloads and installation, view release notes and progress, and skip a non-mandatory version.
+
+Beta and alpha releases are never recommended by the stable updater. Installing an update is blocked while managed Minecraft servers are running; you can stop them gracefully from the update panel before continuing.
+
+Updater diagnostics are stored locally at `%APPDATA%\\ServerLab MC\\logs\\updater.log`. Update binaries are verified through `latest.yml`; `update-meta.json` contains release policy metadata only.
 
 ## Automated Releases
 
 GitHub Actions builds and publishes Windows releases from version tags.
 
 ```powershell
-git tag v3.0.0
-git push origin v3.0.0
+git tag v3.0.1
+git push origin v3.0.1
 ```
 
-The `Build and Publish Release` workflow runs `npm ci`, lint, CI-safe tests, and the Windows installer build. It uploads the installer, blockmap, and `latest.yml` to the GitHub Releases page.
+The `Build and Publish Release` workflow runs `npm ci`, lint, CI-safe tests, and the Windows installer build. It uploads the installer, blockmap, `latest.yml`, and `update-meta.json` to the GitHub Releases page.
 
 Release history is tracked in [CHANGELOG.md](CHANGELOG.md).
 

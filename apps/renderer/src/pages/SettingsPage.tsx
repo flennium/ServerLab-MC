@@ -8,6 +8,7 @@ import {
   Coffee,
   Copy,
   Database,
+  Download,
   FolderOpen,
   Info,
   Keyboard,
@@ -18,7 +19,7 @@ import {
 import { Button } from "../components/ui/Button.js";
 import { Alert, Card, DangerZone, ManagementHeader } from "../components/ui/Layout.js";
 import { ConfirmModal } from "../components/ui/ConfirmModal.js";
-import { LabelValue } from "../components/ui/Form.js";
+import { LabelValue, Switch } from "../components/ui/Form.js";
 import { api } from "../lib/apiClient.js";
 import {
   APP_VERSION,
@@ -32,6 +33,10 @@ import {
   type SoftwareArtifact,
   type SoftwareArtifactListResponse,
   type TemplateCapabilityResponse,
+  type AppUpdateInfo,
+  type UpdateProgress,
+  type UpdateSettings,
+  type UpdateStatus,
 } from "@serverlab/shared";
 
 function getPlatformLabel(): string {
@@ -106,6 +111,7 @@ export function SettingsPage() {
                 <ShortcutRow keys={["Enter"]} label="Send console command" />
               </div>
             </SettingsCard>
+            <UpdatePanel />
           </div>
         </section>
 
@@ -125,6 +131,199 @@ export function SettingsPage() {
         <DeveloperPanel />
       </div>
     </div>
+  );
+}
+
+const DEFAULT_UPDATE_SETTINGS: UpdateSettings = {
+  autoCheck: true,
+  autoDownload: false,
+  autoInstall: false,
+  skippedVersion: null,
+  lastCheckedAt: null,
+};
+
+function UpdatePanel() {
+  const [settings, setSettings] = useState<UpdateSettings>(DEFAULT_UPDATE_SETTINGS);
+  const [status, setStatus] = useState<UpdateStatus>("idle");
+  const [update, setUpdate] = useState<AppUpdateInfo | null>(null);
+  const [progress, setProgress] = useState<UpdateProgress | null>(null);
+  const [runningServers, setRunningServers] = useState<string[]>([]);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const bridge = window.serverlab;
+    if (!bridge?.getUpdaterSettings) return;
+
+    void bridge.getUpdaterSettings().then(setSettings).catch(() => {});
+    const cleanups = [
+      bridge.onUpdaterUpdateAvailable((info) => {
+        setUpdate(info);
+        setStatus("available");
+        setRunningServers([]);
+      }),
+      bridge.onUpdaterProgress((nextProgress) => {
+        setProgress(nextProgress);
+        setStatus("downloading");
+      }),
+      bridge.onUpdaterDownloaded((info) => {
+        setUpdate(info);
+        setProgress(null);
+        setStatus("downloaded");
+      }),
+      bridge.onUpdaterError((error) => {
+        setProgress(null);
+        setStatus("error");
+        setMessage(error.message);
+      }),
+      bridge.onUpdaterInstallBlocked((result) => {
+        setStatus("downloaded");
+        setRunningServers(result.runningServers?.map((server) => server.name) ?? []);
+      }),
+    ];
+    return () => cleanups.forEach((cleanup) => cleanup());
+  }, []);
+
+  async function checkForUpdates() {
+    const bridge = window.serverlab;
+    if (!bridge?.checkForUpdates) {
+      setMessage("Update checks are available in the packaged app.");
+      return;
+    }
+    setMessage(null);
+    setStatus("checking");
+    try {
+      const result = await bridge.checkForUpdates();
+      setStatus(result.status);
+      if (result.info) setUpdate(result.info);
+      if (result.status === "not-available") setMessage("You are running the latest stable release.");
+    } catch {
+      setStatus("error");
+      setMessage("ServerLab could not check for updates. Check your connection and try again.");
+    }
+  }
+
+  async function downloadUpdate() {
+    if (!window.serverlab?.downloadUpdate) return;
+    setMessage(null);
+    setStatus("downloading");
+    try {
+      await window.serverlab.downloadUpdate();
+    } catch {
+      setStatus("error");
+      setMessage("The update download failed. Your current version is still running.");
+    }
+  }
+
+  async function installUpdate(stopServers: boolean) {
+    const action = stopServers
+      ? window.serverlab?.stopAndInstallUpdate
+      : window.serverlab?.installUpdate;
+    if (!action) return;
+    setMessage(null);
+    try {
+      const result = await action();
+      if (result.status === "blocked") {
+        setRunningServers(result.runningServers?.map((server) => server.name) ?? []);
+        return;
+      }
+      setMessage("ServerLab is restarting to finish the update.");
+    } catch {
+      setStatus("error");
+      setMessage("The update could not be installed. Your current version is still running.");
+    }
+  }
+
+  async function updateSetting(key: keyof Pick<UpdateSettings, "autoCheck" | "autoDownload" | "autoInstall">, value: boolean) {
+    if (!window.serverlab?.setUpdaterSettings) return;
+    const next = await window.serverlab.setUpdaterSettings({ [key]: value });
+    setSettings(next);
+  }
+
+  async function skipVersion() {
+    if (!update || !window.serverlab?.skipUpdate) return;
+    const next = await window.serverlab.skipUpdate(update.version);
+    setSettings(next);
+    setUpdate(null);
+    setStatus("idle");
+    setMessage(`Version ${update.version} will not be recommended again.`);
+  }
+
+  return (
+    <SettingsCard icon={Download} title="Updates">
+      <div className="flex flex-col gap-4">
+        <div className="grid gap-2 text-sm">
+          <LabelValue label="Current version" value={`v${APP_VERSION}`} />
+          <LabelValue label="Channel" value="Stable" />
+          <LabelValue label="Last checked" value={formatDate(settings.lastCheckedAt)} />
+        </div>
+
+        <div className="grid gap-3 rounded border border-border bg-rail px-3 py-3">
+          <Switch label="Automatically check for updates" checked={settings.autoCheck} onChange={(value) => void updateSetting("autoCheck", value)} />
+          <Switch label="Download updates automatically" checked={settings.autoDownload} onChange={(value) => void updateSetting("autoDownload", value)} />
+          <Switch label="Install updates automatically" checked={settings.autoInstall} onChange={(value) => void updateSetting("autoInstall", value)} />
+        </div>
+
+        {message && (
+          <Alert tone={status === "error" ? "danger" : "info"} autoDismissMs={7000} dismissKey={message} onDismiss={() => setMessage(null)}>
+            {message}
+          </Alert>
+        )}
+
+        {update && settings.skippedVersion !== update.version && (
+          <div className="rounded border border-copper/50 bg-copper/10 px-3 py-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold text-white">Stable update available: v{update.version}</p>
+                <p className="mt-1 text-xs text-muted">
+                  {update.downloadSize ? `${formatBytes(update.downloadSize)} download` : "Download size unavailable"}
+                </p>
+              </div>
+              <span className="rounded border border-copper/50 px-2 py-1 text-xs uppercase text-copper">
+                {update.mandatory ? "Required" : "Stable only"}
+              </span>
+            </div>
+            {update.releaseNotes && (
+              <pre className="mt-3 max-h-28 overflow-auto whitespace-pre-wrap border-t border-border pt-3 text-xs leading-5 text-muted">
+                {update.releaseNotes}
+              </pre>
+            )}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {status === "available" && <Button onClick={downloadUpdate} icon={Download} variant="primary" size="sm">Download update</Button>}
+              {status === "downloaded" && <Button onClick={() => void installUpdate(false)} variant="primary" size="sm">Restart and install</Button>}
+              {!update.mandatory && <Button onClick={skipVersion} variant="quiet" size="sm">Skip version</Button>}
+            </div>
+          </div>
+        )}
+
+        {progress && (
+          <div className="rounded border border-border bg-rail px-3 py-3">
+            <div className="mb-2 flex justify-between gap-3 text-xs text-muted">
+              <span>Downloading stable update</span>
+              <span>{progress.percent.toFixed(0)}%</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded bg-surface-console">
+              <div className="h-full bg-copper transition-[width]" style={{ width: `${Math.min(100, Math.max(0, progress.percent))}%` }} />
+            </div>
+            <p className="mt-2 text-xs text-muted">
+              {formatBytes(progress.transferred)} / {formatBytes(progress.total)} at {formatBytes(progress.bytesPerSecond)}/s
+            </p>
+          </div>
+        )}
+
+        {runningServers.length > 0 && (
+          <div className="rounded border border-glowstone/50 bg-glowstone/10 px-3 py-3 text-sm">
+            <p className="font-semibold text-white">Servers must stop before installing</p>
+            <p className="mt-1 text-xs text-muted">Running: {runningServers.join(", ")}</p>
+            <Button onClick={() => void installUpdate(true)} className="mt-3" variant="primary" size="sm">Stop servers and install</Button>
+          </div>
+        )}
+
+        <Button onClick={() => void checkForUpdates()} disabled={status === "checking"} icon={RefreshCw} variant="secondary" size="sm">
+          {status === "checking" ? "Checking..." : "Check for updates"}
+        </Button>
+        <p className="text-xs leading-5 text-muted">Only published stable releases are recommended. Beta and alpha releases are ignored.</p>
+      </div>
+    </SettingsCard>
   );
 }
 

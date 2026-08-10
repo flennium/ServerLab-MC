@@ -6,7 +6,18 @@ import { createServer } from "net";
 import http from "http";
 import { autoUpdater } from "electron-updater";
 import crypto from "crypto";
-import type { AppError, AppErrorCategory, AppErrorSeverity } from "@serverlab/shared";
+import type {
+  AppError,
+  AppErrorCategory,
+  AppErrorSeverity,
+  AppUpdateInfo,
+  UpdateCheckResult,
+  UpdateErrorPayload,
+  UpdateInstallResult,
+  UpdateProgress,
+  UpdateSettings,
+} from "@serverlab/shared";
+import type { ProgressInfo, UpdateInfo as ElectronUpdateInfo } from "electron-updater";
 
 const BACKEND_TOKEN = crypto.randomBytes(32).toString("hex");
 const DEFAULT_BACKEND_PORT = 3001;
@@ -14,6 +25,16 @@ const DEFAULT_BACKEND_PORT = 3001;
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcess | null = null;
 let backendPort = DEFAULT_BACKEND_PORT;
+let updateSettings: UpdateSettings = {
+  autoCheck: true,
+  autoDownload: false,
+  autoInstall: false,
+  skippedVersion: null,
+  lastCheckedAt: null,
+};
+let lastUpdateCheckAt = 0;
+let latestUpdate: AppUpdateInfo | null = null;
+let updateTimer: NodeJS.Timeout | null = null;
 
 const isDev = !app.isPackaged;
 const allowMultipleInstances = isDev && process.env.SERVERLAB_ALLOW_MULTI_INSTANCE === "1";
@@ -234,6 +255,274 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function updaterSettingsPath(): string {
+  return path.join(getDataDir(), "settings", "updater.json");
+}
+
+function writeUpdaterLog(event: string, details: Record<string, unknown> = {}): void {
+  try {
+    const logDir = path.join(getDataDir(), "logs");
+    fs.mkdirSync(logDir, { recursive: true });
+    const logPath = path.join(logDir, "updater.log");
+    if (fs.existsSync(logPath) && fs.statSync(logPath).size > 5 * 1024 * 1024) {
+      for (let index = 2; index >= 1; index -= 1) {
+        const source = index === 1 ? logPath : `${logPath}.${index - 1}`;
+        const target = `${logPath}.${index}`;
+        if (fs.existsSync(source)) fs.renameSync(source, target);
+      }
+    }
+    fs.appendFileSync(
+      logPath,
+      `${JSON.stringify({ timestamp: new Date().toISOString(), event, ...details })}\n`,
+      "utf8"
+    );
+  } catch {
+    // Update diagnostics must never prevent the app from running.
+  }
+}
+
+function loadUpdaterSettings(): void {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(updaterSettingsPath(), "utf8")) as Partial<UpdateSettings>;
+    updateSettings = {
+      ...updateSettings,
+      autoCheck: parsed.autoCheck !== false,
+      autoDownload: parsed.autoDownload === true,
+      autoInstall: parsed.autoInstall === true,
+      skippedVersion: typeof parsed.skippedVersion === "string" ? parsed.skippedVersion : null,
+      lastCheckedAt: typeof parsed.lastCheckedAt === "string" ? parsed.lastCheckedAt : null,
+    };
+  } catch {
+    // Missing or invalid settings use the safe defaults.
+  }
+}
+
+function saveUpdaterSettings(): void {
+  const settingsPath = updaterSettingsPath();
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(settingsPath, JSON.stringify(updateSettings, null, 2), "utf8");
+}
+
+function sendUpdaterEvent(channel: string, payload: unknown): void {
+  mainWindow?.webContents.send(`updater:${channel}`, payload);
+}
+
+function safeReleaseNotes(value: unknown): string | null {
+  if (typeof value === "string") {
+    return value.replace(/<[^>]*>/g, "").trim().slice(0, 12_000) || null;
+  }
+  if (Array.isArray(value)) {
+    const notes = value
+      .map((entry) => {
+        if (typeof entry === "string") return entry;
+        if (entry && typeof entry === "object" && "note" in entry) {
+          return String((entry as { note?: unknown }).note ?? "");
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n\n");
+    return safeReleaseNotes(notes);
+  }
+  return null;
+}
+
+function normalizeUpdateInfo(info: ElectronUpdateInfo): AppUpdateInfo {
+  const downloadSize = info.files?.reduce((total, file) => total + (file.size ?? 0), 0) || null;
+  return {
+    version: info.version,
+    releaseDate: info.releaseDate ?? null,
+    releaseNotes: safeReleaseNotes(info.releaseNotes),
+    downloadSize,
+    mandatory: false,
+    minSupportedVersion: null,
+  };
+}
+
+async function loadUpdatePolicy(version: string): Promise<Pick<AppUpdateInfo, "mandatory" | "minSupportedVersion">> {
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+    return { mandatory: false, minSupportedVersion: null };
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5_000);
+  try {
+    const response = await fetch(
+      `https://github.com/flennium/ServerLab-MC/releases/download/v${version}/update-meta.json`,
+      { signal: controller.signal, headers: { Accept: "application/json" } }
+    );
+    if (!response.ok) return { mandatory: false, minSupportedVersion: null };
+    const metadata = (await response.json()) as {
+      mandatory?: unknown;
+      minSupportedVersion?: unknown;
+    };
+    return {
+      mandatory: metadata.mandatory === true,
+      minSupportedVersion:
+        typeof metadata.minSupportedVersion === "string" ? metadata.minSupportedVersion : null,
+    };
+  } catch {
+    return { mandatory: false, minSupportedVersion: null };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function isPrereleaseVersion(version: string): boolean {
+  return /-/.test(version);
+}
+
+function normalizeUpdateProgress(progress: ProgressInfo): UpdateProgress {
+  return {
+    percent: Number.isFinite(progress.percent) ? progress.percent : 0,
+    bytesPerSecond: progress.bytesPerSecond,
+    transferred: progress.transferred,
+    total: progress.total,
+  };
+}
+
+function updaterErrorPayload(error: unknown): UpdateErrorPayload {
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    message: "ServerLab could not complete the update.",
+    technicalDetails: message,
+  };
+}
+
+function setupUpdater(): void {
+  if (isDev) return;
+  loadUpdaterSettings();
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.allowPrerelease = false;
+  autoUpdater.allowDowngrade = false;
+
+  autoUpdater.on("update-available", (info) => {
+    if (isPrereleaseVersion(info.version)) {
+      writeUpdaterLog("prerelease-skipped", { version: info.version });
+      return;
+    }
+    void loadUpdatePolicy(info.version).then((policy) => {
+      latestUpdate = { ...normalizeUpdateInfo(info), ...policy };
+      if (updateSettings.skippedVersion === latestUpdate.version && !latestUpdate.mandatory) {
+        writeUpdaterLog("update-skipped", { version: latestUpdate.version });
+        return;
+      }
+      writeUpdaterLog("update-available", { version: latestUpdate?.version, mandatory: latestUpdate?.mandatory });
+      sendUpdaterEvent("update-available", latestUpdate);
+      if (updateSettings.autoDownload) void downloadUpdate();
+    });
+  });
+  autoUpdater.on("update-not-available", () => {
+    writeUpdaterLog("update-not-available", { currentVersion: app.getVersion() });
+    sendUpdaterEvent("not-available", { checkedAt: updateSettings.lastCheckedAt });
+  });
+  autoUpdater.on("download-progress", (progress) => {
+    sendUpdaterEvent("progress", normalizeUpdateProgress(progress));
+  });
+  autoUpdater.on("update-downloaded", (info) => {
+    latestUpdate = normalizeUpdateInfo(info);
+    writeUpdaterLog("update-downloaded", { version: latestUpdate.version });
+    sendUpdaterEvent("downloaded", latestUpdate);
+    if (updateSettings.autoInstall) {
+      void installUpdate(false).then((result) => {
+        if (result.status === "blocked") sendUpdaterEvent("install-blocked", result);
+      }).catch(reportUpdaterError);
+    }
+  });
+  autoUpdater.on("error", (error) => {
+    reportUpdaterError(error);
+  });
+}
+
+function reportUpdaterError(error: unknown): void {
+  const payload = updaterErrorPayload(error);
+  writeUpdaterLog("error", { details: payload.technicalDetails });
+  sendUpdaterEvent("error", payload);
+}
+
+async function checkForUpdates(): Promise<UpdateCheckResult> {
+  if (isDev) return { status: "not-available", info: null };
+  if (Date.now() - lastUpdateCheckAt < 60_000) {
+    throw createElectronError({
+      category: "update",
+      severity: "warning",
+      userMessage: "Please wait before checking for updates again.",
+      possibleSolution: "Try again in a few seconds.",
+      action: "check-for-updates",
+    });
+  }
+  lastUpdateCheckAt = Date.now();
+  updateSettings.lastCheckedAt = new Date().toISOString();
+  saveUpdaterSettings();
+  sendUpdaterEvent("checking", { checkedAt: updateSettings.lastCheckedAt });
+  writeUpdaterLog("check-start", { currentVersion: app.getVersion() });
+  const result = await autoUpdater.checkForUpdates();
+  if (!result?.updateInfo || isPrereleaseVersion(result.updateInfo.version)) {
+    return { status: "not-available", info: null };
+  }
+  latestUpdate = normalizeUpdateInfo(result.updateInfo);
+  return { status: "available", info: latestUpdate };
+}
+
+async function downloadUpdate(): Promise<{ status: "downloading" | "downloaded" }> {
+  await autoUpdater.downloadUpdate();
+  return { status: "downloaded" };
+}
+
+interface BackendServerSummary {
+  id: string;
+  name: string;
+  status: string;
+}
+
+async function getRunningServers(): Promise<BackendServerSummary[]> {
+  const response = await backendJson<{ servers: BackendServerSummary[] }>("/api/servers");
+  return response.servers.filter((server) =>
+    ["running", "starting", "stopping"].includes(server.status)
+  );
+}
+
+async function installUpdate(stopRunningServers: boolean): Promise<UpdateInstallResult> {
+  const runningServers = await getRunningServers();
+  if (runningServers.length > 0 && !stopRunningServers) {
+    return {
+      status: "blocked",
+      runningServers: runningServers.map(({ id, name }) => ({ id, name })),
+    };
+  }
+
+  if (runningServers.length > 0) {
+    for (const server of runningServers) {
+      await backendJson(`/api/servers/${encodeURIComponent(server.id)}/stop`, { method: "POST" });
+    }
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      if ((await getRunningServers()).length === 0) break;
+      await sleep(500);
+    }
+    if ((await getRunningServers()).length > 0) {
+      throw new Error("Managed Minecraft servers did not stop within 30 seconds.");
+    }
+  }
+
+  writeUpdaterLog("install", { version: latestUpdate?.version ?? null });
+  autoUpdater.quitAndInstall(false, true);
+  return { status: "ready" };
+}
+
+function scheduleUpdaterCheck(): void {
+  if (isDev) return;
+  if (updateTimer) clearTimeout(updateTimer);
+  const sixHours = 6 * 60 * 60 * 1000;
+  const jitter = Math.floor(Math.random() * 15 * 60 * 1000);
+  updateTimer = setTimeout(() => {
+    if (updateSettings.autoCheck) {
+      void checkForUpdates().catch(reportUpdaterError);
+    }
+    scheduleUpdaterCheck();
+  }, sixHours + jitter);
 }
 
 function checkBackendHealth(): Promise<boolean> {
@@ -519,6 +808,40 @@ safeIpcHandler("errors:clear", async () =>
 
 safeIpcHandler("logs:export", async () => backendJson("/api/logs/export"));
 
+safeIpcHandler("updater:get-settings", () => updateSettings);
+
+safeIpcHandler("updater:set-settings", (input: Partial<UpdateSettings>) => {
+  if (typeof input !== "object" || input === null) {
+    throw new Error("Invalid updater settings.");
+  }
+  if ("autoCheck" in input && typeof input.autoCheck !== "boolean") {
+    throw new Error("Invalid automatic update setting.");
+  }
+  if ("autoDownload" in input && typeof input.autoDownload !== "boolean") {
+    throw new Error("Invalid automatic download setting.");
+  }
+  if ("autoInstall" in input && typeof input.autoInstall !== "boolean") {
+    throw new Error("Invalid automatic install setting.");
+  }
+  if ("skippedVersion" in input && input.skippedVersion !== null && typeof input.skippedVersion !== "string") {
+    throw new Error("Invalid skipped update version.");
+  }
+  updateSettings = { ...updateSettings, ...input };
+  saveUpdaterSettings();
+  return updateSettings;
+});
+
+safeIpcHandler("updater:check", () => checkForUpdates());
+safeIpcHandler("updater:download", () => downloadUpdate());
+safeIpcHandler("updater:install", () => installUpdate(false));
+safeIpcHandler("updater:stop-and-install", () => installUpdate(true));
+safeIpcHandler("updater:skip", (version: string) => {
+  if (typeof version !== "string" || !version.trim()) throw new Error("Invalid update version.");
+  updateSettings.skippedVersion = version.trim();
+  saveUpdaterSettings();
+  return updateSettings;
+});
+
 safeIpcHandler("window:openDevTools", () => {
   mainWindow?.webContents.openDevTools({ mode: "detach" });
 });
@@ -577,11 +900,13 @@ app.whenReady().then(async () => {
   });
 
   if (!isDev) {
-    try {
-      autoUpdater.checkForUpdatesAndNotify();
-    } catch {
-      // ignore
-    }
+    setupUpdater();
+    setTimeout(() => {
+      if (updateSettings.autoCheck) {
+        void checkForUpdates().catch(reportUpdaterError);
+      }
+    }, 5_000);
+    scheduleUpdaterCheck();
   }
 });
 

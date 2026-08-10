@@ -3,3 +3,4 @@ export * from "./api";
 export * from "./events";
 export * from "./app";
 export * from "./errors";
+export * from "./updater";
