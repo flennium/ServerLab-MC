@@ -419,6 +419,22 @@ function isPrereleaseVersion(version: string): boolean {
   return /-/.test(version);
 }
 
+function stableVersionParts(version: string): [number, number, number] | null {
+  const match = version.match(/^v?(\d+)\.(\d+)\.(\d+)$/);
+  if (!match) return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function isNewerStableVersion(candidate: string, current: string): boolean {
+  const next = stableVersionParts(candidate);
+  const installed = stableVersionParts(current);
+  if (!next || !installed) return false;
+  for (let index = 0; index < next.length; index += 1) {
+    if (next[index] !== installed[index]) return next[index] > installed[index];
+  }
+  return false;
+}
+
 function normalizeUpdateProgress(progress: ProgressInfo): UpdateProgress {
   return {
     percent: Number.isFinite(progress.percent) ? progress.percent : 0,
@@ -449,6 +465,15 @@ function setupUpdater(): void {
       writeUpdaterLog("prerelease-skipped", { version: info.version });
       return;
     }
+    if (!isNewerStableVersion(info.version, app.getVersion())) {
+      latestUpdate = null;
+      writeUpdaterLog("same-or-older-version-skipped", {
+        currentVersion: app.getVersion(),
+        version: info.version,
+      });
+      sendUpdaterEvent("not-available", { checkedAt: updateSettings.lastCheckedAt });
+      return;
+    }
     void loadUpdatePolicy(info.version).then((policy) => {
       latestUpdate = { ...normalizeUpdateInfo(info), ...policy };
       if (updateSettings.skippedVersion === latestUpdate.version && !latestUpdate.mandatory) {
@@ -468,6 +493,13 @@ function setupUpdater(): void {
     sendUpdaterEvent("progress", normalizeUpdateProgress(progress));
   });
   autoUpdater.on("update-downloaded", (info) => {
+    if (!isNewerStableVersion(info.version, app.getVersion())) {
+      writeUpdaterLog("downloaded-version-skipped", {
+        currentVersion: app.getVersion(),
+        version: info.version,
+      });
+      return;
+    }
     latestUpdate = normalizeUpdateInfo(info);
     writeUpdaterLog("update-downloaded", { version: latestUpdate.version });
     sendUpdaterEvent("downloaded", latestUpdate);
@@ -505,7 +537,11 @@ async function checkForUpdates(): Promise<UpdateCheckResult> {
   sendUpdaterEvent("checking", { checkedAt: updateSettings.lastCheckedAt });
   writeUpdaterLog("check-start", { currentVersion: app.getVersion() });
   const result = await autoUpdater.checkForUpdates();
-  if (!result?.updateInfo || isPrereleaseVersion(result.updateInfo.version)) {
+  if (
+    !result?.updateInfo ||
+    isPrereleaseVersion(result.updateInfo.version) ||
+    !isNewerStableVersion(result.updateInfo.version, app.getVersion())
+  ) {
     return { status: "not-available", info: null };
   }
   latestUpdate = normalizeUpdateInfo(result.updateInfo);

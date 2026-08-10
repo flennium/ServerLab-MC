@@ -22,6 +22,7 @@ interface RunningServer {
   port: number;
   cwd: string;
   startedAt: string;
+  stopRequested: boolean;
 }
 
 interface TrackedProcessRecord {
@@ -236,13 +237,15 @@ class ServerManager {
       detached: false,
     });
 
-    this.running.set(serverId, {
+    const runningEntry: RunningServer = {
       process: proc,
       serverId,
       port: server.port,
       cwd: server.path,
       startedAt: new Date().toISOString(),
-    });
+      stopRequested: false,
+    };
+    this.running.set(serverId, runningEntry);
     await this.writeProcessRegistry();
 
     if (proc.pid) {
@@ -283,7 +286,7 @@ class ServerManager {
       this.running.delete(serverId);
       portManagerService.releasePort({ ownerType: "server", ownerId: serverId });
       await this.clearProcessRegistry();
-      const status: ServerStatus = code === 0 ? "stopped" : "crashed";
+      const status: ServerStatus = entry.stopRequested || code === 0 ? "stopped" : "crashed";
       await this.setStatus(serverId, status);
     });
 
@@ -293,7 +296,7 @@ class ServerManager {
       this.running.delete(serverId);
       portManagerService.releasePort({ ownerType: "server", ownerId: serverId });
       await this.clearProcessRegistry();
-      await this.setStatus(serverId, "crashed");
+      await this.setStatus(serverId, entry.stopRequested ? "stopped" : "crashed");
     });
   }
 
@@ -301,6 +304,7 @@ class ServerManager {
     const entry = this.running.get(serverId);
     if (!entry) throw new Error(`Server ${serverId} is not running`);
 
+    entry.stopRequested = true;
     await this.setStatus(serverId, "stopping");
     await new Promise<void>((resolve) => {
       const forceKillTimeout = setTimeout(() => {

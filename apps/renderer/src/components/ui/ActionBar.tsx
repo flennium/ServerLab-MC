@@ -27,7 +27,7 @@ export function ActionBar({
     <section
       className={clsx(
         sticky &&
-          "-mx-4 border-b border-border bg-surface-1/95 px-4 pb-3 pt-1 shadow-[0_12px_35px_rgba(0,0,0,0.22)] backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8",
+          "relative isolate -mx-4 border-b border-border bg-surface-1 px-4 pb-3 pt-1 shadow-[0_12px_35px_rgba(0,0,0,0.22)] sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8",
         sticky ? "sticky top-0 z-40" : "rounded-lg border border-border bg-panel p-4",
         className
       )}
