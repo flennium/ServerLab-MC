@@ -1155,7 +1155,7 @@ function SoftwareCachePanel() {
           icon={Database}
           title="Server software"
           emptyTitle={loading ? "Loading server software..." : "No cached server software"}
-          emptyDescription="Downloaded server jars will appear here after server creation."
+          emptyDescription="Downloaded or locally built server jars will appear here after server creation."
         >
           {artifacts.length > 0 && (
             <div className="overflow-x-auto">
@@ -1165,6 +1165,7 @@ function SoftwareCachePanel() {
                     <th className="pb-2 font-semibold">Provider</th>
                     <th className="pb-2 font-semibold">Minecraft</th>
                     <th className="pb-2 font-semibold">Build</th>
+                    <th className="pb-2 font-semibold">Source</th>
                     <th className="pb-2 font-semibold">Size</th>
                     <th className="pb-2 font-semibold">Last used</th>
                     <th className="pb-2 font-semibold">Status</th>
@@ -1182,6 +1183,11 @@ function SoftwareCachePanel() {
                       </td>
                       <td className="py-3 font-mono text-xs text-muted">
                         {artifact.buildId}
+                      </td>
+                      <td className="py-3">
+                        <span className="rounded border border-border bg-panel px-2 py-1 text-xs capitalize text-muted">
+                          {artifact.acquisition === "build" ? artifact.buildTool ?? "local build" : "download"}
+                        </span>
                       </td>
                       <td className="py-3 text-muted">
                         {formatBytes(artifact.sizeBytes)}

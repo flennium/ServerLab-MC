@@ -6,6 +6,8 @@ import { FileConflictError, FileExistsError, FileManager } from "../services/Fil
 import { createBackup } from "../services/BackupService.js";
 import { softwareDownloadService } from "../services/software/SoftwareDownloadService.js";
 import { serverSoftwareInstaller } from "../services/software/ServerSoftwareInstaller.js";
+import { softwareCacheService } from "../services/software/SoftwareCacheService.js";
+import { spigotBuildService } from "../services/software/SpigotBuildService.js";
 import { javaRuntimeRegistry } from "../services/java/JavaRuntimeRegistry.js";
 import { javaRuntimeValidator } from "../services/java/JavaRuntimeValidator.js";
 import { javaRecommendationService } from "../services/java/JavaRecommendationService.js";
@@ -201,6 +203,9 @@ serverRoutes.post("/", async (req, res, next) => {
       }
       version = body.softwareSource.minecraftVersion;
       software = body.softwareSource.provider;
+      if (body.softwareSource.provider === "spigot" && body.softwareSource.sourceType !== "build") {
+        throw badRequest("Spigot servers must be created from a completed BuildTools job.", "download");
+      }
     }
 
     const port = body.port ?? (await portManagerService.suggestPort());
@@ -218,14 +223,41 @@ serverRoutes.post("/", async (req, res, next) => {
 
     if (body.softwareSource) {
       const requestId = body.softwareSource.requestId;
-      const { artifact } = await softwareDownloadService.ensureArtifact({
-        provider: body.softwareSource.provider,
-        minecraftVersion: body.softwareSource.minecraftVersion,
-        buildId: body.softwareSource.buildId,
-        requestId,
-      });
-      if (requestId)
-        await softwareDownloadService.markStage(requestId, "installing-server-files");
+      let artifact;
+      if (body.softwareSource.sourceType === "build" || body.softwareSource.provider === "spigot") {
+        artifact = await softwareCacheService.findValidArtifact(
+          "spigot",
+          body.softwareSource.minecraftVersion,
+          body.softwareSource.buildId
+        );
+        if (!artifact && body.softwareSource.buildJobId) {
+          const job = await spigotBuildService.getJob(body.softwareSource.buildJobId);
+          if (
+            !job ||
+            job.status !== "completed" ||
+            job.provider !== "spigot" ||
+            job.minecraftVersion !== body.softwareSource.minecraftVersion ||
+            job.buildId !== body.softwareSource.buildId
+          ) {
+            throw badRequest("The selected Spigot BuildTools job is not complete or does not match this revision.", "download");
+          }
+          artifact = await softwareCacheService.findValidArtifact(
+            "spigot",
+            body.softwareSource.minecraftVersion,
+            body.softwareSource.buildId
+          );
+        }
+        if (!artifact) throw badRequest("The completed Spigot artifact is no longer available. Build it again.", "download");
+      } else {
+        const result = await softwareDownloadService.ensureArtifact({
+          provider: body.softwareSource.provider,
+          minecraftVersion: body.softwareSource.minecraftVersion,
+          buildId: body.softwareSource.buildId,
+          requestId,
+        });
+        artifact = result.artifact;
+        if (requestId) await softwareDownloadService.markStage(requestId, "installing-server-files");
+      }
       await serverSoftwareInstaller.install({
         artifact,
         serverPath: body.path,

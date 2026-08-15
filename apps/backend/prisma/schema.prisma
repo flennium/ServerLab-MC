@@ -120,6 +120,11 @@ model SoftwareArtifact {
   provider         String
   minecraftVersion String
   buildId          String
+  acquisition      String   @default("download")
+  buildTool        String?
+  buildToolVersion  String?
+  sourceMetadataJson String?
+  buildLogPath      String?
   filename         String
   sizeBytes        Int      @default(0)
   sha256           String?
@@ -132,6 +137,29 @@ model SoftwareArtifact {
 
   @@unique([provider, minecraftVersion, buildId])
   @@map("software_artifacts")
+}
+
+model SoftwareBuildJob {
+  id               String   @id
+  provider         String
+  minecraftVersion String
+  buildId          String
+  toolVersion      String?
+  status           String   @default("queued")
+  stage            String   @default("checking-prerequisites")
+  bytesReceived    Int      @default(0)
+  totalBytes       Int?
+  percent          Float?
+  pid              Int?
+  workspacePath    String?
+  logPath          String?
+  artifactPath     String?
+  error            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  completedAt      DateTime?
+
+  @@map("software_build_jobs")
 }
 
 model SoftwareDownload {

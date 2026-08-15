@@ -3,6 +3,7 @@ import type { ServerFramework } from "@serverlab/shared";
 import { softwareProviderRegistry } from "../services/software/providers.js";
 import { softwareCacheService } from "../services/software/SoftwareCacheService.js";
 import { softwareDownloadService } from "../services/software/SoftwareDownloadService.js";
+import { spigotBuildService } from "../services/software/SpigotBuildService.js";
 import { badRequest, HttpError } from "../middleware/error.js";
 
 export const softwareRoutes = Router();
@@ -129,6 +130,116 @@ softwareRoutes.post("/downloads", async (req, res, next) => {
       requestId: typeof req.body.requestId === "string" ? req.body.requestId : undefined,
     });
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+softwareRoutes.get("/spigot/revisions", async (_req, res, next) => {
+  try {
+    const provider = softwareProviderRegistry.get("spigot");
+    const versions = await provider.listMinecraftVersions();
+    res.json({ versions, offline: false });
+  } catch (err) {
+    try {
+      const versions = await softwareCacheService.getCachedVersions("spigot");
+      res.json({ versions, offline: true });
+    } catch (fallbackError) {
+      next(fallbackError ?? err);
+    }
+  }
+});
+
+softwareRoutes.get("/spigot/preflight", async (req, res, next) => {
+  try {
+    const minecraftVersion = String(req.query.minecraftVersion ?? "");
+    if (!minecraftVersion) throw badRequest("minecraftVersion is required");
+    const preflight = await spigotBuildService.preflight({
+      provider: "spigot",
+      minecraftVersion,
+      javaRuntimeId: typeof req.query.javaRuntimeId === "string" ? req.query.javaRuntimeId : undefined,
+    });
+    res.json({ preflight });
+  } catch (err) {
+    next(err);
+  }
+});
+
+softwareRoutes.get("/buildtools/status", async (_req, res, next) => {
+  try {
+    res.json(await spigotBuildService.getBuildToolsStatus());
+  } catch (err) {
+    next(err);
+  }
+});
+
+softwareRoutes.post("/buildtools/refresh", async (_req, res, next) => {
+  try {
+    await spigotBuildService.refreshBuildTools();
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+softwareRoutes.post("/builds", async (req, res, next) => {
+  try {
+    const minecraftVersion = String(req.body.minecraftVersion ?? "");
+    if (req.body.provider !== "spigot" || !minecraftVersion) {
+      throw badRequest("Spigot and minecraftVersion are required", "download");
+    }
+    const result = await spigotBuildService.start({
+      provider: "spigot",
+      minecraftVersion,
+      javaRuntimeId: typeof req.body.javaRuntimeId === "string" ? req.body.javaRuntimeId : undefined,
+      requestId: typeof req.body.requestId === "string" ? req.body.requestId : undefined,
+    });
+    res.status(202).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+softwareRoutes.get("/builds/:id", async (req, res, next) => {
+  try {
+    const job = await spigotBuildService.getJob(req.params.id);
+    if (!job) throw new HttpError(404, "Software build job not found", "download");
+    const artifact = job.status === "completed"
+      ? await softwareCacheService.findValidArtifact("spigot", job.minecraftVersion, job.buildId)
+      : null;
+    res.json({ job, artifact, cached: Boolean(artifact) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+softwareRoutes.get("/builds/:id/log", async (req, res, next) => {
+  try {
+    const log = await spigotBuildService.getLog(req.params.id);
+    if (!log) throw new HttpError(404, "Software build job not found", "download");
+    res.json(log);
+  } catch (err) {
+    next(err);
+  }
+});
+
+softwareRoutes.post("/builds/:id/cancel", async (req, res, next) => {
+  try {
+    res.json({ job: await spigotBuildService.cancel(req.params.id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+softwareRoutes.post("/builds/:id/retry", async (req, res, next) => {
+  try {
+    const minecraftVersion = String(req.body.minecraftVersion ?? "");
+    if (!minecraftVersion) throw badRequest("minecraftVersion is required", "download");
+    res.status(202).json(await spigotBuildService.retry(req.params.id, {
+      provider: "spigot",
+      minecraftVersion,
+      javaRuntimeId: typeof req.body.javaRuntimeId === "string" ? req.body.javaRuntimeId : undefined,
+    }));
   } catch (err) {
     next(err);
   }

@@ -23,6 +23,7 @@ import { setSoftwareSocketServer } from "./services/software/softwareEvents.js";
 import { javaInstallService } from "./services/java/JavaInstallService.js";
 import { pluginInstallService } from "./services/plugins/PluginInstallService.js";
 import { setPluginSocketServer } from "./services/plugins/pluginEvents.js";
+import { spigotBuildService } from "./services/software/SpigotBuildService.js";
 import { serverManager } from "./services/ServerManager.js";
 import { errorService } from "./services/ErrorService.js";
 import type { ServerToClientEvents, ClientToServerEvents } from "@serverlab/shared";
@@ -82,6 +83,7 @@ registerSocketHandlers(io);
 async function start(): Promise<void> {
   await ensureDatabaseSchema();
   await serverManager.restoreTrackedProcesses();
+  await spigotBuildService.recoverStaleJobs();
 
   httpServer.on("error", (error: NodeJS.ErrnoException) => {
     if (error.code === "EADDRINUSE") {

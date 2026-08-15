@@ -1,7 +1,13 @@
-import type { ServerFramework, SoftwareBuild, SoftwareProviderInfo } from "@serverlab/shared";
+import type {
+  ServerFramework,
+  SoftwareAcquisition,
+  SoftwareBuild,
+  SoftwareProviderInfo,
+} from "@serverlab/shared";
 
 export interface SoftwareArtifactMeta {
   provider: ServerFramework;
+  acquisition: SoftwareAcquisition;
   minecraftVersion: string;
   buildId: string;
   filename: string;
@@ -10,6 +16,8 @@ export interface SoftwareArtifactMeta {
   sha256?: string;
   upstreamMetadataUrl?: string;
   licenseNotes?: string;
+  buildTool?: string;
+  buildToolVersion?: string;
 }
 
 export interface ResolveArtifactRequest {
@@ -23,6 +31,10 @@ export interface SoftwareProvider {
   homepage: string;
   enabled: boolean;
   supportsBuildSelection: boolean;
+  acquisition: SoftwareAcquisition;
+  supportedRevisionSource?: "provider" | "minecraft-release-metadata";
+  requiresJdk?: boolean;
+  buildTool?: string;
   allowedHosts: string[];
   reasonUnavailable?: string;
   listMinecraftVersions(): Promise<string[]>;

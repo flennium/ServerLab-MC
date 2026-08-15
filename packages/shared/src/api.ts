@@ -15,6 +15,8 @@ import type {
   InstalledPlugin,
   PluginDependency,
   PluginInstallJob,
+  SoftwareAcquisition,
+  SoftwareBuildJob,
 } from "./models.js";
 import type { AppError } from "./errors.js";
 
@@ -125,6 +127,10 @@ export interface SoftwareProviderInfo {
   homepage: string;
   enabled: boolean;
   supportsBuildSelection: boolean;
+  acquisition: SoftwareAcquisition;
+  supportedRevisionSource?: "provider" | "minecraft-release-metadata";
+  requiresJdk?: boolean;
+  buildTool?: string;
   reasonUnavailable?: string;
 }
 
@@ -165,6 +171,8 @@ export interface SoftwareSourceDto {
   buildId: string;
   artifactId?: string;
   requestId?: string;
+  sourceType?: SoftwareAcquisition;
+  buildJobId?: string;
 }
 
 export interface CreateSoftwareDownloadDto {
@@ -182,6 +190,48 @@ export interface SoftwareDownloadResponse {
 
 export interface SoftwareDownloadJobResponse {
   download: SoftwareDownload;
+}
+
+export interface BuildToolsPreflightResult {
+  ready: boolean;
+  javaRuntimeId: string | null;
+  javaMajor: number | null;
+  javaExecutable: string | null;
+  hasJdk: boolean;
+  gitAvailable: boolean;
+  gitPath: string | null;
+  gitSource: "bundled" | "system" | null;
+  diskSpaceBytes: number | null;
+  requiredDiskSpaceBytes: number;
+  offline: boolean;
+  activeJobId: string | null;
+  checks: Array<{
+    id: "java" | "jdk" | "git" | "disk" | "network" | "cache" | "active-job";
+    status: "passed" | "warning" | "failed";
+    message: string;
+  }>;
+}
+
+export interface SoftwareBuildJobResponse {
+  job: SoftwareBuildJob;
+  artifact: SoftwareArtifact | null;
+  cached: boolean;
+}
+
+export interface SoftwareBuildToolsStatusResponse {
+  cached: boolean;
+  buildNumber: string | null;
+  version: string | null;
+  sizeBytes: number | null;
+  sha256: string | null;
+  downloadedAt: string | null;
+}
+
+export interface CreateSoftwareBuildDto {
+  provider: "spigot";
+  minecraftVersion: string;
+  javaRuntimeId?: string;
+  requestId?: string;
 }
 
 // Console

@@ -6,6 +6,8 @@ export type ServerSoftware = ServerFramework;
 
 export type SoftwareArtifactStatus = "cached" | "downloading" | "failed" | "corrupted";
 
+export type SoftwareAcquisition = "download" | "build";
+
 export type SoftwareDownloadStatus =
   "queued" | "running" | "cached" | "completed" | "failed" | "cancelled";
 
@@ -16,6 +18,30 @@ export type SoftwareInstallStage =
   | "verifying"
   | "installing-server-files"
   | "writing-eula"
+  | "done"
+  | "failed"
+  | "cancelled";
+
+export type SoftwareBuildJobStatus =
+  | "queued"
+  | "preflight"
+  | "downloading-tool"
+  | "preparing-workspace"
+  | "building"
+  | "validating"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type SoftwareBuildStage =
+  | "checking-prerequisites"
+  | "resolving-buildtools"
+  | "downloading-buildtools"
+  | "preparing-workspace"
+  | "running-buildtools"
+  | "locating-artifact"
+  | "verifying-artifact"
+  | "caching-artifact"
   | "done"
   | "failed"
   | "cancelled";
@@ -171,6 +197,11 @@ export interface SoftwareArtifact {
   provider: ServerFramework;
   minecraftVersion: string;
   buildId: string;
+  acquisition: SoftwareAcquisition;
+  buildTool: string | null;
+  buildToolVersion: string | null;
+  sourceMetadataJson: string | null;
+  buildLogPath: string | null;
   filename: string;
   sizeBytes: number;
   sha256: string | null;
@@ -196,6 +227,27 @@ export interface SoftwareDownload {
   error: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface SoftwareBuildJob {
+  id: string;
+  provider: ServerFramework;
+  minecraftVersion: string;
+  buildId: string;
+  toolVersion: string | null;
+  status: SoftwareBuildJobStatus;
+  stage: SoftwareBuildStage;
+  bytesReceived: number;
+  totalBytes: number | null;
+  percent: number | null;
+  pid: number | null;
+  workspacePath: string | null;
+  logPath: string | null;
+  artifactPath: string | null;
+  error: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  completedAt: Date | null;
 }
 
 export interface InstalledPlugin {

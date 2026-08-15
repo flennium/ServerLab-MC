@@ -6,6 +6,8 @@ import type {
   JavaRuntimeProviderId,
   SoftwareDownloadStatus,
   SoftwareInstallStage,
+  SoftwareBuildJobStatus,
+  SoftwareBuildStage,
   PluginInstallStatus,
   PluginInstallStage,
 } from "./models.js";
@@ -65,6 +67,21 @@ export interface SoftwareDownloadProgressPayload {
   error?: string;
 }
 
+export interface SoftwareBuildProgressPayload {
+  jobId: string;
+  provider: ServerFramework;
+  minecraftVersion: string;
+  buildId: string;
+  status: SoftwareBuildJobStatus;
+  stage: SoftwareBuildStage;
+  bytesReceived: number;
+  totalBytes: number | null;
+  percent: number | null;
+  currentLogLine?: string;
+  logAvailable: boolean;
+  error?: string;
+}
+
 export interface JavaInstallProgressPayload {
   installId: string;
   provider: JavaRuntimeProviderId;
@@ -109,6 +126,7 @@ export interface ServerToClientEvents {
   "server:delete-progress": (payload: ServerDeleteProgressPayload) => void;
   "backup:progress": (payload: BackupProgressPayload) => void;
   "software:download-progress": (payload: SoftwareDownloadProgressPayload) => void;
+  "software:build-progress": (payload: SoftwareBuildProgressPayload) => void;
   "java:install-progress": (payload: JavaInstallProgressPayload) => void;
   "plugin:install-progress": (payload: PluginInstallProgressPayload) => void;
 }

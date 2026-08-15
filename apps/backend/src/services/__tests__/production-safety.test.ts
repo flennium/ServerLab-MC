@@ -8,6 +8,7 @@ import { parseStartupArgs } from "../ProcessArgs.js";
 import { parseJavaVersionOutput } from "../java/JavaRuntimeValidator.js";
 import { minimumJavaMajorForMinecraft } from "../java/JavaRecommendationService.js";
 import { assertAllowedHttpsUrl } from "../software/providers.js";
+import { BuildToolsProvider } from "../software/BuildToolsProvider.js";
 import { portManagerService } from "../PortManagerService.js";
 import { sanitizePluginFileName } from "../plugins/PluginInstallService.js";
 
@@ -70,6 +71,18 @@ describe("download URL allow list", () => {
   it("rejects unexpected hosts and protocols", () => {
     expect(() => assertAllowedHttpsUrl("http://fill.papermc.io/file.jar", ["fill.papermc.io"])).toThrow(/HTTPS/);
     expect(() => assertAllowedHttpsUrl("https://example.com/file.jar", ["fill.papermc.io"])).toThrow(/not allowed/);
+  });
+});
+
+describe("BuildTools URL allow list", () => {
+  it("allows the official BuildTools host", () => {
+    const provider = new BuildToolsProvider();
+    expect(provider.validateDownloadUrl("https://hub.spigotmc.org/jenkins/job/BuildTools/lastSuccessfulBuild/artifact/target/BuildTools.jar").hostname).toBe("hub.spigotmc.org");
+  });
+
+  it("rejects non-official BuildTools hosts", () => {
+    const provider = new BuildToolsProvider();
+    expect(() => provider.validateDownloadUrl("https://example.com/BuildTools.jar")).toThrow(/not allowed/i);
   });
 });
 

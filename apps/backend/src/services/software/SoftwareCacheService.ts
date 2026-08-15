@@ -1,4 +1,5 @@
 import fs from "fs/promises";
+import crypto from "crypto";
 import path from "path";
 import type { SoftwareArtifact, ServerFramework } from "@serverlab/shared";
 import { prisma } from "../../lib/prisma.js";
@@ -15,6 +16,11 @@ function toArtifact(record: Awaited<ReturnType<typeof prisma.softwareArtifact.fi
     provider: record.provider as ServerFramework,
     minecraftVersion: record.minecraftVersion,
     buildId: record.buildId,
+    acquisition: (record.acquisition ?? "download") as SoftwareArtifact["acquisition"],
+    buildTool: record.buildTool,
+    buildToolVersion: record.buildToolVersion,
+    sourceMetadataJson: record.sourceMetadataJson,
+    buildLogPath: record.buildLogPath,
     filename: record.filename,
     sizeBytes: record.sizeBytes,
     sha256: record.sha256,
@@ -87,6 +93,13 @@ export class SoftwareCacheService {
         await this.markCorrupted(artifact.id);
         return null;
       }
+      if (artifact.sha256) {
+        const hash = await this.fileSha256(artifact.cachedPath);
+        if (hash !== artifact.sha256.toLowerCase()) {
+          await this.markCorrupted(artifact.id);
+          return null;
+        }
+      }
     } catch {
       await this.markCorrupted(artifact.id);
       return null;
@@ -125,6 +138,11 @@ export class SoftwareCacheService {
     sizeBytes: number;
     sha256?: string;
     cachedPath: string;
+    acquisition?: SoftwareArtifact["acquisition"];
+    buildTool?: string | null;
+    buildToolVersion?: string | null;
+    sourceMetadataJson?: string | null;
+    buildLogPath?: string | null;
   }): Promise<SoftwareArtifact> {
     const record = await prisma.softwareArtifact.upsert({
       where: {
@@ -139,6 +157,11 @@ export class SoftwareCacheService {
         sizeBytes: input.sizeBytes,
         sha256: input.sha256,
         cachedPath: input.cachedPath,
+        acquisition: input.acquisition ?? "download",
+        buildTool: input.buildTool ?? null,
+        buildToolVersion: input.buildToolVersion ?? null,
+        sourceMetadataJson: input.sourceMetadataJson ?? null,
+        buildLogPath: input.buildLogPath ?? null,
         status: "cached",
         downloadedAt: new Date(),
         lastUsedAt: new Date(),
@@ -151,6 +174,11 @@ export class SoftwareCacheService {
         sizeBytes: input.sizeBytes,
         sha256: input.sha256,
         cachedPath: input.cachedPath,
+        acquisition: input.acquisition ?? "download",
+        buildTool: input.buildTool ?? null,
+        buildToolVersion: input.buildToolVersion ?? null,
+        sourceMetadataJson: input.sourceMetadataJson ?? null,
+        buildLogPath: input.buildLogPath ?? null,
         status: "cached",
         downloadedAt: new Date(),
         lastUsedAt: new Date(),
@@ -185,6 +213,23 @@ export class SoftwareCacheService {
         .filter((entry) => entry.endsWith(".part"))
         .map((entry) => fs.rm(path.join(this.tmpRoot, entry), { force: true }))
     );
+  }
+
+  private async fileSha256(filePath: string): Promise<string> {
+    const hash = crypto.createHash("sha256");
+    const file = await fs.open(filePath, "r");
+    try {
+      const buffer = Buffer.allocUnsafe(1024 * 1024);
+      let bytesRead = 0;
+      do {
+        const result = await file.read(buffer, 0, buffer.length, null);
+        bytesRead = result.bytesRead;
+        if (bytesRead > 0) hash.update(buffer.subarray(0, bytesRead));
+      } while (bytesRead > 0);
+      return hash.digest("hex");
+    } finally {
+      await file.close();
+    }
   }
 
   private async writeMetadataMirror(): Promise<void> {

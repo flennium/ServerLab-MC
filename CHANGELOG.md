@@ -1,5 +1,25 @@
 # Changelog
 
+## 3.1.0
+
+### Added
+
+- Added integrated Spigot support through the official BuildTools workflow.
+- Added isolated BuildTools workspaces, real tool-download progress, expandable build logs, cancellation, retry, and stale-job recovery.
+- Added BuildTools and locally built Spigot artifact metadata to Software Cache.
+- Added JDK, Git, disk-space, cache, and duplicate-build preflight checks.
+- Added app-managed portable MinGit downloads so users do not need to install Git manually.
+
+### Fixed
+
+- Spigot is no longer presented as an unavailable direct-download provider.
+- BuildTools now receives a private app-managed Git environment and never modifies the system PATH.
+- Server creation now rejects incomplete or mismatched Spigot build jobs and reuses valid cached Spigot artifacts.
+
+### Changed
+
+- Bumped app and workspace versions to `3.1.0`.
+
 ## 3.0.7
 
 ### Added

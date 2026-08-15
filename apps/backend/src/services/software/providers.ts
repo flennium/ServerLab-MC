@@ -47,6 +47,10 @@ abstract class BaseProvider implements SoftwareProvider {
   abstract homepage: string;
   abstract enabled: boolean;
   abstract supportsBuildSelection: boolean;
+  acquisition: "download" | "build" = "download";
+  supportedRevisionSource?: "provider" | "minecraft-release-metadata";
+  requiresJdk?: boolean;
+  buildTool?: string;
   abstract allowedHosts: string[];
   reasonUnavailable?: string;
 
@@ -74,6 +78,10 @@ abstract class BaseProvider implements SoftwareProvider {
       homepage: this.homepage,
       enabled: this.enabled,
       supportsBuildSelection: this.supportsBuildSelection,
+      acquisition: this.acquisition,
+      supportedRevisionSource: this.supportedRevisionSource,
+      requiresJdk: this.requiresJdk,
+      buildTool: this.buildTool,
       reasonUnavailable: this.reasonUnavailable,
     };
   }
@@ -145,6 +153,7 @@ class PaperProvider extends BaseProvider {
 
     return {
       provider: this.id,
+      acquisition: "download",
       minecraftVersion,
       buildId,
       filename,
@@ -219,6 +228,7 @@ class PurpurProvider extends BaseProvider {
 
     return {
       provider: this.id,
+      acquisition: "download",
       minecraftVersion,
       buildId,
       filename,
@@ -295,6 +305,7 @@ class FabricProvider extends BaseProvider {
 
     return {
       provider: this.id,
+      acquisition: "download",
       minecraftVersion,
       buildId,
       filename: `fabric-server-${minecraftVersion}-${loaderVersion}.jar`,
@@ -311,21 +322,34 @@ class SpigotProvider extends BaseProvider {
   id: ServerFramework = "spigot";
   label = "Spigot";
   homepage = "https://www.spigotmc.org";
-  enabled = false;
-  supportsBuildSelection = false;
-  allowedHosts: string[] = [];
-  reasonUnavailable = "Spigot requires a local BuildTools workflow before it can be installed safely.";
+  enabled = true;
+  supportsBuildSelection = true;
+  acquisition = "build" as const;
+  supportedRevisionSource = "minecraft-release-metadata" as const;
+  requiresJdk = true;
+  buildTool = "spigot-buildtools";
+  allowedHosts = ["piston-meta.mojang.com", "launchermeta.mojang.com"];
 
   async listMinecraftVersions(): Promise<string[]> {
-    return [];
+    const data = await fetchJson<{ versions?: Array<{ id: string; type?: string }> }>(
+      "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json",
+      this.allowedHosts
+    );
+    return (data.versions ?? [])
+      .filter((version) => version.type === "release")
+      .map((version) => version.id);
   }
 
-  async listBuilds(_minecraftVersion: string): Promise<SoftwareBuild[]> {
-    return [];
+  async listBuilds(minecraftVersion: string): Promise<SoftwareBuild[]> {
+    return [{
+      id: minecraftVersion,
+      label: "Build locally with BuildTools",
+      recommended: true,
+    }];
   }
 
   async resolveArtifact(_request: ResolveArtifactRequest): Promise<SoftwareArtifactMeta> {
-    throw new Error(this.reasonUnavailable);
+    throw new Error("Spigot artifacts are produced by the BuildTools workflow");
   }
 }
 

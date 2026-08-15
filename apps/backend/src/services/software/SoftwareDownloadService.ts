@@ -63,6 +63,9 @@ export class SoftwareDownloadService {
     await softwareCacheService.ensureDirectories();
     const downloadId = input.requestId ?? crypto.randomUUID();
     const provider = softwareProviderRegistry.get(input.provider);
+    if (provider.acquisition !== "download") {
+      throw new Error(`${provider.label} artifacts must be built locally`);
+    }
 
     const queued = await prisma.softwareDownload.upsert({
       where: { id: downloadId },
@@ -149,6 +152,7 @@ export class SoftwareDownloadService {
         sizeBytes,
         sha256: artifactMeta.sha256,
         cachedPath: finalPath,
+        acquisition: "download",
       });
       const completed = await this.updateDownload(downloadId, {
         status: "completed",
