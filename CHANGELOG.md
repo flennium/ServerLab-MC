@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.0.7
+
+### Added
+
+- Added responsive drag-and-drop and picker-based uploads to the server file manager.
+- Added streamed, sandboxed uploads with atomic temporary-file replacement and a 512 MB safety limit.
+
+### Fixed
+
+- Server lifecycle controls now prevent start requests while a server is still stopping and resynchronize the UI after failed requests.
+- Corrected process exit status handling so intentionally stopped servers are not incorrectly marked as crashed.
+- Plugin installs now refresh the installed inventory immediately and switch back to the Installed view when completed.
+
+### Changed
+
+- Bumped app and workspace versions to `3.0.7`.
+
 ## 3.0.6
 
 ### Fixed

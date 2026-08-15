@@ -1,5 +1,5 @@
 import type { Server as IOServer } from "socket.io";
-import type { ServerToClientEvents, ClientToServerEvents } from "@serverlab/shared";
+import type { AppError, ServerToClientEvents, ClientToServerEvents } from "@serverlab/shared";
 import { serverManager } from "../services/ServerManager.js";
 import { logger } from "../lib/logger.js";
 import { errorService } from "../services/ErrorService.js";
@@ -30,7 +30,7 @@ export function registerSocketHandlers(
       "console:command",
       (
         { serverId, command },
-        ack?: (result: { ok: boolean; error?: string }) => void
+        ack?: (result: { ok: boolean; error?: AppError }) => void
       ) => {
         try {
           if (!command?.trim()) {

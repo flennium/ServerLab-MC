@@ -40,6 +40,23 @@ export function DashboardPage() {
   const [environment, setEnvironment] = useState<EnvironmentSummary>({
     validRuntimes: 0,
   });
+
+  async function runServerAction(serverId: string, action: "start" | "stop") {
+    try {
+      if (action === "start") await startServer(serverId);
+      else await stopServer(serverId);
+    } catch (error) {
+      reportError(error, {
+        category: "server",
+        severity: "error",
+        userMessage: action === "stop" ? "The server could not be stopped." : "The server could not be started.",
+        possibleSolution: "Wait for the current state to settle, refresh the dashboard, and try again.",
+        source: "renderer:dashboard",
+        action: `${action}-server`,
+      });
+      await fetchServers().catch(() => {});
+    }
+  }
   const reduceMotion = useReducedMotion();
 
   const load = useCallback(() => {
@@ -149,8 +166,8 @@ export function DashboardPage() {
                   <ServerOverviewCard
                     server={server}
                     stats={getStats(server.id).latest}
-                    onStart={() => startServer(server.id)}
-                    onStop={() => stopServer(server.id)}
+                    onStart={() => runServerAction(server.id, "start")}
+                    onStop={() => runServerAction(server.id, "stop")}
                   />
                 </motion.div>
               ))}
@@ -238,6 +255,7 @@ function ServerOverviewCard({
   onStop: () => void;
 }) {
   const isActive = server.status === "running" || server.status === "starting";
+  const isStopping = server.status === "stopping";
   const ramPercent = stats ? stats.ramMb / server.ramMaxMb : 0;
 
   return (
@@ -285,7 +303,11 @@ function ServerOverviewCard({
         </div>
 
         <div className="flex items-center gap-2 p-4 md:flex-col md:items-stretch md:justify-center">
-          {isActive ? (
+          {isStopping ? (
+            <Button disabled icon={Square} variant="secondary" size="sm">
+              Stopping...
+            </Button>
+          ) : isActive ? (
             <Button onClick={onStop} icon={Square} variant="secondary" size="sm">
               Stop
             </Button>

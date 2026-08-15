@@ -190,6 +190,14 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
           : `${selectedProject.title} installed.`
       );
       setProgress(null);
+      setViewMode("installed");
+      const installedPlugin = result.plugin;
+      if (installedPlugin) {
+        setPlugins((current) => [
+          ...current.filter((plugin) => plugin.id !== installedPlugin.id),
+          installedPlugin,
+        ]);
+      }
       await loadPlugins();
     } catch (err) {
       setError(
@@ -262,6 +270,10 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
             action: `plugin-${payload.action}`,
           });
         }
+        if (payload.status === "completed") {
+          setViewMode("installed");
+          void loadPlugins();
+        }
         if (payload.status === "completed" || payload.status === "failed" || payload.status === "cancelled") {
           window.setTimeout(() => setProgress(null), 1200);
         }
@@ -277,6 +289,8 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
       action: "subscribe-plugin-progress",
     }));
     return () => cleanup();
+    // loadPlugins is intentionally captured here so a completed socket job refreshes the installed list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportError, server.id]);
 
   return (

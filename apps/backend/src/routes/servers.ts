@@ -2,7 +2,7 @@ import { Router } from "express";
 import fs from "fs/promises";
 import { prisma } from "../lib/prisma.js";
 import { serverManager } from "../services/ServerManager.js";
-import { FileConflictError, FileManager } from "../services/FileManager.js";
+import { FileConflictError, FileExistsError, FileManager } from "../services/FileManager.js";
 import { createBackup } from "../services/BackupService.js";
 import { softwareDownloadService } from "../services/software/SoftwareDownloadService.js";
 import { serverSoftwareInstaller } from "../services/software/ServerSoftwareInstaller.js";
@@ -620,6 +620,28 @@ serverRoutes.put("/:id/files", async (req, res, next) => {
           "Reload the file, copy your unsaved changes, or save again to overwrite the disk version."
         )
       );
+      return;
+    }
+    next(err);
+  }
+});
+
+// PUT /api/servers/:id/files/upload?path=folder/file.jar&overwrite=true
+// The upload is streamed into the server sandbox; the renderer never receives filesystem access.
+serverRoutes.put("/:id/files/upload", async (req, res, next) => {
+  try {
+    const fm = await getFileManager(req.params.id);
+    const filePath = req.query.path as string;
+    if (!filePath) throw badRequest("path query param required", "file");
+    if (!String(req.headers["content-type"] ?? "").startsWith("application/octet-stream")) {
+      throw badRequest("Upload body must be a binary file stream.", "file");
+    }
+    const overwrite = req.query.overwrite === "true";
+    const file = await fm.uploadFile(filePath, req, overwrite);
+    res.status(overwrite ? 200 : 201).json({ message: "File uploaded", file });
+  } catch (err) {
+    if (err instanceof FileExistsError) {
+      next(new HttpError(409, err.message, "file", "warning", "Choose a different name or confirm replacing the existing file.", ["retry", "dismiss"]));
       return;
     }
     next(err);

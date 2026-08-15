@@ -23,6 +23,7 @@ import type {
   PluginInstallProgressPayload,
   PluginInstallStage,
   PluginInstallStatus,
+  PluginStatus,
 } from "@serverlab/shared";
 
 interface ActivePluginDownload {
@@ -443,8 +444,8 @@ export class PluginInstallService {
     return backupRelative;
   }
 
-  private ensurePluginFolders(serverPath: string): Promise<void> {
-    return fsp.mkdir(path.join(serverPath, "plugins", ".staging"), { recursive: true });
+  private async ensurePluginFolders(serverPath: string): Promise<void> {
+    await fsp.mkdir(path.join(serverPath, "plugins", ".staging"), { recursive: true });
   }
 
   private resolveInside(serverPath: string, relativePath: string): string {
@@ -646,7 +647,7 @@ export class PluginInstallService {
           ? fsp.stat(this.resolveInside(server.path, record.filePath)).then(() => true).catch(() => false)
           : false
       );
-    const status = exists ? record.status : record.status === "trashed" ? "trashed" : "missing";
+    const status: PluginStatus = exists ? record.status as PluginStatus : record.status === "trashed" ? "trashed" : "missing";
     return {
       id: record.id,
       serverId: record.serverId,

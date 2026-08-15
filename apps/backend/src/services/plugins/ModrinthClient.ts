@@ -2,6 +2,7 @@ import { prisma } from "../../lib/prisma.js";
 import { APP_USER_AGENT } from "@serverlab/shared";
 import type {
   ModrinthProject,
+  ModrinthProjectSearchHit,
   ModrinthSearchResponse,
   ModrinthVersion,
   ModrinthVersionDependency,
@@ -266,7 +267,7 @@ function normalizeSort(sort: string | undefined): string {
   return "relevance";
 }
 
-function normalizeSearchHit(hit: RawSearchHit): ModrinthProject {
+function normalizeSearchHit(hit: RawSearchHit): ModrinthProjectSearchHit {
   return {
     id: required(hit.project_id, "project id"),
     slug: required(hit.slug, "project slug"),
@@ -284,6 +285,7 @@ function normalizeSearchHit(hit: RawSearchHit): ModrinthProject {
     sourceUrl: null,
     issuesUrl: null,
     wikiUrl: null,
+    compatibility: null,
   };
 }
 

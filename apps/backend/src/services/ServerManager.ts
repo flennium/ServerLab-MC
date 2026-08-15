@@ -297,7 +297,7 @@ class ServerManager {
       this.running.delete(serverId);
       portManagerService.releasePort({ ownerType: "server", ownerId: serverId });
       await this.clearProcessRegistry();
-      const status: ServerStatus = entry.stopRequested || code === 0 ? "stopped" : "crashed";
+      const status: ServerStatus = runningEntry.stopRequested || code === 0 ? "stopped" : "crashed";
       await this.setStatus(serverId, status);
     });
 
@@ -317,7 +317,7 @@ class ServerManager {
       this.running.delete(serverId);
       portManagerService.releasePort({ ownerType: "server", ownerId: serverId });
       await this.clearProcessRegistry();
-      await this.setStatus(serverId, entry.stopRequested ? "stopped" : "crashed");
+      await this.setStatus(serverId, runningEntry.stopRequested ? "stopped" : "crashed");
     });
   }
 

@@ -94,6 +94,7 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
     message: string;
     error: string | null;
   }>({ running: false, percent: 0, message: "Preparing deletion...", error: null });
+  const [lifecycleAction, setLifecycleAction] = useState<"start" | "stop" | "restart" | null>(null);
   const reduceMotion = useReducedMotion();
 
   useEffect(() => {
@@ -205,7 +206,33 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
     );
   }
 
-  const isActive = server.status === "running" || server.status === "starting";
+  const isTransitioning = server.status === "starting" || server.status === "stopping";
+
+  async function runLifecycleAction(action: "start" | "stop" | "restart") {
+    if (lifecycleAction || isTransitioning) return;
+    setLifecycleAction(action);
+    try {
+      if (action === "start") await startServer(serverId);
+      if (action === "stop") await stopServer(serverId);
+      if (action === "restart") await restartServer(serverId);
+    } catch (error) {
+      reportError(error, {
+        category: "server",
+        severity: "error",
+        userMessage: action === "stop"
+          ? "The server stop request could not be completed."
+          : action === "restart"
+            ? "The server could not be restarted."
+            : "The server could not be started.",
+        possibleSolution: "Wait for the current server state to settle, then refresh and try again.",
+        source: "renderer:server-detail",
+        action: `${action}-server`,
+      });
+      await fetchServers().catch(() => {});
+    } finally {
+      setLifecycleAction(null);
+    }
+  }
   async function handleDelete() {
     setDeleteState({
       running: true,
@@ -241,39 +268,46 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
         title={server.name}
         status={<StatusBadge status={server.status} />}
         description={`${server.software} ${server.version} / port ${server.port}`}
-        primaryActions={
-          <>
-              {!isActive ? (
-                <Button
-                  onClick={() => startServer(server.id)}
-                  icon={Play}
-                  variant="primary"
-                  size="sm"
-                >
-                  Start
-                </Button>
-              ) : (
-                <>
-                  <Button
-                    onClick={() => stopServer(server.id)}
-                    icon={Square}
-                    variant="secondary"
-                    size="sm"
-                  >
-                    Stop
-                  </Button>
-                  <Button
-                    onClick={() => restartServer(server.id)}
-                    icon={RotateCcw}
-                    variant="secondary"
-                    size="sm"
-                  >
-                    Restart
-                  </Button>
-                </>
-              )}
-          </>
-        }
+         primaryActions={
+           <>
+             {server.status === "running" ? (
+               <>
+                 <Button
+                   onClick={() => void runLifecycleAction("stop")}
+                   icon={Square}
+                   variant="secondary"
+                   size="sm"
+                   disabled={Boolean(lifecycleAction)}
+                 >
+                   {lifecycleAction === "stop" ? "Stopping..." : "Stop"}
+                 </Button>
+                 <Button
+                   onClick={() => void runLifecycleAction("restart")}
+                   icon={RotateCcw}
+                   variant="secondary"
+                   size="sm"
+                   disabled={Boolean(lifecycleAction)}
+                 >
+                   {lifecycleAction === "restart" ? "Restarting..." : "Restart"}
+                 </Button>
+               </>
+             ) : server.status === "starting" ? (
+               <Button disabled icon={Play} variant="primary" size="sm">Starting...</Button>
+             ) : server.status === "stopping" ? (
+               <Button disabled icon={Square} variant="secondary" size="sm">Stopping...</Button>
+             ) : (
+               <Button
+                 onClick={() => void runLifecycleAction("start")}
+                 icon={Play}
+                 variant="primary"
+                 size="sm"
+                 disabled={Boolean(lifecycleAction)}
+               >
+                 {lifecycleAction === "start" ? "Starting..." : "Start"}
+               </Button>
+             )}
+           </>
+         }
       >
 
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">

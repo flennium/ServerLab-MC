@@ -2,6 +2,8 @@ import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 import archiver from "archiver";
+import { pipeline } from "stream/promises";
+import { Transform, type Readable } from "stream";
 import type {
   FileContentResponse,
   FileEntry,
@@ -14,6 +16,7 @@ const MEDIUM_FILE_BYTES = 1024 * 1024;
 const LARGE_FILE_BYTES = 5 * 1024 * 1024;
 const PREVIEW_BYTES = 256 * 1024;
 const MAX_SEARCH_VISITS = 5000;
+const MAX_UPLOAD_BYTES = 512 * 1024 * 1024;
 
 export class FileConflictError extends Error {
   constructor() {
@@ -166,7 +169,7 @@ export class FileManager {
   async createFile(relativePath: string, content = ""): Promise<FileContentResponse> {
     const filePath = this.resolve(relativePath);
     const exists = await fs.stat(filePath).then(() => true).catch(() => false);
-    if (exists) throw new Error(`"${relativePath}" already exists`);
+    if (exists) throw new FileExistsError(relativePath);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, content, "utf-8");
     return this.readFileContent(relativePath);
@@ -265,9 +268,48 @@ export class FileManager {
     };
   }
 
+  async uploadFile(relativePath: string, input: Readable, overwrite = false): Promise<FileEntry> {
+    const filePath = this.resolve(relativePath);
+    const existing = await fs.stat(filePath).catch(() => null);
+    if (existing && (!overwrite || existing.isDirectory())) {
+      throw new FileExistsError(relativePath);
+    }
+
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const temporaryPath = `${filePath}.serverlab-upload-${crypto.randomUUID()}.tmp`;
+    let bytesReceived = 0;
+    const limiter = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        bytesReceived += chunk.length;
+        if (bytesReceived > MAX_UPLOAD_BYTES) {
+          callback(new Error("Uploaded file exceeds the 512 MB limit."));
+          return;
+        }
+        callback(null, chunk);
+      },
+    });
+
+    try {
+      await pipeline(input, limiter, (await import("fs")).createWriteStream(temporaryPath, { flags: "wx" }));
+      if (overwrite) await fs.rm(filePath, { force: true });
+      await fs.rename(temporaryPath, filePath);
+      const stat = await fs.stat(filePath);
+      return this.toEntry(filePath, path.basename(filePath), false, stat);
+    } catch (error) {
+      await fs.rm(temporaryPath, { force: true }).catch(() => {});
+      throw error;
+    }
+  }
+
   private isHiddenFromFileBrowser(relativeDir: string, name: string): boolean {
     if (relativeDir !== "plugins") return false;
     return [".staging", ".disabled", ".trash", ".backups"].includes(name.toLowerCase());
+  }
+}
+
+export class FileExistsError extends Error {
+  constructor(relativePath: string) {
+    super(`"${relativePath}" already exists.`);
   }
 }
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent } from "react";
+import type { DragEvent, MouseEvent } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { yaml } from "@codemirror/lang-yaml";
@@ -24,6 +24,7 @@ import {
   Search,
   ShieldAlert,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import { api } from "../../lib/apiClient.js";
@@ -67,6 +68,15 @@ interface WorkspacePrefs {
 }
 
 type CreateMode = "file" | "folder";
+type UploadStatus = "queued" | "uploading" | "completed" | "failed";
+
+interface UploadItem {
+  id: string;
+  name: string;
+  status: UploadStatus;
+  percent: number;
+  error: AppError | null;
+}
 
 const MAX_RENDERED_ROWS = 650;
 
@@ -99,6 +109,10 @@ export function ServerFileWorkspace({
     x: number;
     y: number;
   } | null>(null);
+  const [uploads, setUploads] = useState<UploadItem[]>([]);
+  const [dragActive, setDragActive] = useState(false);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const dragDepth = useRef(0);
   const restoredPrefs = useRef(false);
   const { reportError } = useError();
 
@@ -541,6 +555,74 @@ export function ServerFileWorkspace({
     }
   }
 
+  function updateUpload(id: string, patch: Partial<UploadItem>) {
+    setUploads((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  }
+
+  async function uploadFile(file: File): Promise<void> {
+    const id = `${file.name}-${file.lastModified}-${Math.random()}`;
+    const safeName = sanitizeUploadName(file.name);
+    const targetPath = joinPath(currentPath, safeName);
+    setUploads((current) => [...current, { id, name: safeName, status: "uploading", percent: 0, error: null }]);
+
+    try {
+      const { origin, token } = await api.getConfig();
+      await new Promise<void>((resolve, reject) => {
+        const request = new XMLHttpRequest();
+        request.open(
+          "PUT",
+          `${origin}/api/servers/${serverId}/files/upload?path=${encodeURIComponent(targetPath)}`
+        );
+        request.setRequestHeader("Content-Type", "application/octet-stream");
+        if (token) request.setRequestHeader("Authorization", `Bearer ${token}`);
+        request.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            updateUpload(id, { percent: Math.round((event.loaded / event.total) * 100) });
+          }
+        };
+        request.onerror = () => reject(new Error("The file upload could not reach the local backend."));
+        request.onload = () => {
+          let payload: { error?: unknown } = {};
+          try {
+            payload = JSON.parse(request.responseText) as { error?: unknown };
+          } catch {
+            // The structured error fallback below handles an empty or malformed response.
+          }
+          if (request.status >= 200 && request.status < 300) {
+            resolve();
+            return;
+          }
+          reject(payload.error ?? new Error(request.statusText || "File upload failed."));
+        };
+        request.send(file);
+      });
+      updateUpload(id, { status: "completed", percent: 100 });
+    } catch (error) {
+      const appError = reportError(error, {
+        category: "file",
+        severity: "error",
+        userMessage: `Could not upload ${safeName}.`,
+        possibleSolution: "Try a different filename or check that the server folder is writable.",
+        source: "renderer:file-workspace",
+        action: "upload-file",
+      });
+      updateUpload(id, { status: "failed", error: appError });
+    }
+  }
+
+  async function uploadFiles(files: File[]) {
+    for (const file of files) await uploadFile(file);
+    await loadDirectory(currentPath);
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    dragDepth.current = 0;
+    setDragActive(false);
+    const files = Array.from(event.dataTransfer.files);
+    if (files.length > 0) void uploadFiles(files);
+  }
+
   function openEntry(entry: FileEntry) {
     if (entry.isDirectory) void loadDirectory(entry.path);
     else void openFile(entry.path, entry.name);
@@ -593,7 +675,39 @@ export function ServerFileWorkspace({
   const rows = visibleEntries.slice(0, MAX_RENDERED_ROWS);
 
   return (
-    <div className="grid min-h-[620px] gap-4 xl:grid-cols-[minmax(300px,0.54fr)_minmax(560px,1.46fr)]">
+    <div
+      className="relative grid min-h-[620px] gap-4 xl:grid-cols-[minmax(300px,0.54fr)_minmax(560px,1.46fr)]"
+      onDragEnter={(event) => {
+        if (!event.dataTransfer.types.includes("Files")) return;
+        event.preventDefault();
+        dragDepth.current += 1;
+        setDragActive(true);
+      }}
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes("Files")) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "copy";
+        }
+      }}
+      onDragLeave={(event) => {
+        if (!event.dataTransfer.types.includes("Files")) return;
+        dragDepth.current -= 1;
+        if (dragDepth.current <= 0) {
+          dragDepth.current = 0;
+          setDragActive(false);
+        }
+      }}
+      onDrop={handleDrop}
+    >
+      {dragActive && (
+        <div className="pointer-events-none absolute inset-1 z-40 flex items-center justify-center rounded-xl border-2 border-dashed border-copper bg-carbon/90 p-6 text-center shadow-2xl">
+          <div>
+            <Upload className="mx-auto mb-2 h-8 w-8 text-copper" aria-hidden="true" />
+            <p className="font-display text-lg font-semibold text-white">Drop files to upload</p>
+            <p className="mt-1 text-xs text-muted">Files will be added to {currentPath || "the server root"}.</p>
+          </div>
+        </div>
+      )}
       <Card className="flex min-h-[520px] flex-col overflow-hidden">
         <div className="border-b border-border bg-carbon px-3 py-3">
           <div className="mb-2 flex items-center justify-between gap-2">
@@ -608,7 +722,19 @@ export function ServerFileWorkspace({
             <div className="flex gap-1">
               <IconButton icon={FilePlus2} label="Create file" onClick={() => setCreateMode("file")} />
               <IconButton icon={FolderPlus} label="Create folder" onClick={() => setCreateMode("folder")} />
+              <IconButton icon={Upload} label="Upload files" onClick={() => uploadInputRef.current?.click()} />
               <IconButton icon={RefreshCw} label="Refresh files" onClick={() => loadDirectory(currentPath)} />
+              <input
+                ref={uploadInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                  const files = Array.from(event.target.files ?? []);
+                  event.target.value = "";
+                  if (files.length > 0) void uploadFiles(files);
+                }}
+              />
             </div>
           </div>
 
@@ -675,6 +801,35 @@ export function ServerFileWorkspace({
                 Create
               </Button>
               <IconButton icon={X} label="Cancel" onClick={() => setCreateMode(null)} />
+            </div>
+          </div>
+        )}
+
+        {uploads.length > 0 && (
+          <div className="border-b border-border bg-surface-console px-3 py-2">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-white">Uploads</p>
+              <button
+                type="button"
+                className="text-[0.68rem] font-semibold text-muted hover:text-white"
+                onClick={() => setUploads((current) => current.filter((item) => item.status === "uploading" || item.status === "queued"))}
+              >
+                Clear finished
+              </button>
+            </div>
+            <div className="grid gap-1.5">
+              {uploads.slice(-4).map((item) => (
+                <div key={item.id} className="flex items-center gap-2 text-xs">
+                  <Upload className="h-3.5 w-3.5 shrink-0 text-copper" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate font-mono text-muted">{item.name}</span>
+                  <span className={clsx(
+                    "shrink-0 font-semibold",
+                    item.status === "completed" ? "text-grass" : item.status === "failed" ? "text-redstone" : "text-copper"
+                  )}>
+                    {item.status === "completed" ? "Uploaded" : item.status === "failed" ? "Failed" : `${item.percent}%`}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -1224,6 +1379,11 @@ function dirname(path: string): string {
 function joinPath(base: string, name: string): string {
   const cleanName = name.replace(/^[/\\]+/, "");
   return base ? `${base}/${cleanName}` : cleanName;
+}
+
+function sanitizeUploadName(name: string): string {
+  const sanitized = name.replace(/[\\/:*?"<>|]/g, "_").trim();
+  return sanitized && sanitized !== "." && sanitized !== ".." ? sanitized : "uploaded-file";
 }
 
 function languageForName(name: string): FileContentResponse["language"] {
