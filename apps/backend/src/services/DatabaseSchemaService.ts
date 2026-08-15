@@ -86,6 +86,11 @@ export async function ensureDatabaseSchema(): Promise<void> {
       "provider" TEXT NOT NULL,
       "minecraftVersion" TEXT NOT NULL,
       "buildId" TEXT NOT NULL,
+      "acquisition" TEXT NOT NULL DEFAULT 'download',
+      "buildTool" TEXT,
+      "buildToolVersion" TEXT,
+      "sourceMetadataJson" TEXT,
+      "buildLogPath" TEXT,
       "filename" TEXT NOT NULL,
       "sizeBytes" INTEGER NOT NULL DEFAULT 0,
       "sha256" TEXT,
@@ -98,6 +103,26 @@ export async function ensureDatabaseSchema(): Promise<void> {
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS "software_artifacts_provider_minecraftVersion_buildId_key"
       ON "software_artifacts"("provider", "minecraftVersion", "buildId")`,
+    `CREATE TABLE IF NOT EXISTS "software_build_jobs" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "provider" TEXT NOT NULL,
+      "minecraftVersion" TEXT NOT NULL,
+      "buildId" TEXT NOT NULL,
+      "toolVersion" TEXT,
+      "status" TEXT NOT NULL DEFAULT 'queued',
+      "stage" TEXT NOT NULL DEFAULT 'checking-prerequisites',
+      "bytesReceived" INTEGER NOT NULL DEFAULT 0,
+      "totalBytes" INTEGER,
+      "percent" REAL,
+      "pid" INTEGER,
+      "workspacePath" TEXT,
+      "logPath" TEXT,
+      "artifactPath" TEXT,
+      "error" TEXT,
+      "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" DATETIME NOT NULL,
+      "completedAt" DATETIME
+    )`,
     `CREATE TABLE IF NOT EXISTS "software_downloads" (
       "id" TEXT NOT NULL PRIMARY KEY,
       "provider" TEXT NOT NULL,
@@ -202,6 +227,11 @@ export async function ensureDatabaseSchema(): Promise<void> {
     "allowUnsupportedJava",
     '"allowUnsupportedJava" BOOLEAN NOT NULL DEFAULT false'
   );
+  await ensureColumn("software_artifacts", "acquisition", '"acquisition" TEXT NOT NULL DEFAULT \'download\'');
+  await ensureColumn("software_artifacts", "buildTool", '"buildTool" TEXT');
+  await ensureColumn("software_artifacts", "buildToolVersion", '"buildToolVersion" TEXT');
+  await ensureColumn("software_artifacts", "sourceMetadataJson", '"sourceMetadataJson" TEXT');
+  await ensureColumn("software_artifacts", "buildLogPath", '"buildLogPath" TEXT');
   await migrateLegacyJavaRows();
 
   logger.info("Database schema ready");

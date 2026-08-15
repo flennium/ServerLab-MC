@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.1.1
+
+### Fixed
+
+- Fixed packaged startup on existing installations by bootstrapping the Spigot BuildTools job table before recovery checks run.
+- Added schema upgrades for BuildTools metadata columns when packaged Prisma migrations are unavailable.
+
+### Changed
+
+- Bumped app and workspace versions to `3.1.1`.
+
 ## 3.1.0
 
 ### Added
