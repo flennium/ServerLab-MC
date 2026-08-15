@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import {
+  CheckCircle2,
   Download,
   ExternalLink,
   Package,
@@ -63,6 +64,18 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
   const selectedVersion = useMemo(
     () => versions.find((version) => version.id === selectedVersionId) ?? null,
     [selectedVersionId, versions]
+  );
+  const installedSelectedVersion = useMemo(
+    () =>
+      plugins.find(
+        (plugin) =>
+          plugin.source === "modrinth" &&
+          plugin.status !== "trashed" &&
+          plugin.sourceProjectId === selectedProject?.id &&
+          (plugin.sourceVersionId === selectedVersion?.id ||
+            plugin.installedVersion === selectedVersion?.versionNumber)
+      ) ?? null,
+    [plugins, selectedProject?.id, selectedVersion?.id, selectedVersion?.versionNumber]
   );
   const serverRunning = server.status === "running" || server.status === "starting";
 
@@ -478,10 +491,32 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
                     {versions.map((version) => (
                       <option key={version.id} value={version.id}>
                         {version.versionNumber} / {version.compatibility?.status ?? "unknown"}
+                        {plugins.some(
+                          (plugin) =>
+                            plugin.source === "modrinth" &&
+                            plugin.status !== "trashed" &&
+                            plugin.sourceProjectId === selectedProject.id &&
+                            (plugin.sourceVersionId === version.id ||
+                              plugin.installedVersion === version.versionNumber)
+                        )
+                          ? " / installed"
+                          : ""}
                       </option>
                     ))}
                   </Select>
                 </Field>
+
+                {installedSelectedVersion && (
+                  <Alert tone="success">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      <span>
+                        Version {installedSelectedVersion.installedVersion} is already installed on this server.
+                        {installedSelectedVersion.status === "disabled" ? " It is currently disabled." : ""}
+                      </span>
+                    </div>
+                  </Alert>
+                )}
 
                 {selectedVersion?.compatibility && (
                   <Alert tone={selectedVersion.compatibility.status === "compatible" ? "success" : selectedVersion.compatibility.status === "warning" ? "warning" : "danger"}>
@@ -519,13 +554,18 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
                   disabled={
                     !selectedVersion ||
                     Boolean(progress) ||
+                    Boolean(installedSelectedVersion) ||
                     selectedVersion.compatibility?.status === "incompatible" ||
                     (selectedVersion.compatibility?.status === "warning" && !allowWarning)
                   }
                   icon={Download}
-                  variant="primary"
+                  variant={installedSelectedVersion ? "secondary" : "primary"}
                 >
-                  {selectedVersion?.compatibility?.status === "warning" ? "Install anyway" : "Install plugin"}
+                  {installedSelectedVersion
+                    ? "Already installed"
+                    : selectedVersion?.compatibility?.status === "warning"
+                      ? "Install anyway"
+                      : "Install plugin"}
                 </Button>
               </div>
             )}
