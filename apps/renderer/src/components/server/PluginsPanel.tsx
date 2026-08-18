@@ -7,7 +7,6 @@ import {
   Package,
   Power,
   RefreshCw,
-  RotateCcw,
   Search,
   Trash2,
 } from "lucide-react";
@@ -16,6 +15,8 @@ import { getSocket } from "../../lib/socket.js";
 import { Button, IconButton } from "../ui/Button.js";
 import { Alert, Card, EmptyState } from "../ui/Layout.js";
 import { Field, Select, Switch, TextInput } from "../ui/Form.js";
+import { Modal } from "../ui/Modal.js";
+import { ConfirmModal } from "../ui/ConfirmModal.js";
 import { InlineError, useError } from "../errors/ErrorProvider.js";
 import type {
   AppError,
@@ -58,6 +59,9 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
   const [progress, setProgress] = useState<PluginInstallProgressPayload | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<AppError | null>(null);
+  const [pendingInstall, setPendingInstall] = useState<ModrinthVersion | null>(null);
+  const [includeOptionalDependencies, setIncludeOptionalDependencies] = useState(false);
+  const [pendingRemoval, setPendingRemoval] = useState<InstalledPlugin | null>(null);
   const [viewMode, setViewMode] = useState<"installed" | "browse">("installed");
   const { reportError } = useError();
 
@@ -76,6 +80,10 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
             plugin.installedVersion === selectedVersion?.versionNumber)
       ) ?? null,
     [plugins, selectedProject?.id, selectedVersion?.id, selectedVersion?.versionNumber]
+  );
+  const pendingDependencies = useMemo(
+    () => pendingInstall?.dependencies.filter((dependency) => dependency.projectId && (dependency.dependencyType === "required" || dependency.dependencyType === "optional")) ?? [],
+    [pendingInstall]
   );
   const serverRunning = server.status === "running" || server.status === "starting";
 
@@ -170,8 +178,21 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
     }
   }
 
-  async function installSelected() {
+  function installSelected() {
     if (!selectedProject || !selectedVersion) return;
+    const downloadableDependencies = selectedVersion.dependencies.filter(
+      (dependency) => dependency.projectId && (dependency.dependencyType === "required" || dependency.dependencyType === "optional")
+    );
+    if (downloadableDependencies.length > 0) {
+      setIncludeOptionalDependencies(false);
+      setPendingInstall(selectedVersion);
+      return;
+    }
+    void performInstall(selectedVersion, "none");
+  }
+
+  async function performInstall(versionToInstall: ModrinthVersion, dependencyMode: "none" | "required" | "all") {
+    if (!selectedProject) return;
     setMessage(null);
     setError(null);
     const requestId = crypto.randomUUID();
@@ -180,7 +201,7 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
       serverId: server.id,
       pluginId: null,
       projectId: selectedProject.id,
-      versionId: selectedVersion.id,
+      versionId: versionToInstall.id,
       action: "install",
       status: "queued",
       stage: "resolving-project",
@@ -193,14 +214,14 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
     try {
       const result = await api.post<PluginInstallResponse>(`/api/servers/${server.id}/plugins/install`, {
         projectId: selectedProject.id,
-        versionId: selectedVersion.id,
+        versionId: versionToInstall.id,
         allowWarning,
+        dependencyMode,
         requestId,
       });
+      const dependencyCount = result.installedDependencies?.length ?? 0;
       setMessage(
-        result.restartRequired
-          ? `${selectedProject.title} installed. Restart this server when ready.`
-          : `${selectedProject.title} installed.`
+        `${selectedProject.title} installed${dependencyCount > 0 ? ` with ${dependencyCount} dependenc${dependencyCount === 1 ? "y" : "ies"}` : ""}.${result.restartRequired ? " Restart this server when ready." : ""}`
       );
       setProgress(null);
       setViewMode("installed");
@@ -232,15 +253,11 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
     setProgress(null);
   }
 
-  async function runPluginAction(plugin: InstalledPlugin, action: "update" | "disable" | "enable" | "restore" | "remove") {
+  async function runPluginAction(plugin: InstalledPlugin, action: "update" | "disable" | "enable") {
     setMessage(null);
     setError(null);
     try {
-      if (action === "remove") {
-        await api.delete(`/api/servers/${server.id}/plugins/${plugin.id}`);
-      } else {
-        await api.post(`/api/servers/${server.id}/plugins/${plugin.id}/${action}`);
-      }
+      await api.post(`/api/servers/${server.id}/plugins/${plugin.id}/${action}`);
       setMessage(
         serverRunning
           ? `${plugin.name} ${action}d. Restart this server when ready.`
@@ -256,6 +273,28 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
           possibleSolution: "Refresh the plugin list and try again.",
           source: "renderer:plugins-panel",
           action: `${action}-plugin`,
+        })
+      );
+    }
+  }
+
+  async function removePlugin(plugin: InstalledPlugin) {
+    setMessage(null);
+    setError(null);
+    try {
+      await api.delete(`/api/servers/${server.id}/plugins/${plugin.id}`);
+      setPendingRemoval(null);
+      setMessage(`${plugin.name} was permanently removed.`);
+      await loadPlugins();
+    } catch (err) {
+      setError(
+        reportError(err, {
+          category: "plugin",
+          severity: "error",
+          userMessage: "ServerLab could not remove this plugin.",
+          possibleSolution: "Refresh the plugin list and try again.",
+          source: "renderer:plugins-panel",
+          action: "remove-plugin",
         })
       );
     }
@@ -364,8 +403,7 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
                   onUpdate={() => runPluginAction(plugin, "update")}
                   onDisable={() => runPluginAction(plugin, "disable")}
                   onEnable={() => runPluginAction(plugin, "enable")}
-                  onRestore={() => runPluginAction(plugin, "restore")}
-                  onRemove={() => runPluginAction(plugin, "remove")}
+                  onRemove={() => setPendingRemoval(plugin)}
                 />
               ))}
             </div>
@@ -470,6 +508,7 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
                     <h3 className="truncate font-display text-lg font-semibold text-white">{selectedProject.title}</h3>
                     <p className="mt-1 text-sm leading-6 text-muted">{selectedProject.description}</p>
                     <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted">
+                      {selectedProject.author && <span>by {selectedProject.author}</span>}
                       <span>{formatNumber(selectedProject.downloads)} downloads</span>
                       <span>{formatNumber(selectedProject.followers)} follows</span>
                       {selectedProject.license && <span>{selectedProject.license}</span>}
@@ -538,7 +577,8 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
                     <div className="flex flex-wrap gap-1.5">
                       {selectedVersion.dependencies.map((dependency, index) => (
                         <span key={`${dependency.projectId ?? dependency.fileName}-${index}`} className="rounded border border-border bg-rail px-2 py-1 text-xs text-muted">
-                          {dependency.dependencyType} {dependency.projectName ?? dependency.fileName ?? dependency.projectId ?? "Unknown dependency"}
+                          <span className="mr-1 font-semibold capitalize text-white">{dependency.dependencyType}</span>
+                          {dependency.projectName ?? dependency.fileName ?? "Unnamed dependency"}
                         </span>
                       ))}
                     </div>
@@ -573,6 +613,56 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
         </div>
       </Card>
       </div>
+
+      {pendingInstall && selectedProject && (
+        <Modal title="Review plugin dependencies" onClose={() => setPendingInstall(null)}>
+          <div className="grid gap-4">
+            <p className="text-sm leading-6 text-muted">
+              {selectedProject.title} declares dependencies. ServerLab will download them from Modrinth and install them into this server&apos;s plugins folder before the plugin.
+            </p>
+            <div className="grid gap-2 rounded border border-border bg-surface-console p-3">
+              {pendingDependencies.map((dependency, index) => (
+                <div key={`${dependency.projectId ?? dependency.fileName}-${index}`} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="truncate text-white">{dependency.projectName ?? dependency.fileName ?? "Unnamed dependency"}</span>
+                  <span className="shrink-0 text-xs font-semibold uppercase text-muted">{dependency.dependencyType}</span>
+                </div>
+              ))}
+            </div>
+            {pendingDependencies.some((dependency) => dependency.dependencyType === "optional") && (
+              <Switch
+                label="Also install optional dependencies"
+                checked={includeOptionalDependencies}
+                onChange={setIncludeOptionalDependencies}
+              />
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setPendingInstall(null)}>Cancel</Button>
+              <Button
+                variant="primary"
+                icon={Download}
+                onClick={() => {
+                  const version = pendingInstall;
+                  setPendingInstall(null);
+                  void performInstall(version, includeOptionalDependencies ? "all" : "required");
+                }}
+              >
+                Install plugin and dependencies
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {pendingRemoval && (
+        <ConfirmModal
+          title={`Delete ${pendingRemoval.name}?`}
+          message="This permanently deletes the plugin jar, its ServerLab record, and its dependency records. It cannot be restored from this screen. Make a server backup first if you may need the file later."
+          confirmLabel="Delete permanently"
+          danger
+          onCancel={() => setPendingRemoval(null)}
+          onConfirm={() => void removePlugin(pendingRemoval)}
+        />
+      )}
     </div>
   );
 }
@@ -582,14 +672,12 @@ function PluginRow({
   onUpdate,
   onDisable,
   onEnable,
-  onRestore,
   onRemove,
 }: {
   plugin: InstalledPlugin;
   onUpdate: () => void;
   onDisable: () => void;
   onEnable: () => void;
-  onRestore: () => void;
   onRemove: () => void;
 }) {
   const managed = plugin.source === "modrinth";
@@ -622,9 +710,6 @@ function PluginRow({
                 <IconButton icon={Power} label="Enable plugin" onClick={onEnable} />
                 <IconButton icon={Trash2} label="Remove plugin" variant="danger" onClick={onRemove} />
               </>
-            )}
-            {plugin.status === "trashed" && (
-              <IconButton icon={RotateCcw} label="Restore plugin" onClick={onRestore} />
             )}
           </div>
         )}

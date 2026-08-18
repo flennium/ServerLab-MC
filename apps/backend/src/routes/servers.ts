@@ -593,6 +593,7 @@ serverRoutes.post("/:id/plugins/install", async (req, res, next) => {
       projectId: body.projectId,
       versionId: body.versionId,
       allowWarning: body.allowWarning,
+      dependencyMode: body.dependencyMode,
       requestId: body.requestId,
     });
     res.status(201).json(result);
@@ -637,19 +638,10 @@ serverRoutes.post("/:id/plugins/:pluginId/enable", async (req, res, next) => {
   }
 });
 
-serverRoutes.post("/:id/plugins/:pluginId/restore", async (req, res, next) => {
-  try {
-    const plugin = await pluginInstallService.restore(req.params.id, req.params.pluginId);
-    res.json({ plugin });
-  } catch (err) {
-    next(err);
-  }
-});
-
 serverRoutes.delete("/:id/plugins/:pluginId", async (req, res, next) => {
   try {
-    const plugin = await pluginInstallService.remove(req.params.id, req.params.pluginId);
-    res.json({ plugin });
+    const result = await pluginInstallService.remove(req.params.id, req.params.pluginId);
+    res.json(result);
   } catch (err) {
     next(err);
   }

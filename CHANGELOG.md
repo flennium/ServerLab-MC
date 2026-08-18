@@ -1,10 +1,27 @@
 # Changelog
 
-## Unreleased
+## 3.4.0
+
+### Added
+
+- Added dependency review before Modrinth plugin installation, with required dependency downloads and an opt-in choice for optional dependencies.
+- Added Modrinth project author information to plugin browsing details.
+
+### Improved
+
+- Dependency names now resolve to Modrinth project titles with safe fallbacks instead of exposing raw identifiers.
+- Dependency installation now validates compatibility, avoids duplicates, and detects circular dependency graphs.
+- Plugin removal now permanently deletes the plugin jar and ServerLab record after explicit confirmation; the old restore-only trash flow is no longer used.
+
+### Changed
+
+- Bumped app and workspace versions to `3.4.0`.
 
 ### Fixed
 
 - Velocity profiles now require Java 25, matching the class version used by current Velocity releases.
+
+## Unreleased
 
 ## 3.3.0
 

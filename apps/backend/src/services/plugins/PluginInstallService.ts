@@ -37,6 +37,8 @@ interface InstallInput {
   projectId: string;
   versionId: string;
   allowWarning?: boolean;
+  dependencyMode?: "none" | "required" | "all";
+  dependencyStack?: Set<string>;
   requestId?: string;
   action?: "install" | "update";
   existingPluginId?: string;
@@ -72,7 +74,7 @@ export class PluginInstallService {
     const server = await this.getPluginServer(serverId);
     await this.ensurePluginFolders(server.path);
     const records = await prisma.plugin.findMany({
-      where: { serverId },
+      where: { serverId, status: { not: "trashed" } },
       orderBy: [{ status: "asc" }, { name: "asc" }],
     });
     const plugins = await Promise.all(records.map((record) => this.toInstalled(record)));
@@ -84,6 +86,7 @@ export class PluginInstallService {
     job: PluginInstallJob;
     plugin: InstalledPlugin | null;
     dependencies: PluginDependency[];
+    installedDependencies: InstalledPlugin[];
     restartRequired: boolean;
   }> {
     const action = input.action ?? "install";
@@ -130,6 +133,12 @@ export class PluginInstallService {
         const name = dependencyNames.get(blockingDependency.projectId) ?? blockingDependency.projectId;
         throw new HttpError(409, `${project.title} conflicts with ${name}.`, "plugin", "warning", "Remove the incompatible plugin or choose another version.");
       }
+
+      const installedDependencies = await this.installDependencies({
+        input,
+        server,
+        version,
+      });
 
       const file = selectJarFile(version);
       const finalFileName = sanitizePluginFileName(file.filename || `${project.slug}-${version.versionNumber}.jar`);
@@ -229,6 +238,7 @@ export class PluginInstallService {
         job: completed,
         plugin: await this.toInstalled(plugin),
         dependencies: dependencies.map(toDependency),
+        installedDependencies,
         restartRequired: running,
       };
     } catch (error) {
@@ -261,6 +271,7 @@ export class PluginInstallService {
     job: PluginInstallJob;
     plugin: InstalledPlugin | null;
     dependencies: PluginDependency[];
+    installedDependencies: InstalledPlugin[];
     restartRequired: boolean;
   }> {
     const plugin = await prisma.plugin.findUniqueOrThrow({ where: { id: pluginId } });
@@ -277,13 +288,14 @@ export class PluginInstallService {
     }
     if (nextVersion.id === plugin.sourceVersionId) {
       const job = await this.createCompletedJob(serverId, plugin.id, "update", plugin.sourceProjectId, nextVersion.id);
-      return { job, plugin: await this.toInstalled(plugin), dependencies: [], restartRequired: false };
+      return { job, plugin: await this.toInstalled(plugin), dependencies: [], installedDependencies: [], restartRequired: false };
     }
     return this.install({
       serverId,
       projectId: plugin.sourceProjectId,
       versionId: nextVersion.id,
       allowWarning: false,
+      dependencyMode: "none",
       action: "update",
       existingPluginId: plugin.id,
     });
@@ -314,13 +326,17 @@ export class PluginInstallService {
     return this.movePlugin(serverId, pluginId, "enable", "plugins", "installed", true, plugin.fileName);
   }
 
-  async remove(serverId: string, pluginId: string): Promise<InstalledPlugin> {
-    return this.movePlugin(serverId, pluginId, "remove", `plugins/.trash/${Date.now()}`, "trashed", false);
-  }
-
-  async restore(serverId: string, pluginId: string): Promise<InstalledPlugin> {
+  async remove(serverId: string, pluginId: string): Promise<{ pluginId: string; deleted: true }> {
+    const server = await this.getPluginServer(serverId);
     const plugin = await prisma.plugin.findUniqueOrThrow({ where: { id: pluginId } });
-    return this.movePlugin(serverId, pluginId, "restore", "plugins", "installed", true, plugin.fileName);
+    if (plugin.serverId !== serverId) throw new HttpError(404, "Plugin not found.", "plugin", "warning");
+
+    const filePath = this.resolveInside(server.path, plugin.filePath);
+    await fsp.rm(filePath, { force: true });
+    await this.createCompletedJob(serverId, plugin.id, "remove", plugin.sourceProjectId, plugin.sourceVersionId);
+    await prisma.plugin.delete({ where: { id: plugin.id } });
+    logger.info({ serverId, pluginId, filePath: plugin.filePath }, "Plugin permanently removed");
+    return { pluginId, deleted: true };
   }
 
   async cleanupStaging(): Promise<void> {
@@ -373,6 +389,89 @@ export class PluginInstallService {
       throw new HttpError(409, "Vanilla servers do not support plugins.", "plugin", "warning", "Choose a plugin-capable server or proxy profile for plugin management.");
     }
     return server;
+  }
+
+  private async installDependencies(input: {
+    input: InstallInput;
+    server: Awaited<ReturnType<PluginInstallService["getPluginServer"]>>;
+    version: ModrinthVersion;
+  }): Promise<InstalledPlugin[]> {
+    const mode = input.input.dependencyMode ?? "none";
+    if (mode === "none") return [];
+
+    const dependencies = input.version.dependencies.filter((dependency) => {
+      if (dependency.dependencyType === "embedded" || dependency.dependencyType === "incompatible") return false;
+      return dependency.dependencyType === "required" || mode === "all";
+    });
+    if (dependencies.length === 0) return [];
+
+    const stack = new Set(input.input.dependencyStack ?? [input.input.projectId]);
+    const seen = new Set<string>();
+    const installed: InstalledPlugin[] = [];
+    for (const dependency of dependencies) {
+      if (!dependency.projectId) {
+        if (dependency.dependencyType === "required") {
+          throw new HttpError(409, "A required plugin dependency has no Modrinth project reference.", "plugin", "warning", "Install the dependency manually or choose another plugin version.");
+        }
+        continue;
+      }
+      if (seen.has(dependency.projectId)) continue;
+      seen.add(dependency.projectId);
+      if (stack.has(dependency.projectId)) {
+        throw new HttpError(409, "The plugin dependency graph contains a cycle.", "plugin", "warning", "Choose a plugin version with a non-circular dependency graph.");
+      }
+
+      const dependencyVersion = await this.resolveDependencyVersion(input.server, dependency);
+      const existing = await prisma.plugin.findFirst({
+        where: { serverId: input.server.id, source: "modrinth", sourceProjectId: dependency.projectId },
+      });
+      if (
+        existing &&
+        existing.sourceVersionId === dependencyVersion.id &&
+        (existing.status === "installed" || existing.status === "disabled") &&
+        await fsp.stat(this.resolveInside(input.server.path, existing.filePath)).then(() => true).catch(() => false)
+      ) {
+        installed.push(await this.toInstalled(existing));
+        continue;
+      }
+
+      const result = await this.install({
+        serverId: input.server.id,
+        projectId: dependency.projectId,
+        versionId: dependencyVersion.id,
+        allowWarning: true,
+        dependencyMode: mode,
+        dependencyStack: new Set([...stack, input.input.projectId]),
+        action: "install",
+        existingPluginId: existing?.id,
+      });
+      if (result.plugin) installed.push(result.plugin);
+      installed.push(...result.installedDependencies);
+    }
+    return installed.filter((plugin, index, list) => list.findIndex((item) => item.id === plugin.id) === index);
+  }
+
+  private async resolveDependencyVersion(
+    server: Awaited<ReturnType<PluginInstallService["getPluginServer"]>>,
+    dependency: ModrinthVersionDependency
+  ): Promise<ModrinthVersion> {
+    if (dependency.versionId) {
+      const version = await modrinthClient.getVersion(dependency.versionId);
+      const compatibility = pluginCompatibilityService.check(server, version);
+      if (compatibility.status === "incompatible") {
+        throw new HttpError(409, `Required dependency ${dependency.projectId} is incompatible with this server.`, "plugin", "warning", "Choose a compatible plugin version.");
+      }
+      return version;
+    }
+
+    const { versions } = await modrinthClient.listVersions(dependency.projectId!);
+    const compatible = versions.find((version) => pluginCompatibilityService.check(server, version).status === "compatible");
+    const warning = versions.find((version) => pluginCompatibilityService.check(server, version).status === "warning");
+    const version = compatible ?? warning;
+    if (!version) {
+      throw new HttpError(409, `No compatible release was found for dependency ${dependency.projectId}.`, "plugin", "warning", "Install the dependency manually or choose another plugin version.");
+    }
+    return version;
   }
 
   private async scanManualPlugins(

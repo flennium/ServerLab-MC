@@ -103,7 +103,7 @@ export interface PluginInstallProgressPayload {
   pluginId: string | null;
   projectId: string | null;
   versionId: string | null;
-  action: "install" | "update" | "disable" | "enable" | "remove" | "restore";
+  action: "install" | "update" | "disable" | "enable" | "remove";
   status: PluginInstallStatus;
   stage: PluginInstallStage;
   bytesReceived: number;

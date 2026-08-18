@@ -28,6 +28,7 @@ import {
   type AppErrorEvent,
   type ErrorHistoryResponse,
   type JavaRuntime,
+  type JavaGuidanceResponse,
   type JavaRuntimeListResponse,
   type PortStatus,
   type PortStatusListResponse,
@@ -139,6 +140,7 @@ export function SettingsPage() {
           <SettingsSectionHeading title="Storage and support" description="Software cache, runtime diagnostics, and local error history." />
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <InstallerToolsPanel />
+            <RuntimeGuidancePanel />
             <SoftwareCachePanel />
             <ErrorHistoryPanel />
           </div>
@@ -1003,6 +1005,107 @@ function SettingsSectionHeading({ title, description }: { title: string; descrip
       <h2 className="font-display text-lg font-semibold text-white">{title}</h2>
       <p className="mt-1 text-sm text-muted">{description}</p>
     </div>
+  );
+}
+
+function RuntimeGuidancePanel() {
+  const [guidance, setGuidance] = useState<JavaGuidanceResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      setGuidance(await api.get<JavaGuidanceResponse>("/api/java/guidance"));
+    } catch (cause) {
+      setError(reportError(cause, {
+        category: "java",
+        userMessage: "Runtime guidance could not be refreshed.",
+        possibleSolution: "Check the backend connection and try again.",
+        source: "renderer:runtime-guidance",
+        action: "load-runtime-guidance",
+      }).userMessage);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  return (
+    <Card className="p-5 lg:col-span-2">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <Info className="h-4 w-4 text-copper" aria-hidden="true" />
+            <h2 className="font-display text-lg font-semibold">Runtime guidance</h2>
+          </div>
+          <p className="mt-1 text-sm text-muted">
+            Requirements are checked from each server JAR first, then compared with official provider metadata.
+          </p>
+        </div>
+        <Button onClick={load} disabled={loading} icon={RefreshCw} variant="secondary" size="sm">
+          {loading ? "Checking..." : "Refresh"}
+        </Button>
+      </div>
+
+      {error && (
+        <Alert tone="danger" className="mb-3" autoDismissMs={7000} dismissKey={error} onDismiss={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+
+      {!guidance && loading ? (
+        <div className="rounded border border-border bg-rail px-4 py-6 text-sm text-muted">Checking installed server JARs and official metadata...</div>
+      ) : guidance?.entries.length ? (
+        <div className="grid max-h-[30rem] gap-2 overflow-y-auto pr-1">
+          {guidance.entries.map((entry) => (
+            <div key={entry.serverId} className="rounded border border-border bg-rail px-3 py-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-white">{entry.serverName}</span>
+                    <span className="rounded border border-border bg-panel px-2 py-0.5 text-xs capitalize text-muted">
+                      {entry.software} {entry.version}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted">Checked {formatDate(entry.checkedAt)}</p>
+                </div>
+                <span className={entry.selectedRuntimeMajor && entry.selectedRuntimeMajor >= entry.requiredMajor
+                  ? "rounded border border-grass/40 bg-grass/10 px-2 py-1 text-xs text-grass"
+                  : "rounded border border-glowstone/40 bg-glowstone/10 px-2 py-1 text-xs text-glowstone"}>
+                  {entry.selectedRuntimeMajor && entry.selectedRuntimeMajor >= entry.requiredMajor ? "Compatible" : "Needs attention"}
+                </span>
+              </div>
+              <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                <LabelValue label="Required" value={`Java ${entry.requiredMajor}`} />
+                <LabelValue label="Selected" value={entry.selectedRuntimeMajor ? `Java ${entry.selectedRuntimeMajor}` : "None"} />
+                <LabelValue label="Evidence" value={entry.detectionMethod ?? entry.source} />
+                <LabelValue label="Confidence" value={entry.detectionConfidence ?? entry.confidence} />
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted">
+                <span>{entry.source === "online-provider-metadata" ? "Official metadata checked online" : entry.source === "jar-class-files" ? "Local JAR class files" : "Official guidance fallback"}</span>
+                {entry.sourceUrl && (
+                  <a href={entry.sourceUrl} target="_blank" rel="noreferrer" className="font-semibold text-copper hover:text-copper-hover">
+                    View source
+                  </a>
+                )}
+              </div>
+              {entry.warnings.length > 0 && (
+                <p className="mt-2 text-xs leading-5 text-glowstone">{entry.warnings[0]}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded border border-border bg-rail px-4 py-6 text-center text-sm text-muted">
+          No server profiles are available for runtime guidance yet.
+        </div>
+      )}
+    </Card>
   );
 }
 

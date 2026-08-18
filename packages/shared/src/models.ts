@@ -105,8 +105,7 @@ export type PluginInstallAction =
   | "update"
   | "disable"
   | "enable"
-  | "remove"
-  | "restore";
+  | "remove";
 
 export type PluginInstallStage =
   | "resolving-project"

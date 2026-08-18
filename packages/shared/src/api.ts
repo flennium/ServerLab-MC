@@ -346,6 +346,7 @@ export interface ModrinthProject {
   id: string;
   slug: string;
   title: string;
+  author: string | null;
   description: string;
   body?: string | null;
   projectType: string;
@@ -424,6 +425,7 @@ export interface PluginInstallRequest {
   projectId: string;
   versionId: string;
   allowWarning?: boolean;
+  dependencyMode?: "none" | "required" | "all";
   requestId?: string;
 }
 
@@ -431,6 +433,7 @@ export interface PluginInstallResponse {
   job: PluginInstallJob;
   plugin: InstalledPlugin | null;
   dependencies: PluginDependency[];
+  installedDependencies?: InstalledPlugin[];
   restartRequired: boolean;
 }
 
@@ -491,10 +494,37 @@ export interface JavaRecommendationResponse {
   recommendedMajor: number;
   confidence: "jar" | "metadata" | "rules" | "fallback" | "unknown";
   detection: JavaRequirementDetection | null;
+  source: "jar-class-files" | "jar-metadata" | "online-provider-metadata" | "official-guidance" | "fallback-rules";
+  sourceUrl: string | null;
+  checkedAt: string;
   compatibleRuntime: JavaRuntime | null;
   installedRuntimes: JavaRuntime[];
   missing: boolean;
   warnings: string[];
+}
+
+export interface JavaGuidanceEntry {
+  serverId: string;
+  serverName: string;
+  software: ServerSoftware;
+  version: string;
+  requiredMajor: number;
+  recommendedMajor: number;
+  selectedRuntimeMajor: number | null;
+  selectedRuntimeVersion: string | null;
+  selectedRuntimeSource: string | null;
+  confidence: JavaRecommendationResponse["confidence"];
+  source: JavaRecommendationResponse["source"];
+  sourceUrl: string | null;
+  detectionMethod: string | null;
+  detectionConfidence: "high" | "medium" | "low" | "unknown" | null;
+  warnings: string[];
+  checkedAt: string;
+}
+
+export interface JavaGuidanceResponse {
+  entries: JavaGuidanceEntry[];
+  checkedAt: string;
 }
 
 export interface AssignServerJavaRuntimeDto {

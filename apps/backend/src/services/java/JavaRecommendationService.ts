@@ -24,11 +24,12 @@ export class JavaRecommendationService {
       ? await javaRequirementDetectionService.detect(input.artifactPath)
       : null;
     const jarMajor = detection?.requiredMajor ?? null;
-    const providerMetadataMajor = jarMajor
+    const providerMetadata = jarMajor
       ? null
       : await this.tryProviderMetadata(input.minecraftVersion, input.software);
     const proxyRule = proxyJavaRule(input.software, input.minecraftVersion);
     const fallbackMajor = proxyRule?.minimum ?? minimumJavaMajorForMinecraft(input.minecraftVersion);
+    const providerMetadataMajor = providerMetadata?.major ?? null;
     const requiredMajor = jarMajor ?? providerMetadataMajor ?? fallbackMajor;
     const confidence = jarMajor
       ? "jar"
@@ -41,6 +42,16 @@ export class JavaRecommendationService {
           : "unknown";
     const recommendedMajor = jarMajor ?? providerMetadataMajor ?? proxyRule?.recommended ?? requiredMajor ?? 21;
     const selectionMajor = requiredMajor ?? recommendedMajor;
+    const source = jarMajor
+      ? detection?.method === "class-file" ? "jar-class-files" : "jar-metadata"
+      : providerMetadata
+        ? "online-provider-metadata"
+        : proxyRule
+          ? "official-guidance"
+          : "fallback-rules";
+    const sourceUrl = detection?.method === "class-file" || detection?.method === "manifest" || detection?.method === "bootstrap-metadata"
+      ? null
+      : providerMetadata?.sourceUrl ?? proxyRule?.sourceUrl ?? "https://docs.papermc.io/paper/getting-started/";
     const installedRuntimes = await javaRuntimeRegistry.listRuntimes();
     const compatibleRuntime =
       installedRuntimes
@@ -79,6 +90,9 @@ export class JavaRecommendationService {
       recommendedMajor,
       confidence,
       detection,
+      source,
+      sourceUrl,
+      checkedAt: new Date().toISOString(),
       compatibleRuntime,
       installedRuntimes,
       missing: !compatibleRuntime,
@@ -101,7 +115,7 @@ export class JavaRecommendationService {
   private async tryProviderMetadata(
     minecraftVersion: string,
     software: ServerSoftware | string
-  ): Promise<number | null> {
+  ): Promise<{ major: number; sourceUrl: string } | null> {
     if (software !== "paper" && software !== "folia") return null;
     try {
       const response = await fetch(
@@ -110,7 +124,8 @@ export class JavaRecommendationService {
       );
       if (!response.ok) return null;
       const data = (await response.json()) as PaperVersionMetadata;
-      return data.version?.java?.version?.minimum ?? null;
+      const major = data.version?.java?.version?.minimum;
+      return major ? { major, sourceUrl: `https://fill.papermc.io/v3/projects/${software}/versions/${encodeURIComponent(minecraftVersion)}` } : null;
     } catch {
       return null;
     }
@@ -121,14 +136,14 @@ export class JavaRecommendationService {
 function proxyJavaRule(
   software: string,
   _version: string
-): { minimum: number; recommended: number } | null {
+): { minimum: number; recommended: number; sourceUrl: string } | null {
   switch (software) {
     case "velocity":
-      return { minimum: 25, recommended: 25 };
+      return { minimum: 21, recommended: 25, sourceUrl: "https://docs.papermc.io/velocity/faq/" };
     case "waterfall":
-      return { minimum: 8, recommended: 11 };
+      return { minimum: 8, recommended: 11, sourceUrl: "https://docs.papermc.io/waterfall/getting-started/" };
     case "bungeecord":
-      return { minimum: 17, recommended: 17 };
+      return { minimum: 17, recommended: 17, sourceUrl: "https://github.com/SpigotMC/BungeeCord" };
     default:
       return null;
   }

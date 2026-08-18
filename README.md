@@ -17,7 +17,7 @@ Create, run, monitor, back up, and maintain local Minecraft servers from one pol
 
 ServerLab MC is an Electron desktop app backed by a local Node.js service and a React renderer. It is built for people who run Minecraft servers locally and want a focused interface for server creation, Java runtime management, console access, files, backups, monitoring, and cached server software downloads.
 
-Current release: `3.3.0`
+Current release: `3.4.0`
 
 ## Highlights
 
@@ -47,7 +47,7 @@ ServerLab MC can resolve, download, cache, and install server software during se
 | Forge | Server | Planned | Modded server platform requiring installer-based setup. |
 | NeoForge | Server | Planned | Modern Forge ecosystem with installer-based setup. |
 | Quilt | Server | Planned | Fabric-compatible mod loader using Quilt Meta services. |
-| Velocity | Proxy | Supported | Modern PaperMC proxy downloaded from the official PaperMC downloads service. Current releases require Java 25. |
+| Velocity | Proxy | Supported | Modern PaperMC proxy downloaded from the official PaperMC downloads service |
 | Waterfall | Proxy | Supported, legacy | End-of-life PaperMC proxy. Official releases only; Velocity is recommended for new networks. |
 | BungeeCord | Proxy | Supported, legacy | Official Spigot Jenkins distribution only. Velocity is recommended for new networks. |
 
@@ -203,8 +203,8 @@ GitHub Actions builds and publishes Windows releases from version tags. When a v
 
 ```powershell
 # Manual recovery path when a tag needs to be recreated or retried:
-  git tag v3.3.0
-  git push origin v3.3.0
+  git tag v3.4.0
+  git push origin v3.4.0
 ```
 
 The `Build and Publish Release` workflow runs `npm ci`, lint, CI-safe tests, and the Windows installer build. It uploads the installer, blockmap, `latest.yml`, and `update-meta.json` to the GitHub Releases page.
@@ -223,6 +223,8 @@ npm run dev
 If Vite reports port `5173` is in use, close the old dev server or stop the owning process.
 
 If Prisma generation fails because `query_engine-windows.dll.node` is locked, stop Electron/backend processes and rerun the build.
+
+
 
 ## Documentation
 

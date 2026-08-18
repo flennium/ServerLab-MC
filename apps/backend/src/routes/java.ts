@@ -1,7 +1,12 @@
 import { Router } from "express";
 import path from "path";
 import { prisma } from "../lib/prisma.js";
-import type { InstallJdkDto, JavaRuntimeProviderId, ServerSoftware } from "@serverlab/shared";
+import type {
+  InstallJdkDto,
+  JavaGuidanceResponse,
+  JavaRuntimeProviderId,
+  ServerSoftware,
+} from "@serverlab/shared";
 import { javaRuntimeProviderRegistry } from "../services/java/JavaRuntimeProviders.js";
 import { javaDetectionService } from "../services/java/JavaDetectionService.js";
 import { javaRuntimeRegistry } from "../services/java/JavaRuntimeRegistry.js";
@@ -58,6 +63,48 @@ javaRoutes.post("/detect", async (_req, res, next) => {
       javaRuntimeRegistry.listRuntimes(),
     ]);
     res.json({ versions, runtimes });
+  } catch (err) {
+    next(err);
+  }
+});
+
+javaRoutes.get("/guidance", async (_req, res, next) => {
+  try {
+    const servers = await prisma.server.findMany({ orderBy: { name: "asc" } });
+    const entries = await Promise.all(servers.map(async (server) => {
+      const recommendation = await javaRecommendationService.recommend({
+        minecraftVersion: server.version,
+        software: server.software as ServerSoftware,
+        artifactPath: path.join(server.path, "server.jar"),
+        serverId: server.id,
+      });
+      const selectedRuntime = server.javaRuntimeId
+        ? recommendation.installedRuntimes.find((runtime) => runtime.id === server.javaRuntimeId) ?? null
+        : null;
+      return {
+        serverId: server.id,
+        serverName: server.name,
+        software: server.software as ServerSoftware,
+        version: server.version,
+        requiredMajor: recommendation.requiredMajor,
+        recommendedMajor: recommendation.recommendedMajor,
+        selectedRuntimeMajor: selectedRuntime?.major ?? null,
+        selectedRuntimeVersion: selectedRuntime?.version ?? null,
+        selectedRuntimeSource: selectedRuntime?.source ?? null,
+        confidence: recommendation.confidence,
+        source: recommendation.source,
+        sourceUrl: recommendation.sourceUrl,
+        detectionMethod: recommendation.detection?.method ?? null,
+        detectionConfidence: recommendation.detection?.confidence ?? null,
+        warnings: recommendation.warnings,
+        checkedAt: recommendation.checkedAt,
+      };
+    }));
+    const payload: JavaGuidanceResponse = {
+      entries,
+      checkedAt: new Date().toISOString(),
+    };
+    res.json(payload);
   } catch (err) {
     next(err);
   }

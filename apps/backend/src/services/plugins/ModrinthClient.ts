@@ -26,6 +26,7 @@ interface RawSearchResponse {
 interface RawSearchHit {
   project_id?: string;
   slug?: string;
+  author?: string;
   title?: string;
   description?: string;
   project_type?: string;
@@ -42,6 +43,7 @@ interface RawSearchHit {
 interface RawProject {
   id?: string;
   slug?: string;
+  author?: string;
   title?: string;
   description?: string;
   body?: string;
@@ -173,7 +175,20 @@ export class ModrinthClient {
       `${API_ROOT}/projects?${params.toString()}`,
       METADATA_TTL_MS
     );
-    return new Map(data.payload.map((project) => [String(project.id), project.title ?? String(project.id)]));
+    const names = new Map(data.payload.map((project) => [String(project.id), project.title ?? String(project.id)]));
+    await Promise.all(
+      uniqueIds.map(async (projectId) => {
+        const current = names.get(projectId);
+        if (current && current !== projectId) return;
+        try {
+          const project = await this.getProject(projectId);
+          names.set(projectId, project.project.title);
+        } catch {
+          // Keep the project id only when Modrinth cannot resolve a title offline.
+        }
+      })
+    );
+    return names;
   }
 
   assertAllowedDownloadUrl(url: string): URL {
@@ -272,6 +287,7 @@ function normalizeSearchHit(hit: RawSearchHit): ModrinthProjectSearchHit {
     id: required(hit.project_id, "project id"),
     slug: required(hit.slug, "project slug"),
     title: required(hit.title, "project title"),
+    author: hit.author ?? null,
     description: hit.description ?? "",
     projectType: hit.project_type ?? "plugin",
     iconUrl: hit.icon_url ?? null,
@@ -298,6 +314,7 @@ function normalizeProject(project: RawProject): ModrinthProject {
     id: required(project.id, "project id"),
     slug: required(project.slug, "project slug"),
     title: required(project.title, "project title"),
+    author: project.author ?? null,
     description: project.description ?? "",
     body: project.body ?? null,
     projectType: project.project_type ?? "plugin",
