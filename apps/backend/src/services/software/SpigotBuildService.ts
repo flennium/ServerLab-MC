@@ -99,6 +99,15 @@ function safeLogLine(value: string, workspacePath: string): string {
 function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message.trim();
   if (typeof error === "string" && error.trim()) return error.trim();
+  if (error && typeof error === "object") {
+    const candidate = error as { message?: unknown; code?: unknown; signal?: unknown };
+    const details = [
+      typeof candidate.message === "string" ? candidate.message : null,
+      candidate.code ? `code=${String(candidate.code)}` : null,
+      candidate.signal ? `signal=${String(candidate.signal)}` : null,
+    ].filter(Boolean).join("; ");
+    if (details) return details;
+  }
   return "BuildTools stopped without reporting an error.";
 }
 
@@ -525,6 +534,14 @@ export class SpigotBuildService {
 
   private async runBuildProcess(id: string, input: BuildInput, javaExecutable: string, toolPath: string, workspacePath: string, logPath: string, gitEnvironment: PortableGitEnvironment): Promise<void> {
     await this.updateJob(id, { status: "building", stage: "running-buildtools", pid: null, percent: null });
+    await fs.appendFile(logPath, [
+      "ServerLab BuildTools launch",
+      `Java executable: ${safeLogLine(javaExecutable, workspacePath)}`,
+      `BuildTools jar: ${safeLogLine(toolPath, workspacePath)}`,
+      `Revision: ${input.minecraftVersion}`,
+      `Git source: ${gitEnvironment.source}`,
+      "",
+    ].join("\n"), "utf8");
     let pendingLogWrites = Promise.resolve();
     const logOutput = async (chunk: Buffer) => {
       const line = safeLogLine(chunk.toString(), workspacePath);
@@ -547,6 +564,7 @@ export class SpigotBuildService {
     });
     const active = this.active.get(id);
     if (active) active.child = child;
+    if (!child.pid) throw new Error("BuildTools process started without a process id");
     await this.updateJob(id, { pid: child.pid ?? null });
     try {
       await completion;
