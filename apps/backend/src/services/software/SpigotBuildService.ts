@@ -24,6 +24,7 @@ import { buildToolsProcessRunner } from "./BuildToolsProcessRunner.js";
 import { portableGitService, type PortableGitEnvironment } from "./PortableGitService.js";
 
 const REQUIRED_DISK_BYTES = 2 * 1024 * 1024 * 1024;
+const FAILURE_LOG_BYTES = 12 * 1024;
 const ACTIVE_STATUSES = [
   "queued",
   "preflight",
@@ -93,6 +94,18 @@ function safeLogLine(value: string, workspacePath: string): string {
     .split(process.env.DATA_DIR ?? process.cwd()).join("<app-data>")
     .replace(/\b[A-Za-z]:\\[^\r\n ]+/g, "<path>")
     .trim();
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message.trim();
+  if (typeof error === "string" && error.trim()) return error.trim();
+  return "BuildTools stopped without reporting an error.";
+}
+
+async function readFailureLog(logPath: string): Promise<string | null> {
+  const content = await fs.readFile(logPath, "utf8").catch(() => "");
+  if (!content.trim()) return null;
+  return content.length > FAILURE_LOG_BYTES ? content.slice(-FAILURE_LOG_BYTES) : content;
 }
 
 export class SpigotBuildService {
@@ -335,6 +348,7 @@ export class SpigotBuildService {
 
   private async run(id: string, input: BuildInput): Promise<void> {
     const workspacePath = path.join(this.buildRoot, id, "workspace");
+    const logPath = path.join(this.buildRoot, id, "build.log");
     this.active.set(id, { cancelled: false, workspacePath });
     try {
       await this.updateJob(id, { status: "preflight", stage: "checking-prerequisites", percent: null });
@@ -345,9 +359,8 @@ export class SpigotBuildService {
       const gitEnvironment = await this.ensureGit(id);
       const release = await this.resolveToolRelease();
       const toolPath = await this.ensureTool(id, release);
-      await this.updateJob(id, { status: "preparing-workspace", stage: "preparing-workspace", workspacePath, logPath: path.join(this.buildRoot, id, "build.log") });
+      await this.updateJob(id, { status: "preparing-workspace", stage: "preparing-workspace", workspacePath, logPath });
       await fs.mkdir(workspacePath, { recursive: true });
-      const logPath = path.join(this.buildRoot, id, "build.log");
       await fs.writeFile(logPath, "", "utf8");
       await this.runBuildProcess(id, input, preflight.javaExecutable, toolPath, workspacePath, logPath, gitEnvironment);
       await this.updateJob(id, { status: "validating", stage: "locating-artifact", percent: null });
@@ -383,13 +396,19 @@ export class SpigotBuildService {
       void artifact;
     } catch (error) {
       const cancelled = this.active.get(id)?.cancelled === true;
-      const message = error instanceof Error ? error.message : "BuildTools build failed";
+      const message = cancelled ? "BuildTools build cancelled." : errorMessage(error);
+      const logTail = cancelled ? null : await readFailureLog(logPath);
+      const technicalDetails = [
+        `BuildTools failure: ${message}`,
+        logTail ? `Last BuildTools output:\n${logTail}` : "No BuildTools output was captured before the failure.",
+      ].join("\n\n");
       if (!cancelled) {
         void errorService.record(errorService.createFromUnknown(error, {
           category: "download",
           severity: "error",
           userMessage: "Spigot could not be built with BuildTools.",
           possibleSolution: "Open the build log, verify Java/Git, and retry the build.",
+          technicalDetails,
           source: "backend:software-buildtools",
           action: "build-spigot",
           recoveries: ["retry", "open-java-center", "copy-details", "dismiss"],
@@ -398,7 +417,7 @@ export class SpigotBuildService {
       const failed = await this.updateJob(id, {
         status: cancelled ? "cancelled" : "failed",
         stage: cancelled ? "cancelled" : "failed",
-        error: cancelled ? "BuildTools build cancelled." : message,
+        error: message,
       });
       this.emit(failed, undefined, message);
     } finally {
@@ -506,6 +525,7 @@ export class SpigotBuildService {
 
   private async runBuildProcess(id: string, input: BuildInput, javaExecutable: string, toolPath: string, workspacePath: string, logPath: string, gitEnvironment: PortableGitEnvironment): Promise<void> {
     await this.updateJob(id, { status: "building", stage: "running-buildtools", pid: null, percent: null });
+    let pendingLogWrites = Promise.resolve();
     const logOutput = async (chunk: Buffer) => {
       const line = safeLogLine(chunk.toString(), workspacePath);
       await fs.appendFile(logPath, line, "utf8").catch(() => {});
@@ -517,16 +537,22 @@ export class SpigotBuildService {
       toolPath,
       revision: input.minecraftVersion,
       workspacePath,
-      env: {
-        ...process.env,
-        PATH: [...gitEnvironment.pathEntries, process.env.PATH ?? ""].filter(Boolean).join(path.delimiter),
+        env: {
+          ...process.env,
+          PATH: [...gitEnvironment.pathEntries, process.env.PATH ?? ""].filter(Boolean).join(path.delimiter),
+        },
+      onOutput: (chunk) => {
+        pendingLogWrites = pendingLogWrites.then(() => logOutput(chunk)).catch(() => {});
       },
-      onOutput: (chunk) => void logOutput(chunk),
     });
     const active = this.active.get(id);
     if (active) active.child = child;
     await this.updateJob(id, { pid: child.pid ?? null });
-    await completion;
+    try {
+      await completion;
+    } finally {
+      await pendingLogWrites;
+    }
   }
 
   private async findArtifact(workspacePath: string, version: string): Promise<string> {
