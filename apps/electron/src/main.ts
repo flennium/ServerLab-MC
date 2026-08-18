@@ -949,7 +949,7 @@ safeIpcHandler("errors:report", async (error) =>
 );
 
 safeIpcHandler("errors:history", async () =>
-  backendJson("/api/errors?limit=100&includeCleared=true")
+  backendJson("/api/errors?limit=100&includeCleared=false")
 );
 
 safeIpcHandler("errors:clear", async () =>

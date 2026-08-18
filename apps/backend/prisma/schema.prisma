@@ -14,7 +14,12 @@ model Server {
   name        String
   path        String
   version     String
-  software    String   // paper | purpur | spigot | fabric
+  software    String   // paper | purpur | folia | spigot | fabric | vanilla | velocity | waterfall | bungeecord
+  kind        String   @default("server")
+  softwareBuildId String?
+  targetMinecraftVersion String?
+  bindAddress String   @default("0.0.0.0")
+  configurationState String @default("ready")
   javaPath    String
   javaRuntimeId String?
   javaOverrideMode String @default("automatic")

@@ -17,9 +17,10 @@ export class JavaRecommendationService {
     software: ServerSoftware | string;
   }): Promise<JavaRecommendationResponse> {
     const metadataMajor = await this.tryProviderMetadata(input.minecraftVersion, input.software);
-    const requiredMajor = metadataMajor ?? minimumJavaMajorForMinecraft(input.minecraftVersion);
+    const proxyRule = proxyJavaRule(input.software, input.minecraftVersion);
+    const requiredMajor = metadataMajor ?? proxyRule?.minimum ?? minimumJavaMajorForMinecraft(input.minecraftVersion);
     const confidence = metadataMajor ? "metadata" : requiredMajor ? "rules" : "unknown";
-    const recommendedMajor = requiredMajor ?? 21;
+    const recommendedMajor = metadataMajor ?? proxyRule?.recommended ?? requiredMajor ?? 21;
     const installedRuntimes = await javaRuntimeRegistry.listRuntimes();
     const compatibleRuntime =
       installedRuntimes
@@ -47,8 +48,14 @@ export class JavaRecommendationService {
     };
   }
 
-  isCompatible(runtimeMajor: number, requiredMajor: number, allowUnsupported: boolean): boolean {
+  isCompatible(
+    runtimeMajor: number,
+    requiredMajor: number,
+    allowUnsupported: boolean,
+    software?: string
+  ): boolean {
     if (runtimeMajor < requiredMajor) return false;
+    if (software === "waterfall") return true;
     if (runtimeMajor > requiredMajor && !allowUnsupported) return false;
     return true;
   }
@@ -71,6 +78,22 @@ export class JavaRecommendationService {
     }
   }
 
+}
+
+function proxyJavaRule(
+  software: string,
+  _version: string
+): { minimum: number; recommended: number } | null {
+  switch (software) {
+    case "velocity":
+      return { minimum: 21, recommended: 21 };
+    case "waterfall":
+      return { minimum: 8, recommended: 11 };
+    case "bungeecord":
+      return { minimum: 17, recommended: 17 };
+    default:
+      return null;
+  }
 }
 
 /**

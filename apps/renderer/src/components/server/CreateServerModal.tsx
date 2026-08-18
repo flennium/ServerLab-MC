@@ -152,7 +152,7 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
           selectedProvider?.enabled &&
           minecraftVersion &&
           buildId &&
-          eulaAccepted &&
+          (!selectedProvider?.requiresEula || eulaAccepted) &&
           (manualJava ? form.javaPath.trim() : javaRuntimeId) &&
           (provider !== "spigot" || (!manualJava && Boolean(javaRuntimeId))) &&
           portStatus?.available &&
@@ -164,7 +164,7 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
     [
       activeJavaInstallId,
       buildId,
-      eulaAccepted,
+    eulaAccepted,
       form.javaPath,
       form.name,
       form.path,
@@ -243,7 +243,7 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
   }, [customLocation, form.name, serverRoot]);
 
   useEffect(() => {
-    setForm((current) => ({ ...current, software: provider }));
+    setForm((current) => ({ ...current, software: provider, kind: selectedProvider?.kind }));
     setVersions([]);
     setBuilds([]);
     setMinecraftVersion("");
@@ -271,7 +271,7 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
         source: "renderer:create-server",
         action: "load-software-versions",
       }).userMessage));
-  }, [provider, providers]);
+  }, [provider, providers, selectedProvider?.kind]);
 
   useEffect(() => {
     setBuilds([]);
@@ -628,7 +628,7 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
     if (!form.path.trim()) return setError("Server folder is required.");
     if (!selectedProvider?.enabled) return setError(selectedProvider?.reasonUnavailable ?? "Provider unavailable.");
     if (!minecraftVersion || !buildId) return setError("Choose a Minecraft version and build.");
-    if (!eulaAccepted) return setError("Accept the Minecraft EULA before creating the server.");
+    if (selectedProvider?.requiresEula && !eulaAccepted) return setError("Accept the Minecraft EULA before creating the server.");
     if (!manualJava && !javaRuntimeId) return setError("Install or select a compatible Java runtime.");
 
     const requestId = crypto.randomUUID();
@@ -641,6 +641,9 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
         ...form,
         version: minecraftVersion,
         software: provider,
+        kind: selectedProvider?.kind ?? "server",
+        targetMinecraftVersion: form.targetMinecraftVersion ?? null,
+        bindAddress: form.bindAddress ?? "0.0.0.0",
         javaPath: manualJava ? form.javaPath : selectedRuntime?.executablePath ?? form.javaPath,
         javaRuntimeId: manualJava ? null : javaRuntimeId,
         javaOverrideMode: manualJava ? "manual" : "automatic",
@@ -650,6 +653,7 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
           minecraftVersion,
           buildId,
           sourceType: provider === "spigot" ? "build" : "download",
+          targetMinecraftVersion: form.targetMinecraftVersion ?? null,
           buildJobId: provider === "spigot" ? buildJobId ?? undefined : undefined,
           artifactId: selectedBuild?.artifactId,
           requestId,
@@ -731,11 +735,13 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
         {step === 2 && (
           <>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-              <Field label="Framework"><Select value={provider} onChange={(event) => setProvider(event.target.value as ServerFramework)}>{providers.map((item) => <option key={item.id} value={item.id}>{item.label}{!item.enabled ? " unavailable" : ""}</option>)}</Select></Field>
-              <Field label="Minecraft version"><Select value={minecraftVersion} disabled={!selectedProvider?.enabled || versions.length === 0} onChange={(event) => setMinecraftVersion(event.target.value)}>{versions.map((version) => <option key={version} value={version}>{version}</option>)}</Select></Field>
+              <Field label="Framework"><Select value={provider} onChange={(event) => setProvider(event.target.value as ServerFramework)}>{providers.map((item) => <option key={item.id} value={item.id}>{item.kind === "proxy" ? "Proxy: " : ""}{item.label}{!item.enabled ? " unavailable" : ""}</option>)}</Select></Field>
+              <Field label={selectedProvider?.kind === "proxy" ? "Proxy version" : "Minecraft version"}><Select value={minecraftVersion} disabled={!selectedProvider?.enabled || versions.length === 0} onChange={(event) => setMinecraftVersion(event.target.value)}>{versions.map((version) => <option key={version} value={version}>{version}</option>)}</Select></Field>
               <Field label="Build"><Select value={buildId} disabled={!selectedProvider?.enabled || builds.length === 0} onChange={(event) => setBuildId(event.target.value)}>{builds.map((build) => <option key={build.id} value={build.id}>{build.label}{build.cached ? " cached" : ""}</option>)}</Select></Field>
             </div>
             {selectedProvider && !selectedProvider.enabled && <Alert tone="warning">{selectedProvider.reasonUnavailable}</Alert>}
+            {selectedProvider?.warning && <Alert tone="warning">{selectedProvider.warning}</Alert>}
+            {selectedProvider?.kind === "proxy" && <Field label="Target Minecraft version (optional)"><TextInput value={form.targetMinecraftVersion ?? ""} onChange={(event) => set("targetMinecraftVersion", event.target.value || null)} placeholder="Used for proxy plugin compatibility" /></Field>}
             {offline && <Alert tone="warning">Offline: cached software only.</Alert>}
             <SoftwareStatus acquisition={selectedProvider?.acquisition} cached={selectedBuild?.cached === true} selectedBuild={selectedBuild} progress={softwareProgress} onCancel={handleCancelSoftwareDownload} cancellable={loading && softwareProgress?.stage === "downloading"} />
             {provider === "spigot" && (
@@ -775,7 +781,7 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
               <p className="font-display text-base font-semibold text-white">Review server profile</p>
               <div className="mt-3 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
                 <ReviewItem label="Name" value={form.name || "Not set"} />
-                <ReviewItem label="Software" value={`${provider} ${minecraftVersion || "Not set"}`} />
+                <ReviewItem label="Software" value={`${selectedProvider?.kind === "proxy" ? "Proxy · " : ""}${provider} ${minecraftVersion || "Not set"}`} />
                 <ReviewItem label="Java" value={manualJava ? "Manual path" : recommendation ? `Java ${recommendation.requiredMajor}` : "Not selected"} />
                 <ReviewItem label="Port" value={String(form.port)} />
               </div>
@@ -787,10 +793,10 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1.2fr]">
               <div className="rounded border border-border bg-surface-console px-3 py-3"><Switch label="Auto-start on app launch" checked={form.autoStart ?? false} onChange={(checked) => set("autoStart", checked)} /></div>
-              <label className="flex gap-3 rounded border border-border bg-surface-console px-3 py-3 text-sm">
+              {selectedProvider?.requiresEula && <label className="flex gap-3 rounded border border-border bg-surface-console px-3 py-3 text-sm">
                 <input type="checkbox" checked={eulaAccepted} onChange={(event) => setEulaAccepted(event.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-copper" />
                 <span className="leading-6 text-muted">I accept the <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noreferrer" className="font-semibold text-copper hover:text-copper-hover">Minecraft EULA</a>.</span>
-              </label>
+              </label>}
             </div>
             <SoftwareStatus acquisition={selectedProvider?.acquisition} cached={selectedBuild?.cached === true} selectedBuild={selectedBuild} progress={softwareProgress} onCancel={handleCancelSoftwareDownload} cancellable={loading && softwareProgress?.stage === "downloading"} />
             {provider === "spigot" && <SpigotBuildStatus preflight={buildPreflight} progress={buildProgress} active={Boolean(activeBuildId)} onBuild={handleBuildSpigot} onCancel={handleCancelSpigotBuild} onRetry={handleRetrySpigotBuild} />}

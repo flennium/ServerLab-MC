@@ -370,7 +370,7 @@ export class PluginInstallService {
   private async getPluginServer(serverId: string) {
     const server = await prisma.server.findUniqueOrThrow({ where: { id: serverId } });
     if (server.software === "vanilla") {
-      throw new HttpError(409, "Vanilla servers do not support plugins.", "plugin", "warning", "Choose a Paper, Purpur, Folia, Spigot, or Fabric server for plugin management.");
+      throw new HttpError(409, "Vanilla servers do not support plugins.", "plugin", "warning", "Choose a plugin-capable server or proxy profile for plugin management.");
     }
     return server;
   }

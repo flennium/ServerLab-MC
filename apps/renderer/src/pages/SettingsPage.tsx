@@ -438,8 +438,8 @@ function ErrorHistoryPanel() {
     try {
       const data = window.serverlab?.getErrorHistory
         ? await window.serverlab.getErrorHistory()
-        : await api.get<ErrorHistoryResponse>("/api/errors?limit=100&includeCleared=true");
-      setErrors(data.errors);
+        : await api.get<ErrorHistoryResponse>("/api/errors?limit=100&includeCleared=false");
+      setErrors(data.errors.filter((error) => !error.clearedAt));
     } catch (error) {
       reportError(error, {
         category: "renderer",
@@ -505,9 +505,7 @@ function ErrorHistoryPanel() {
     try {
       await api.post(`/api/errors/${id}/clear`);
       setErrors((current) =>
-        current.map((error) =>
-          error.id === id ? { ...error, clearedAt: new Date().toISOString() } : error
-        )
+        current.filter((error) => error.id !== id)
       );
       setMessageTone("success");
       setMessage("Error cleared.");
@@ -589,7 +587,7 @@ function ErrorHistoryPanel() {
           </p>
         </div>
       ) : (
-        <div className="grid gap-2">
+        <div className="grid max-h-[28rem] gap-2 overflow-y-auto pr-1">
           {errors.map((error) => (
             <details
               key={error.id}
@@ -786,18 +784,20 @@ function DeveloperPanel() {
             {ports.length === 0 ? (
               <p className="text-sm text-muted">No Minecraft server ports are assigned yet.</p>
             ) : (
-              ports.map((port) => (
-                <div
-                  key={`${port.ownerId ?? "external"}-${port.port}`}
-                  className="grid gap-1 rounded border border-border bg-panel px-3 py-2 sm:grid-cols-[auto_1fr_auto]"
-                >
-                  <span className="font-mono text-sm font-semibold text-white">{port.port}</span>
-                  <span className="min-w-0 truncate text-muted">{port.ownerName ?? port.message}</span>
-                  <span className={port.available ? "text-grass" : "text-glowstone"}>
-                    {port.available ? "free" : port.source}
-                  </span>
-                </div>
-              ))
+              <div className="grid max-h-64 gap-2 overflow-y-auto pr-1">
+                {ports.map((port) => (
+                  <div
+                    key={`${port.ownerId ?? "external"}-${port.port}`}
+                    className="grid gap-1 rounded border border-border bg-panel px-3 py-2 sm:grid-cols-[auto_1fr_auto]"
+                  >
+                    <span className="font-mono text-sm font-semibold text-white">{port.port}</span>
+                    <span className="min-w-0 truncate text-muted">{port.ownerName ?? port.message}</span>
+                    <span className={port.available ? "text-grass" : "text-glowstone"}>
+                      {port.available ? "free" : port.source}
+                    </span>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>

@@ -9,6 +9,11 @@ export async function ensureDatabaseSchema(): Promise<void> {
       "path" TEXT NOT NULL,
       "version" TEXT NOT NULL,
       "software" TEXT NOT NULL,
+      "kind" TEXT NOT NULL DEFAULT 'server',
+      "softwareBuildId" TEXT,
+      "targetMinecraftVersion" TEXT,
+      "bindAddress" TEXT NOT NULL DEFAULT '0.0.0.0',
+      "configurationState" TEXT NOT NULL DEFAULT 'ready',
       "javaPath" TEXT NOT NULL,
       "ramMinMb" INTEGER NOT NULL DEFAULT 1024,
       "ramMaxMb" INTEGER NOT NULL DEFAULT 4096,
@@ -227,6 +232,11 @@ export async function ensureDatabaseSchema(): Promise<void> {
     "allowUnsupportedJava",
     '"allowUnsupportedJava" BOOLEAN NOT NULL DEFAULT false'
   );
+  await ensureColumn("servers", "kind", '"kind" TEXT NOT NULL DEFAULT \'server\'');
+  await ensureColumn("servers", "softwareBuildId", '"softwareBuildId" TEXT');
+  await ensureColumn("servers", "targetMinecraftVersion", '"targetMinecraftVersion" TEXT');
+  await ensureColumn("servers", "bindAddress", '"bindAddress" TEXT NOT NULL DEFAULT \'0.0.0.0\'');
+  await ensureColumn("servers", "configurationState", '"configurationState" TEXT NOT NULL DEFAULT \'ready\'');
   await ensureColumn("software_artifacts", "acquisition", '"acquisition" TEXT NOT NULL DEFAULT \'download\'');
   await ensureColumn("software_artifacts", "buildTool", '"buildTool" TEXT');
   await ensureColumn("software_artifacts", "buildToolVersion", '"buildToolVersion" TEXT');

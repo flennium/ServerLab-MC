@@ -9,7 +9,17 @@ import { badRequest, HttpError } from "../middleware/error.js";
 export const softwareRoutes = Router();
 
 function providerId(value: unknown): ServerFramework {
-  if (value === "paper" || value === "purpur" || value === "folia" || value === "fabric" || value === "spigot" || value === "vanilla") {
+  if (
+    value === "paper" ||
+    value === "purpur" ||
+    value === "folia" ||
+    value === "fabric" ||
+    value === "spigot" ||
+    value === "vanilla" ||
+    value === "velocity" ||
+    value === "waterfall" ||
+    value === "bungeecord"
+  ) {
     return value;
   }
   throw badRequest("Unknown software provider");

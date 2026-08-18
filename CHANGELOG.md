@@ -1,5 +1,26 @@
 # Changelog
 
+## 3.3.0
+
+### Added
+
+- Added first-class Velocity, Waterfall, and BungeeCord proxy profiles.
+- Added official-source proxy downloads, cache reuse, provider build metadata, and legacy warnings for Waterfall and BungeeCord.
+- Added proxy-aware Java recommendations, listener bind-address settings, configuration-state warnings, and lifecycle stop commands.
+- Added proxy loader compatibility to Modrinth plugin management, including optional target Minecraft version checks.
+
+### Fixed
+
+- Proxy profiles no longer require or generate a Minecraft EULA file or append `nogui` during startup.
+- Proxy processes no longer emit Minecraft TPS/world metrics in the Monitor tab.
+- Cleared error history no longer reappears when Settings is reopened.
+- Error history and port diagnostics now use bounded scrolling regions.
+
+### Changed
+
+- Updated the Server Software Manager table and product documentation for the current supported software.
+- Bumped app and workspace versions to `3.3.0`.
+
 ## 3.2.0
 
 ### Added

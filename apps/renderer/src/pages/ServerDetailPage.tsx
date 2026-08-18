@@ -211,6 +211,7 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
   }
 
   const isTransitioning = server.status === "starting" || server.status === "stopping";
+  const isProxy = server.kind === "proxy" || ["velocity", "waterfall", "bungeecord"].includes(server.software);
 
   async function runLifecycleAction(action: "start" | "stop" | "restart") {
     if (lifecycleAction || isTransitioning) return;
@@ -271,7 +272,7 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
         eyebrow="Server deck"
         title={server.name}
         status={<StatusBadge status={server.status} />}
-        description={`${server.software} ${server.version} / port ${server.port}`}
+        description={`${isProxy ? "Proxy · " : ""}${server.software} ${server.version} / ${isProxy ? "listener" : "port"} ${server.port}`}
          primaryActions={
            <>
              {server.status === "running" ? (
@@ -318,7 +319,7 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
             <StatTile label="RAM min" value={`${server.ramMinMb}`} detail="MB" className="py-2.5" />
             <StatTile label="RAM max" value={`${server.ramMaxMb}`} detail="MB" tone="info" className="py-2.5" />
             <StatTile
-              label="Port"
+              label={isProxy ? "Listener" : "Port"}
               value={server.port}
               detail={detailPortStatus?.available === false ? "conflict" : "ready"}
               tone={detailPortStatus?.available === false ? "warn" : "neutral"}
@@ -384,9 +385,7 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
 
               {tab === "plugins" && server.software !== "vanilla" && <PluginsPanel server={server} />}
 
-              {tab === "monitor" && (
-                <PerformanceMonitor serverId={server.id} ramMaxMb={server.ramMaxMb} />
-              )}
+              {tab === "monitor" && (isProxy ? <Alert tone="info">Proxy profiles expose listener and process status. Minecraft TPS and world metrics are not applicable.</Alert> : <PerformanceMonitor serverId={server.id} ramMaxMb={server.ramMaxMb} />)}
 
               {tab === "backups" && <BackupPanel serverId={server.id} />}
 
@@ -437,6 +436,8 @@ function ServerSettings({
     ramMinMb: server.ramMinMb,
     ramMaxMb: server.ramMaxMb,
     port: server.port,
+    bindAddress: server.bindAddress,
+    targetMinecraftVersion: server.targetMinecraftVersion,
     startupArgs: server.startupArgs ?? "",
     autoStart: server.autoStart,
   });
@@ -466,6 +467,7 @@ function ServerSettings({
       return `Java ${recommendation.requiredMajor} is required for ${server.software} ${server.version}.`;
     }
     if (
+      server.software !== "waterfall" &&
       selectedRuntime.major > recommendation.requiredMajor &&
       !form.allowUnsupportedJava
     ) {
@@ -492,6 +494,8 @@ function ServerSettings({
       ramMinMb: server.ramMinMb,
       ramMaxMb: server.ramMaxMb,
       port: server.port,
+      bindAddress: server.bindAddress,
+      targetMinecraftVersion: server.targetMinecraftVersion,
       startupArgs: server.startupArgs ?? "",
       autoStart: server.autoStart,
     });
@@ -549,6 +553,8 @@ function ServerSettings({
         ramMinMb: form.ramMinMb,
         ramMaxMb: form.ramMaxMb,
         port: form.port,
+        bindAddress: form.bindAddress,
+        targetMinecraftVersion: form.targetMinecraftVersion,
         startupArgs: form.startupArgs,
         autoStart: form.autoStart,
       });
@@ -644,6 +650,30 @@ function ServerSettings({
             </Select>
           </Field>
         </div>
+
+        {server.kind === "proxy" && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Bind address">
+              <TextInput
+                value={form.bindAddress ?? "0.0.0.0"}
+                onChange={(event) => set("bindAddress", event.target.value)}
+              />
+            </Field>
+            <Field label="Target Minecraft version" hint="Used for proxy plugin compatibility.">
+              <TextInput
+                value={form.targetMinecraftVersion ?? ""}
+                onChange={(event) => set("targetMinecraftVersion", event.target.value || null)}
+                placeholder="Optional"
+              />
+            </Field>
+          </div>
+        )}
+
+        {server.kind === "proxy" && server.configurationState !== "ready" && (
+          <Alert tone="warning">
+            Proxy configuration needs setup. Open the configuration file in Files, then restart after saving.
+          </Alert>
+        )}
 
         <div className="grid min-w-0 gap-4 rounded-lg border border-border bg-surface-console p-4 lg:grid-cols-2">
           <div className="min-w-0">

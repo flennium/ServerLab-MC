@@ -108,6 +108,26 @@ describe("server software providers", () => {
     )).not.toThrow();
   });
 
+  it("exposes proxy providers with official-source metadata", () => {
+    const providers = softwareProviderRegistry.list();
+    expect(providers.find((provider) => provider.id === "velocity")).toMatchObject({
+      kind: "proxy",
+      requiresEula: false,
+      recommendedJavaMajor: 21,
+      pluginLoaders: ["velocity"],
+    });
+    expect(providers.find((provider) => provider.id === "waterfall")).toMatchObject({
+      kind: "proxy",
+      deprecated: true,
+      configFormat: "yaml",
+    });
+    expect(providers.find((provider) => provider.id === "bungeecord")).toMatchObject({
+      kind: "proxy",
+      releaseSource: "jenkins",
+      deprecated: true,
+    });
+  });
+
   it("rejects plugins for Vanilla servers", () => {
     expect(pluginCompatibilityService.check(
       { software: "vanilla", version: "1.21.8" },

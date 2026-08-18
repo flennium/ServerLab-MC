@@ -1,6 +1,10 @@
 export type ServerStatus = "stopped" | "starting" | "running" | "stopping" | "crashed";
 
-export type ServerFramework = "paper" | "purpur" | "folia" | "spigot" | "fabric" | "vanilla";
+export type ServerFramework = "paper" | "purpur" | "folia" | "spigot" | "fabric" | "vanilla" | "velocity" | "waterfall" | "bungeecord";
+
+export type ServerKind = "server" | "proxy";
+
+export type ServerConfigurationState = "ready" | "needs-setup" | "invalid";
 
 export type ServerSoftware = ServerFramework;
 
@@ -113,6 +117,11 @@ export interface Server {
   path: string;
   version: string;
   software: ServerSoftware;
+  kind: ServerKind;
+  softwareBuildId: string | null;
+  targetMinecraftVersion: string | null;
+  bindAddress: string;
+  configurationState: ServerConfigurationState;
   javaPath: string;
   javaRuntimeId: string | null;
   javaOverrideMode: JavaOverrideMode;

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import fs from "fs/promises";
+import { isIP } from "net";
 import { prisma } from "../lib/prisma.js";
 import { serverManager } from "../services/ServerManager.js";
 import { FileConflictError, FileExistsError, FileManager } from "../services/FileManager.js";
@@ -16,6 +17,7 @@ import {
   portManagerService,
 } from "../services/PortManagerService.js";
 import { pluginInstallService } from "../services/plugins/PluginInstallService.js";
+import { softwareProviderRegistry } from "../services/software/providers.js";
 import { logger } from "../lib/logger.js";
 import { HttpError, badRequest } from "../middleware/error.js";
 import type {
@@ -71,6 +73,14 @@ function optionalInt(
   return parsed;
 }
 
+function validateBindAddress(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "string" || (!isIP(value) && !/^[a-zA-Z0-9.-]+$/.test(value))) {
+    throw badRequest("bindAddress must be a valid IP address or hostname");
+  }
+  return value;
+}
+
 function validateCreateServer(body: CreateServerDto): void {
   requireText(body.name, "name");
   requireText(body.path, "path");
@@ -80,6 +90,7 @@ function validateCreateServer(body: CreateServerDto): void {
   optionalInt(body.ramMinMb, "ramMinMb", 128, 262144);
   optionalInt(body.ramMaxMb, "ramMaxMb", 128, 262144);
   optionalInt(body.port, "port", 1, 65535);
+  validateBindAddress(body.bindAddress);
   if (body.ramMinMb && body.ramMaxMb && body.ramMinMb > body.ramMaxMb) {
     throw badRequest("ramMinMb cannot be greater than ramMaxMb");
   }
@@ -162,7 +173,8 @@ async function resolveJavaSelection(input: {
     !javaRecommendationService.isCompatible(
       validated.major,
       recommendation.requiredMajor,
-      allowUnsupportedJava
+      allowUnsupportedJava,
+      input.software
     )
   ) {
     throw badRequest(
@@ -196,20 +208,31 @@ serverRoutes.post("/", async (req, res, next) => {
     await ensureUniqueServerName(body.name);
     let version = body.version;
     let software = body.software;
+    let softwareBuildId: string | null = null;
+    let targetMinecraftVersion = body.targetMinecraftVersion ?? null;
+    const selectedProvider = softwareProviderRegistry.find(software);
+    let kind = body.kind ?? selectedProvider?.kind ?? "server";
+    let requiresEula = selectedProvider?.requiresEula ?? true;
 
     if (body.softwareSource) {
-      if (!body.eulaAccepted) {
+      const sourceProvider = softwareProviderRegistry.get(body.softwareSource.provider);
+      kind = sourceProvider.kind;
+      requiresEula = sourceProvider.requiresEula;
+      if (requiresEula && !body.eulaAccepted) {
         throw badRequest("Minecraft EULA acceptance is required");
       }
       version = body.softwareSource.minecraftVersion;
       software = body.softwareSource.provider;
+      softwareBuildId = body.softwareSource.buildId;
+      targetMinecraftVersion = body.softwareSource.targetMinecraftVersion ?? targetMinecraftVersion;
       if (body.softwareSource.provider === "spigot" && body.softwareSource.sourceType !== "build") {
         throw badRequest("Spigot servers must be created from a completed BuildTools job.", "download");
       }
     }
 
+    const bindAddress = body.bindAddress ?? "0.0.0.0";
     const port = body.port ?? (await portManagerService.suggestPort());
-    await portManagerService.assertAvailableForServer(port);
+    await portManagerService.assertAvailableForServer(port, null, bindAddress);
 
     const javaSelection = await resolveJavaSelection({
       version,
@@ -262,9 +285,10 @@ serverRoutes.post("/", async (req, res, next) => {
         artifact,
         serverPath: body.path,
         eulaAccepted: body.eulaAccepted === true,
+        requiresEula,
       });
       if (requestId) {
-        await softwareDownloadService.markStage(requestId, "writing-eula");
+        if (requiresEula) await softwareDownloadService.markStage(requestId, "writing-eula");
         await softwareDownloadService.markStage(requestId, "done");
       }
     }
@@ -275,6 +299,11 @@ serverRoutes.post("/", async (req, res, next) => {
         path: body.path,
         version,
         software,
+        kind,
+        softwareBuildId,
+        targetMinecraftVersion,
+        bindAddress,
+        configurationState: kind === "proxy" ? "needs-setup" : "ready",
         javaPath: javaSelection.javaPath,
         javaRuntimeId: javaSelection.javaRuntimeId,
         javaOverrideMode: javaSelection.javaOverrideMode,
@@ -315,11 +344,12 @@ serverRoutes.patch("/:id", async (req, res, next) => {
     optionalInt(body.ramMinMb, "ramMinMb", 128, 262144);
     optionalInt(body.ramMaxMb, "ramMaxMb", 128, 262144);
     optionalInt(body.port, "port", 1, 65535);
+    validateBindAddress(body.bindAddress);
     if (body.ramMinMb && body.ramMaxMb && body.ramMinMb > body.ramMaxMb) {
       throw badRequest("ramMinMb cannot be greater than ramMaxMb");
     }
     if (body.port !== undefined) {
-      await portManagerService.assertAvailableForServer(body.port, req.params.id);
+      await portManagerService.assertAvailableForServer(body.port, req.params.id, body.bindAddress ?? "0.0.0.0");
     }
     if (body.name !== undefined) {
       await ensureUniqueServerName(requireText(body.name, "name"), req.params.id);

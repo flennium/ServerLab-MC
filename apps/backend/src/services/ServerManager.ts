@@ -24,6 +24,7 @@ interface RunningServer {
   cwd: string;
   startedAt: string;
   stopRequested: boolean;
+  stopCommand: string;
 }
 
 interface TrackedProcessRecord {
@@ -40,6 +41,24 @@ const TPS_REGEX = /TPS from last 1m, 5m, 15m: ([\d.]+)/;
 const PLAYERS_REGEX = /There are (\d+) of a max/;
 const DONE_REGEX = /Done \([\d.]+s\)!/;
 const PORT_BIND_ERROR_REGEX = /(address already in use|bindexception|failed to bind|perhaps a server is already running)/i;
+
+function isProxy(server: { kind?: string; software: string }): boolean {
+  return server.kind === "proxy" || ["velocity", "waterfall", "bungeecord"].includes(server.software);
+}
+
+function lifecycleFor(server: { kind?: string; software: string }): {
+  stopCommand: string;
+  readyPattern: RegExp;
+  configFile: string | null;
+} {
+  if (server.software === "velocity") {
+    return { stopCommand: "shutdown", readyPattern: /Listening on|Done|Started/i, configFile: "velocity.toml" };
+  }
+  if (server.software === "waterfall" || server.software === "bungeecord") {
+    return { stopCommand: "end", readyPattern: /Listening on|Enabled BungeeCord|Started/i, configFile: "config.yml" };
+  }
+  return { stopCommand: "stop", readyPattern: DONE_REGEX, configFile: "server.properties" };
+}
 
 class ServerManager {
   private running = new Map<string, RunningServer>();
@@ -99,6 +118,8 @@ class ServerManager {
     ramMinMb: number;
     ramMaxMb: number;
     startupArgs: string | null;
+    kind?: string;
+    software: string;
   }): { cmd: string; args: string[] } {
     const args: string[] = [`-Xms${server.ramMinMb}m`, `-Xmx${server.ramMaxMb}m`];
 
@@ -106,7 +127,8 @@ class ServerManager {
       args.push(...parseStartupArgs(server.startupArgs));
     }
 
-    args.push("-jar", "server.jar", "nogui");
+    args.push("-jar", "server.jar");
+    if (!isProxy(server)) args.push("nogui");
     return { cmd: server.javaPath, args };
   }
 
@@ -149,7 +171,7 @@ class ServerManager {
       minecraftVersion: server.version,
       software: server.software,
     });
-    if (javaRecommendationService.isCompatible(major, recommendation.requiredMajor, server.allowUnsupportedJava)) {
+    if (javaRecommendationService.isCompatible(major, recommendation.requiredMajor, server.allowUnsupportedJava, server.software)) {
       return;
     }
 
@@ -186,7 +208,41 @@ class ServerManager {
     await fs.writeFile(filePath, next.filter((line, index) => line || index < next.length - 1).join("\n"), "utf-8");
   }
 
-  private handleLine(serverId: string, line: string) {
+  private async ensureProxyPort(server: {
+    path: string;
+    port: number;
+    bindAddress: string;
+    software: string;
+  }): Promise<void> {
+    const configFile = lifecycleFor(server).configFile;
+    if (!configFile || configFile === "server.properties") return;
+    const filePath = path.join(server.path, configFile);
+    const existing = await fs.readFile(filePath, "utf-8").catch(() => null);
+    if (existing === null) return;
+    const endpoint = `${server.bindAddress}:${server.port}`;
+    let updated = existing;
+    if (server.software === "velocity") {
+      if (!/^\s*bind\s*=/m.test(existing)) throw new Error("Velocity configuration is missing its bind setting");
+      updated = existing.replace(/^\s*bind\s*=.*$/m, `bind = "${endpoint}"`);
+    } else {
+      if (!/^\s*-\s*host\s*:/m.test(existing)) throw new Error(`${server.software} configuration is missing its listener host setting`);
+      updated = existing.replace(/^(\s*-\s*host\s*:)\s*.*$/m, `$1 ${endpoint}`);
+    }
+    if (updated !== existing) await fs.writeFile(filePath, updated, "utf-8");
+  }
+
+  private async refreshProxyConfigurationState(server: { id: string; path: string; software: string }): Promise<void> {
+    if (!["velocity", "waterfall", "bungeecord"].includes(server.software)) return;
+    const configFile = lifecycleFor(server).configFile;
+    if (!configFile) return;
+    const exists = await fs.stat(path.join(server.path, configFile)).then(() => true).catch(() => false);
+    await prisma.server.update({
+      where: { id: server.id },
+      data: { configurationState: exists ? "ready" : "needs-setup" },
+    });
+  }
+
+  private handleLine(serverId: string, line: string, software: string) {
     // Emit raw console output
     io.emit("console:output", {
       serverId,
@@ -194,10 +250,11 @@ class ServerManager {
       timestamp: new Date().toISOString(),
     });
 
-    if (DONE_REGEX.test(line)) {
+    if (lifecycleFor({ software }).readyPattern.test(line)) {
       this.setStatus(serverId, "running").catch(logger.error);
     }
 
+    if (["velocity", "waterfall", "bungeecord"].includes(software)) return;
     const tpsMatch = line.match(TPS_REGEX);
     if (tpsMatch) {
       updateTps(serverId, parseFloat(tpsMatch[1]));
@@ -218,18 +275,24 @@ class ServerManager {
       where: { id: serverId },
     });
 
-    await portManagerService.assertAvailableForServer(server.port, serverId);
+    await portManagerService.assertAvailableForServer(server.port, serverId, server.bindAddress);
 
     const { args } = this.buildCommand(server);
     const cmd = await this.resolveJavaCommand(server);
+    const lifecycle = lifecycleFor(server);
 
     await this.setStatus(serverId, "starting");
-    await this.ensureServerPropertiesPort(server.path, server.port);
+    if (isProxy(server)) {
+      await this.ensureProxyPort(server);
+    } else {
+      await this.ensureServerPropertiesPort(server.path, server.port);
+    }
     portManagerService.reservePort({
       ownerType: "server",
       ownerId: serverId,
       ownerName: server.name,
       port: server.port,
+      host: server.bindAddress,
     });
 
     const proc = spawn(cmd, args, {
@@ -245,6 +308,7 @@ class ServerManager {
       cwd: server.path,
       startedAt: new Date().toISOString(),
       stopRequested: false,
+      stopCommand: lifecycle.stopCommand,
     };
     this.running.set(serverId, runningEntry);
     await this.writeProcessRegistry();
@@ -258,7 +322,7 @@ class ServerManager {
         .toString()
         .split("\n")
         .filter(Boolean)
-        .forEach((line) => this.handleLine(serverId, line));
+        .forEach((line) => this.handleLine(serverId, line, server.software));
     });
 
     proc.stderr?.on("data", (chunk: Buffer) => {
@@ -298,6 +362,7 @@ class ServerManager {
       portManagerService.releasePort({ ownerType: "server", ownerId: serverId });
       await this.clearProcessRegistry();
       const status: ServerStatus = runningEntry.stopRequested || code === 0 ? "stopped" : "crashed";
+      await this.refreshProxyConfigurationState(server).catch((error) => logger.warn({ error, serverId }, "Failed to refresh proxy configuration state"));
       await this.setStatus(serverId, status);
     });
 
@@ -347,7 +412,7 @@ class ServerManager {
         clearTimeout(forceKillTimeout);
         resolve();
       });
-      entry.process.stdin?.write("stop\n");
+      entry.process.stdin?.write(`${entry.stopCommand}\n`);
     });
   }
 
@@ -385,7 +450,7 @@ class ServerManager {
     if (options.wait === false) {
       ids.forEach((id) => {
         const entry = this.running.get(id);
-        entry?.process.stdin?.write("stop\n");
+        entry?.process.stdin?.write(`${entry.stopCommand}\n`);
       });
       return;
     }

@@ -17,12 +17,13 @@ Create, run, monitor, back up, and maintain local Minecraft servers from one pol
 
 ServerLab MC is an Electron desktop app backed by a local Node.js service and a React renderer. It is built for people who run Minecraft servers locally and want a focused interface for server creation, Java runtime management, console access, files, backups, monitoring, and cached server software downloads.
 
-Current release: `3.2.0`
+Current release: `3.3.0`
 
 ## Highlights
 
 - Create Minecraft servers with framework, version, build, RAM, port, and EULA handling.
 - Download Vanilla, Paper, Purpur, Folia, and Fabric server software with real byte-based progress.
+- Create and run Velocity, Waterfall, and BungeeCord proxy profiles from official release sources.
 - Build Spigot locally through an isolated, cached BuildTools workflow with live build stages and logs.
 - Reuse cached server software while keeping every server folder independent.
 - Detect, install, validate, and assign Java runtimes per server.
@@ -46,13 +47,15 @@ ServerLab MC can resolve, download, cache, and install server software during se
 | Forge | Server | Planned | Modded server platform requiring installer-based setup. |
 | NeoForge | Server | Planned | Modern Forge ecosystem with installer-based setup. |
 | Quilt | Server | Planned | Fabric-compatible mod loader using Quilt Meta services. |
-| Velocity | Proxy | Planned | Modern high-performance PaperMC proxy for multi-server networks. |
-| Waterfall | Proxy | Planned | BungeeCord-compatible proxy maintained by PaperMC. |
-| BungeeCord | Proxy | Planned | Legacy proxy solution for connecting multiple servers. |
+| Velocity | Proxy | Supported | Modern PaperMC proxy downloaded from the official PaperMC downloads service. Requires Java 21 for current releases. |
+| Waterfall | Proxy | Supported, legacy | End-of-life PaperMC proxy. Official releases only; Velocity is recommended for new networks. |
+| BungeeCord | Proxy | Supported, legacy | Official Spigot Jenkins distribution only. Velocity is recommended for new networks. |
 
 Cached server software is stored in the app data directory. When a server is created, ServerLab copies the cached artifact into that server folder as `server.jar`, so existing servers never depend on the cache.
 
-Modrinth plugin management is available for plugin-capable server software: Paper, Purpur, Folia, Spigot, and Fabric. Vanilla servers intentionally omit plugin management because the official Vanilla server does not provide a plugin loader.
+Modrinth plugin management is available for plugin-capable server software and proxies: Paper, Purpur, Folia, Spigot, Fabric, Velocity, Waterfall, and BungeeCord. Vanilla servers intentionally omit plugin management because the official Vanilla server does not provide a plugin loader. Proxy plugins are checked against their exact loader; an optional target Minecraft version enables additional compatibility checks.
+
+Proxy downloads use official providers only: PaperMC for Velocity and Waterfall, and Spigot Jenkins for BungeeCord. ServerLab never falls back to third-party mirrors. Cached artifacts remain reusable when an official provider is temporarily unavailable.
 
 Spigot builds require a compatible JDK. ServerLab downloads and caches portable MinGit automatically when needed, without changing the system PATH or requiring administrator permissions. System Git is used as a fallback. ServerLab runs BuildTools in an isolated workspace, shows real download progress plus an expandable build log, verifies the generated jar, and keeps the final server copy independent from the cache.
 
@@ -200,8 +203,8 @@ GitHub Actions builds and publishes Windows releases from version tags. When a v
 
 ```powershell
 # Manual recovery path when a tag needs to be recreated or retried:
-  git tag v3.2.0
-  git push origin v3.2.0
+  git tag v3.3.0
+  git push origin v3.3.0
 ```
 
 The `Build and Publish Release` workflow runs `npm ci`, lint, CI-safe tests, and the Windows installer build. It uploads the installer, blockmap, `latest.yml`, and `update-meta.json` to the GitHub Releases page.

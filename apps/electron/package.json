@@ -1,6 +1,6 @@
 {
   "name": "@serverlab/electron",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "Electron main + preload process for ServerLab MC",
   "private": true,
   "main": "dist/main.js",

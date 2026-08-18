@@ -141,6 +141,7 @@ export class SoftwareDownloadService {
       this.emit(verifying, 99);
 
       await provider.validateArtifact(tmpPath, artifactMeta);
+      const localSha256 = artifactMeta.sha256 ?? (await this.sha256File(tmpPath));
       await fsp.mkdir(path.dirname(finalPath), { recursive: true });
       await fsp.rename(tmpPath, finalPath);
 
@@ -150,9 +151,13 @@ export class SoftwareDownloadService {
         buildId: input.buildId,
         filename: artifactMeta.filename,
         sizeBytes,
-        sha256: artifactMeta.sha256,
+        sha256: localSha256,
         cachedPath: finalPath,
         acquisition: "download",
+        sourceMetadataJson: JSON.stringify({
+          downloadUrl: artifactMeta.downloadUrl,
+          upstreamMetadataUrl: artifactMeta.upstreamMetadataUrl ?? null,
+        }),
       });
       const completed = await this.updateDownload(downloadId, {
         status: "completed",
@@ -169,7 +174,7 @@ export class SoftwareDownloadService {
           version: input.minecraftVersion,
           build: input.buildId,
           url: artifactMeta.downloadUrl,
-          sha256: artifactMeta.sha256,
+          sha256: localSha256,
           sizeBytes,
         },
         "Software artifact downloaded"
@@ -311,6 +316,13 @@ export class SoftwareDownloadService {
         output.close(() => resolve(bytesReceived));
       });
     });
+  }
+
+  private async sha256File(filePath: string): Promise<string> {
+    const hash = crypto.createHash("sha256");
+    const input = fs.createReadStream(filePath);
+    for await (const chunk of input) hash.update(chunk as Buffer);
+    return hash.digest("hex");
   }
 
   private async updateDownload(

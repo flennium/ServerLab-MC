@@ -2,6 +2,7 @@ import type {
   Server,
   ServerSoftware,
   ServerFramework,
+  ServerKind,
   Backup,
   JavaVersion,
   JavaRuntime,
@@ -26,6 +27,9 @@ export interface CreateServerDto {
   path: string;
   version: string;
   software: ServerSoftware;
+  kind?: ServerKind;
+  targetMinecraftVersion?: string | null;
+  bindAddress?: string;
   javaPath: string;
   javaRuntimeId?: string | null;
   javaOverrideMode?: JavaOverrideMode;
@@ -48,6 +52,8 @@ export interface UpdateServerDto {
   path?: string;
   version?: string;
   software?: ServerSoftware;
+  targetMinecraftVersion?: string | null;
+  bindAddress?: string;
   javaPath?: string;
   javaRuntimeId?: string | null;
   javaOverrideMode?: JavaOverrideMode;
@@ -132,6 +138,15 @@ export interface SoftwareProviderInfo {
   requiresJdk?: boolean;
   buildTool?: string;
   reasonUnavailable?: string;
+  kind: ServerKind;
+  releaseSource: "provider" | "minecraft-release-metadata" | "jenkins";
+  requiresEula: boolean;
+  recommendedJavaMajor?: number;
+  minimumJavaMajor?: number;
+  pluginLoaders: string[];
+  configFormat: "properties" | "yaml" | "toml" | "none";
+  deprecated?: boolean;
+  warning?: string;
 }
 
 export interface SoftwareProviderListResponse {
@@ -173,6 +188,7 @@ export interface SoftwareSourceDto {
   requestId?: string;
   sourceType?: SoftwareAcquisition;
   buildJobId?: string;
+  targetMinecraftVersion?: string | null;
 }
 
 export interface CreateSoftwareDownloadDto {

@@ -1,5 +1,6 @@
 import type {
   ServerFramework,
+  ServerKind,
   SoftwareAcquisition,
   SoftwareBuild,
   SoftwareProviderInfo,
@@ -33,6 +34,15 @@ export interface SoftwareProvider {
   enabled: boolean;
   supportsBuildSelection: boolean;
   acquisition: SoftwareAcquisition;
+  kind: ServerKind;
+  releaseSource: "provider" | "minecraft-release-metadata" | "jenkins";
+  requiresEula: boolean;
+  recommendedJavaMajor?: number;
+  minimumJavaMajor?: number;
+  pluginLoaders: string[];
+  configFormat: "properties" | "yaml" | "toml" | "none";
+  deprecated?: boolean;
+  warning?: string;
   supportedRevisionSource?: "provider" | "minecraft-release-metadata";
   requiresJdk?: boolean;
   buildTool?: string;

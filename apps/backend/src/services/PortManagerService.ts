@@ -205,8 +205,8 @@ class PortManagerService {
     this.reservations.delete(this.key(input.ownerType, input.ownerId));
   }
 
-  async assertAvailableForServer(port: number, serverId?: string | null): Promise<void> {
-    const status = await this.checkPort({ port, excludeServerId: serverId });
+  async assertAvailableForServer(port: number, serverId?: string | null, host = DEFAULT_HOST): Promise<void> {
+    const status = await this.checkPort({ port, host, excludeServerId: serverId });
     if (!status.available) throw new PortConflictError(status);
   }
 
