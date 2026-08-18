@@ -86,7 +86,7 @@ function proxyJavaRule(
 ): { minimum: number; recommended: number } | null {
   switch (software) {
     case "velocity":
-      return { minimum: 21, recommended: 21 };
+      return { minimum: 25, recommended: 25 };
     case "waterfall":
       return { minimum: 8, recommended: 11 };
     case "bungeecord":

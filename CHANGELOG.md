@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Velocity profiles now require Java 25, matching the class version used by current Velocity releases.
+
 ## 3.3.0
 
 ### Added

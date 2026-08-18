@@ -113,7 +113,7 @@ describe("server software providers", () => {
     expect(providers.find((provider) => provider.id === "velocity")).toMatchObject({
       kind: "proxy",
       requiresEula: false,
-      recommendedJavaMajor: 21,
+      recommendedJavaMajor: 25,
       pluginLoaders: ["velocity"],
     });
     expect(providers.find((provider) => provider.id === "waterfall")).toMatchObject({

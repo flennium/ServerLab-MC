@@ -695,8 +695,8 @@ export class SoftwareProviderRegistry {
         "https://papermc.io/software/velocity",
         "toml",
         ["velocity"],
-        21,
-        21
+        25,
+        25
       ),
       new PaperProxyProvider(
         "waterfall",

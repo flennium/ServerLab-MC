@@ -47,7 +47,7 @@ ServerLab MC can resolve, download, cache, and install server software during se
 | Forge | Server | Planned | Modded server platform requiring installer-based setup. |
 | NeoForge | Server | Planned | Modern Forge ecosystem with installer-based setup. |
 | Quilt | Server | Planned | Fabric-compatible mod loader using Quilt Meta services. |
-| Velocity | Proxy | Supported | Modern PaperMC proxy downloaded from the official PaperMC downloads service. Requires Java 21 for current releases. |
+| Velocity | Proxy | Supported | Modern PaperMC proxy downloaded from the official PaperMC downloads service. Current releases require Java 25. |
 | Waterfall | Proxy | Supported, legacy | End-of-life PaperMC proxy. Official releases only; Velocity is recommended for new networks. |
 | BungeeCord | Proxy | Supported, legacy | Official Spigot Jenkins distribution only. Velocity is recommended for new networks. |
 
