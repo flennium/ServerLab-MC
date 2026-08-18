@@ -20,6 +20,11 @@ model Server {
   targetMinecraftVersion String?
   bindAddress String   @default("0.0.0.0")
   configurationState String @default("ready")
+  javaRequirementMajor Int?
+  javaRequirementConfidence String?
+  javaRequirementMethod String?
+  javaRequirementDetails String?
+  javaRequirementDetectedAt DateTime?
   javaPath    String
   javaRuntimeId String?
   javaOverrideMode String @default("automatic")

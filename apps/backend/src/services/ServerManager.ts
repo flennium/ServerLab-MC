@@ -25,6 +25,8 @@ interface RunningServer {
   startedAt: string;
   stopRequested: boolean;
   stopCommand: string;
+  generation: number;
+  finalized: boolean;
 }
 
 interface TrackedProcessRecord {
@@ -63,6 +65,8 @@ function lifecycleFor(server: { kind?: string; software: string }): {
 class ServerManager {
   private running = new Map<string, RunningServer>();
   private staleProcesses: TrackedProcessRecord[] = [];
+  private statusQueues = new Map<string, Promise<void>>();
+  private lifecycleGenerations = new Map<string, number>();
 
   private processRegistryPath(): string {
     const dataDir = process.env.DATA_DIR ?? process.cwd();
@@ -140,6 +144,7 @@ class ServerManager {
     allowUnsupportedJava: boolean;
     version: string;
     software: string;
+    path: string;
   }): Promise<string> {
     if (server.javaOverrideMode === "manual" || !server.javaRuntimeId) {
       const validated = await javaRuntimeValidator.validateExecutable(server.javaPath);
@@ -164,12 +169,14 @@ class ServerManager {
   }
 
   private async assertJavaCompatible(
-    server: { version: string; software: string; allowUnsupportedJava: boolean },
+    server: { id: string; path: string; version: string; software: string; allowUnsupportedJava: boolean },
     major: number
   ): Promise<void> {
     const recommendation = await javaRecommendationService.recommend({
       minecraftVersion: server.version,
       software: server.software,
+      artifactPath: path.join(server.path, "server.jar"),
+      serverId: server.id,
     });
     if (javaRecommendationService.isCompatible(major, recommendation.requiredMajor, server.allowUnsupportedJava, server.software)) {
       return;
@@ -189,6 +196,58 @@ class ServerManager {
     await prisma.server.update({ where: { id: serverId }, data: { status } });
     io.emit("server:status", { serverId, status });
     logger.info({ serverId, status }, "Server status changed");
+  }
+
+  // Process output and exit events arrive independently. Serialize status writes
+  // and ignore events from an older process generation after a restart.
+  private queueStatus(
+    serverId: string,
+    status: ServerStatus,
+    options: {
+      generation?: number;
+      process?: ChildProcess;
+      requireActiveProcess?: boolean;
+      allowStopRequested?: boolean;
+    } = {}
+  ): Promise<void> {
+    const previous = this.statusQueues.get(serverId) ?? Promise.resolve();
+    const next = previous
+      .catch(() => undefined)
+      .then(async () => {
+        if (
+          options.generation !== undefined &&
+          this.lifecycleGenerations.get(serverId) !== options.generation
+        ) {
+          return;
+        }
+
+        if (options.process && options.requireActiveProcess) {
+          const entry = this.running.get(serverId);
+          if (
+            !entry ||
+            entry.process !== options.process ||
+            (entry.stopRequested && !options.allowStopRequested)
+          ) {
+            return;
+          }
+        }
+
+        await this.setStatus(serverId, status);
+      })
+      .finally(() => {
+        if (this.statusQueues.get(serverId) === next) {
+          this.statusQueues.delete(serverId);
+        }
+      });
+
+    this.statusQueues.set(serverId, next);
+    return next;
+  }
+
+  private nextLifecycleGeneration(serverId: string): number {
+    const generation = (this.lifecycleGenerations.get(serverId) ?? 0) + 1;
+    this.lifecycleGenerations.set(serverId, generation);
+    return generation;
   }
 
   private async ensureServerPropertiesPort(serverPath: string, port: number): Promise<void> {
@@ -242,7 +301,13 @@ class ServerManager {
     });
   }
 
-  private handleLine(serverId: string, line: string, software: string) {
+  private handleLine(
+    serverId: string,
+    line: string,
+    software: string,
+    process: ChildProcess,
+    generation: number
+  ) {
     // Emit raw console output
     io.emit("console:output", {
       serverId,
@@ -251,7 +316,11 @@ class ServerManager {
     });
 
     if (lifecycleFor({ software }).readyPattern.test(line)) {
-      this.setStatus(serverId, "running").catch(logger.error);
+      void this.queueStatus(serverId, "running", {
+        process,
+        generation,
+        requireActiveProcess: true,
+      }).catch(logger.error);
     }
 
     if (["velocity", "waterfall", "bungeecord"].includes(software)) return;
@@ -281,7 +350,8 @@ class ServerManager {
     const cmd = await this.resolveJavaCommand(server);
     const lifecycle = lifecycleFor(server);
 
-    await this.setStatus(serverId, "starting");
+    const generation = this.nextLifecycleGeneration(serverId);
+    await this.queueStatus(serverId, "starting", { generation });
     if (isProxy(server)) {
       await this.ensureProxyPort(server);
     } else {
@@ -309,6 +379,8 @@ class ServerManager {
       startedAt: new Date().toISOString(),
       stopRequested: false,
       stopCommand: lifecycle.stopCommand,
+      generation,
+      finalized: false,
     };
     this.running.set(serverId, runningEntry);
     await this.writeProcessRegistry();
@@ -322,7 +394,7 @@ class ServerManager {
         .toString()
         .split("\n")
         .filter(Boolean)
-        .forEach((line) => this.handleLine(serverId, line, server.software));
+        .forEach((line) => this.handleLine(serverId, line, server.software, proc, generation));
     });
 
     proc.stderr?.on("data", (chunk: Buffer) => {
@@ -356,18 +428,29 @@ class ServerManager {
         });
     });
 
-    proc.on("exit", async (code) => {
+    const finalizeProcess = async (code: number | null, error?: Error) => {
+      if (runningEntry.finalized) return;
+      runningEntry.finalized = true;
+
+      if (error) {
+        logger.error({ err: error, serverId }, "Process error");
+      }
       if (proc.pid) untrackPid(proc.pid);
-      this.running.delete(serverId);
+      if (this.running.get(serverId)?.process === proc) {
+        this.running.delete(serverId);
+      }
       portManagerService.releasePort({ ownerType: "server", ownerId: serverId });
       await this.clearProcessRegistry();
       const status: ServerStatus = runningEntry.stopRequested || code === 0 ? "stopped" : "crashed";
       await this.refreshProxyConfigurationState(server).catch((error) => logger.warn({ error, serverId }, "Failed to refresh proxy configuration state"));
-      await this.setStatus(serverId, status);
+      await this.queueStatus(serverId, status, { generation });
+    };
+
+    proc.on("exit", async (code) => {
+      await finalizeProcess(code);
     });
 
     proc.on("error", async (err) => {
-      logger.error({ err, serverId }, "Process error");
       const appError = errorService.createFromUnknown(err, {
         category: "server",
         severity: "error",
@@ -378,11 +461,7 @@ class ServerManager {
         recoveries: ["retry", "open-logs", "copy-details", "dismiss"],
       });
       void errorService.record(appError);
-      if (proc.pid) untrackPid(proc.pid);
-      this.running.delete(serverId);
-      portManagerService.releasePort({ ownerType: "server", ownerId: serverId });
-      await this.clearProcessRegistry();
-      await this.setStatus(serverId, runningEntry.stopRequested ? "stopped" : "crashed");
+      await finalizeProcess(null, err);
     });
   }
 
@@ -403,7 +482,12 @@ class ServerManager {
     }
 
     entry.stopRequested = true;
-    await this.setStatus(serverId, "stopping");
+    await this.queueStatus(serverId, "stopping", {
+      generation: entry.generation,
+      process: entry.process,
+      requireActiveProcess: true,
+      allowStopRequested: true,
+    });
     await new Promise<void>((resolve) => {
       const forceKillTimeout = setTimeout(() => {
         if (entry.process.pid) treeKill(entry.process.pid, "SIGKILL");

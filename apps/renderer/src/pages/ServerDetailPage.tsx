@@ -506,7 +506,7 @@ function ServerSettings({
     Promise.all([
       api.get<JavaRuntimeListResponse>("/api/java/runtimes"),
       api.get<JavaRecommendationResponse>(
-        `/api/java/recommendation?minecraftVersion=${encodeURIComponent(server.version)}&software=${server.software}`
+        `/api/java/recommendation?serverId=${encodeURIComponent(server.id)}&minecraftVersion=${encodeURIComponent(server.version)}&software=${server.software}`
       ),
     ])
       .then(([runtimeResponse, recommendationResponse]) => {
@@ -525,7 +525,7 @@ function ServerSettings({
         }).userMessage)
       )
       .finally(() => setRuntimeLoading(false));
-  }, [server.software, server.version]);
+  }, [server.id, server.software, server.version]);
 
   useEffect(() => {
     if (manualJava || form.javaRuntimeId || !recommendation?.compatibleRuntime) return;
@@ -694,6 +694,10 @@ function ServerSettings({
               <LabelValue
                 label="Confidence"
                 value={recommendation?.confidence ?? "Unknown"}
+              />
+              <LabelValue
+                label="Detection method"
+                value={recommendation?.detection?.method ?? "Provider/version fallback"}
               />
             </div>
           </div>

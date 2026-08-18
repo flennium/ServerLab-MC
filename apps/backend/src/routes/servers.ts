@@ -1,5 +1,6 @@
 import { Router } from "express";
 import fs from "fs/promises";
+import path from "path";
 import { isIP } from "net";
 import { prisma } from "../lib/prisma.js";
 import { serverManager } from "../services/ServerManager.js";
@@ -12,6 +13,7 @@ import { spigotBuildService } from "../services/software/SpigotBuildService.js";
 import { javaRuntimeRegistry } from "../services/java/JavaRuntimeRegistry.js";
 import { javaRuntimeValidator } from "../services/java/JavaRuntimeValidator.js";
 import { javaRecommendationService } from "../services/java/JavaRecommendationService.js";
+import { javaRequirementDetectionService } from "../services/java/JavaRequirementDetectionService.js";
 import {
   PortConflictError,
   portManagerService,
@@ -117,19 +119,37 @@ async function resolveJavaSelection(input: {
   javaOverrideMode?: string;
   allowUnsupportedJava?: boolean;
   strict: boolean;
+  artifactPath?: string;
+  serverId?: string;
 }): Promise<{
   javaRuntimeId: string | null;
   javaPath: string;
   javaOverrideMode: string;
   allowUnsupportedJava: boolean;
+  recommendation: Awaited<ReturnType<typeof javaRecommendationService.recommend>>;
 }> {
   const javaOverrideMode =
     input.javaOverrideMode ?? (input.javaRuntimeId ? "automatic" : "manual");
   const allowUnsupportedJava = input.allowUnsupportedJava ?? false;
 
+  const recommendation = await javaRecommendationService.recommend({
+    minecraftVersion: input.version,
+    software: input.software,
+    artifactPath: input.artifactPath,
+    serverId: input.serverId,
+  });
+
   if (javaOverrideMode === "manual") {
     try {
-      await javaRuntimeValidator.validateExecutable(input.javaPath);
+      const validated = await javaRuntimeValidator.validateExecutable(input.javaPath);
+      if (!javaRecommendationService.isCompatible(
+        validated.major,
+        recommendation.requiredMajor,
+        allowUnsupportedJava,
+        input.software
+      )) {
+        throw new Error(`Java ${recommendation.requiredMajor} is required for ${input.software}.`);
+      }
     } catch (error) {
       throw badRequest(
         error instanceof Error
@@ -142,16 +162,13 @@ async function resolveJavaSelection(input: {
       javaPath: input.javaPath,
       javaOverrideMode,
       allowUnsupportedJava,
+      recommendation,
     };
   }
 
   let runtime = input.javaRuntimeId
     ? await javaRuntimeRegistry.getRuntime(input.javaRuntimeId)
     : null;
-  const recommendation = await javaRecommendationService.recommend({
-    minecraftVersion: input.version,
-    software: input.software,
-  });
   if (!runtime) runtime = recommendation.compatibleRuntime;
   if (!runtime) {
     if (input.strict) {
@@ -164,6 +181,7 @@ async function resolveJavaSelection(input: {
       javaPath: input.javaPath,
       javaOverrideMode: "manual",
       allowUnsupportedJava,
+      recommendation,
     };
   }
 
@@ -187,7 +205,23 @@ async function resolveJavaSelection(input: {
     javaPath: validated.executablePath,
     javaOverrideMode: "automatic",
     allowUnsupportedJava,
+    recommendation,
   };
+}
+
+async function refreshJavaRequirement(serverId: string, serverPath: string): Promise<void> {
+  const jarPath = path.join(serverPath, "server.jar");
+  const detection = await javaRequirementDetectionService.detect(jarPath);
+  await prisma.server.update({
+    where: { id: serverId },
+    data: {
+      javaRequirementMajor: detection.requiredMajor,
+      javaRequirementConfidence: detection.confidence,
+      javaRequirementMethod: detection.method,
+      javaRequirementDetails: JSON.stringify({ indicators: detection.indicators, warnings: detection.warnings }),
+      javaRequirementDetectedAt: new Date(),
+    },
+  });
 }
 
 // GET /api/servers
@@ -233,16 +267,6 @@ serverRoutes.post("/", async (req, res, next) => {
     const bindAddress = body.bindAddress ?? "0.0.0.0";
     const port = body.port ?? (await portManagerService.suggestPort());
     await portManagerService.assertAvailableForServer(port, null, bindAddress);
-
-    const javaSelection = await resolveJavaSelection({
-      version,
-      software,
-      javaRuntimeId: body.javaRuntimeId,
-      javaPath: body.javaPath,
-      javaOverrideMode: body.javaOverrideMode,
-      allowUnsupportedJava: body.allowUnsupportedJava,
-      strict: Boolean(body.softwareSource),
-    });
 
     if (body.softwareSource) {
       const requestId = body.softwareSource.requestId;
@@ -293,6 +317,17 @@ serverRoutes.post("/", async (req, res, next) => {
       }
     }
 
+    const javaSelection = await resolveJavaSelection({
+      version,
+      software,
+      javaRuntimeId: body.javaRuntimeId,
+      javaPath: body.javaPath,
+      javaOverrideMode: body.javaOverrideMode,
+      allowUnsupportedJava: body.allowUnsupportedJava,
+      strict: Boolean(body.softwareSource),
+      artifactPath: path.join(body.path, "server.jar"),
+    });
+
     const server = await prisma.server.create({
       data: {
         name: body.name,
@@ -304,6 +339,16 @@ serverRoutes.post("/", async (req, res, next) => {
         targetMinecraftVersion,
         bindAddress,
         configurationState: kind === "proxy" ? "needs-setup" : "ready",
+        javaRequirementMajor: javaSelection.recommendation.detection?.requiredMajor ?? null,
+        javaRequirementConfidence: javaSelection.recommendation.detection?.confidence ?? null,
+        javaRequirementMethod: javaSelection.recommendation.detection?.method ?? null,
+        javaRequirementDetails: javaSelection.recommendation.detection
+          ? JSON.stringify({
+              indicators: javaSelection.recommendation.detection.indicators,
+              warnings: javaSelection.recommendation.detection.warnings,
+            })
+          : null,
+        javaRequirementDetectedAt: javaSelection.recommendation.detection ? new Date() : null,
         javaPath: javaSelection.javaPath,
         javaRuntimeId: javaSelection.javaRuntimeId,
         javaOverrideMode: javaSelection.javaOverrideMode,
@@ -358,6 +403,9 @@ serverRoutes.patch("/:id", async (req, res, next) => {
       where: { id: req.params.id },
       data: body,
     });
+    if (body.path !== undefined || body.version !== undefined || body.software !== undefined) {
+      await refreshJavaRequirement(server.id, server.path);
+    }
     res.json({ server });
   } catch (err) {
     if (err instanceof PortConflictError) {
@@ -382,10 +430,22 @@ serverRoutes.patch("/:id/java-runtime", async (req, res, next) => {
       javaOverrideMode: body.javaOverrideMode,
       allowUnsupportedJava: body.allowUnsupportedJava,
       strict: true,
+      artifactPath: path.join(existing.path, "server.jar"),
+      serverId: existing.id,
     });
+    const { recommendation, ...javaData } = selection;
     const server = await prisma.server.update({
       where: { id: req.params.id },
-      data: selection,
+      data: {
+        ...javaData,
+        javaRequirementMajor: recommendation.detection?.requiredMajor ?? null,
+        javaRequirementConfidence: recommendation.detection?.confidence ?? null,
+        javaRequirementMethod: recommendation.detection?.method ?? null,
+        javaRequirementDetails: recommendation.detection
+          ? JSON.stringify({ indicators: recommendation.detection.indicators, warnings: recommendation.detection.warnings })
+          : undefined,
+        javaRequirementDetectedAt: recommendation.detection ? new Date() : undefined,
+      },
     });
     res.json({ server });
   } catch (err) {
@@ -666,10 +726,14 @@ serverRoutes.get("/:id/files/content", async (req, res, next) => {
 // PUT /api/servers/:id/files
 serverRoutes.put("/:id/files", async (req, res, next) => {
   try {
+    const server = await prisma.server.findUniqueOrThrow({ where: { id: req.params.id } });
     const fm = await getFileManager(req.params.id);
     const body = req.body as WriteFileDto;
     if (!body.path) throw badRequest("path is required", "file");
     const content = await fm.writeFile(body);
+    if (path.basename(body.path).toLowerCase() === "server.jar") {
+      await refreshJavaRequirement(server.id, server.path);
+    }
     res.json({ message: "File saved", file: content });
   } catch (err) {
     if (err instanceof FileConflictError) {
@@ -692,6 +756,7 @@ serverRoutes.put("/:id/files", async (req, res, next) => {
 // The upload is streamed into the server sandbox; the renderer never receives filesystem access.
 serverRoutes.put("/:id/files/upload", async (req, res, next) => {
   try {
+    const server = await prisma.server.findUniqueOrThrow({ where: { id: req.params.id } });
     const fm = await getFileManager(req.params.id);
     const filePath = req.query.path as string;
     if (!filePath) throw badRequest("path query param required", "file");
@@ -700,6 +765,9 @@ serverRoutes.put("/:id/files/upload", async (req, res, next) => {
     }
     const overwrite = req.query.overwrite === "true";
     const file = await fm.uploadFile(filePath, req, overwrite);
+    if (path.basename(filePath).toLowerCase() === "server.jar") {
+      await refreshJavaRequirement(server.id, server.path);
+    }
     res.status(overwrite ? 200 : 201).json({ message: "File uploaded", file });
   } catch (err) {
     if (err instanceof FileExistsError) {
@@ -739,10 +807,14 @@ serverRoutes.post("/:id/files/folders", async (req, res, next) => {
 // DELETE /api/servers/:id/files?path=some/file
 serverRoutes.delete("/:id/files", async (req, res, next) => {
   try {
+    const server = await prisma.server.findUniqueOrThrow({ where: { id: req.params.id } });
     const fm = await getFileManager(req.params.id);
     const filePath = req.query.path as string;
     if (!filePath) throw badRequest("path query param required", "file");
     await fm.deleteEntry(filePath);
+    if (path.basename(filePath).toLowerCase() === "server.jar") {
+      await refreshJavaRequirement(server.id, server.path);
+    }
     res.json({ message: "Deleted" });
   } catch (err) {
     next(err);
@@ -752,10 +824,17 @@ serverRoutes.delete("/:id/files", async (req, res, next) => {
 // PATCH /api/servers/:id/files/rename
 serverRoutes.patch("/:id/files/rename", async (req, res, next) => {
   try {
+    const server = await prisma.server.findUniqueOrThrow({ where: { id: req.params.id } });
     const fm = await getFileManager(req.params.id);
     const { oldPath, newPath } = req.body as { oldPath: string; newPath: string };
     if (!oldPath || !newPath) throw badRequest("oldPath and newPath are required", "file");
     await fm.rename(oldPath, newPath);
+    if (
+      path.basename(oldPath).toLowerCase() === "server.jar" ||
+      path.basename(newPath).toLowerCase() === "server.jar"
+    ) {
+      await refreshJavaRequirement(server.id, server.path);
+    }
     res.json({ message: "Renamed" });
   } catch (err) {
     next(err);

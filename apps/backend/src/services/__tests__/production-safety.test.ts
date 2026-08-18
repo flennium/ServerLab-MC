@@ -12,6 +12,57 @@ import { BuildToolsProvider } from "../software/BuildToolsProvider.js";
 import { portManagerService } from "../PortManagerService.js";
 import { sanitizePluginFileName } from "../plugins/PluginInstallService.js";
 import { pluginCompatibilityService } from "../plugins/PluginCompatibilityService.js";
+import { javaRequirementDetectionService } from "../java/JavaRequirementDetectionService.js";
+
+function storedZip(entries: Array<{ name: string; data: Buffer }>): Buffer {
+  const localParts: Buffer[] = [];
+  const centralParts: Buffer[] = [];
+  let offset = 0;
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name, "utf8");
+    const local = Buffer.alloc(30 + name.length + entry.data.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0, 6);
+    local.writeUInt16LE(0, 8);
+    local.writeUInt32LE(entry.data.length, 18);
+    local.writeUInt32LE(entry.data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    name.copy(local, 30);
+    entry.data.copy(local, 30 + name.length);
+    localParts.push(local);
+
+    const central = Buffer.alloc(46 + name.length);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0, 8);
+    central.writeUInt32LE(entry.data.length, 20);
+    central.writeUInt32LE(entry.data.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    name.copy(central, 46);
+    centralParts.push(central);
+    offset += local.length;
+  }
+  const central = Buffer.concat(centralParts);
+  const local = Buffer.concat(localParts);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(central.length, 12);
+  end.writeUInt32LE(local.length, 16);
+  return Buffer.concat([local, central, end]);
+}
+
+function classFile(classFileMajor: number): Buffer {
+  const bytes = Buffer.alloc(8);
+  bytes.writeUInt32BE(0xcafebabe, 0);
+  bytes.writeUInt16BE(0, 4);
+  bytes.writeUInt16BE(classFileMajor, 6);
+  return bytes;
+}
 
 describe("Java runtime parsing", () => {
   it("parses legacy Java 8 output", () => {
@@ -32,6 +83,42 @@ describe("Java runtime parsing", () => {
       version: "21.0.4",
       distribution: "Temurin",
     });
+  });
+});
+
+describe("JAR Java requirement detection", () => {
+  it.each([
+    ["paper", "net/minecraft/server/Main.class", 65, 21],
+    ["fabric", "net/fabricmc/loader/impl/launch/server/FabricServerLauncher.class", 69, 25],
+    ["velocity", "com/velocitypowered/proxy/Velocity.class", 69, 25],
+  ])("detects the class-file requirement from %s", async (name, className, classMajor, javaMajor) => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), `serverlab-jar-${name}-`));
+    const jarPath = path.join(parent, `${name}.jar`);
+    try {
+      await writeFile(jarPath, storedZip([{ name: className, data: classFile(classMajor) }]));
+      const result = await javaRequirementDetectionService.detect(jarPath);
+      expect(result).toMatchObject({
+        requiredMajor: javaMajor,
+        confidence: "high",
+        method: "class-file",
+      });
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("uses manifest metadata when a JAR has no readable classes", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "serverlab-jar-manifest-"));
+    const jarPath = path.join(parent, "metadata.jar");
+    try {
+      await writeFile(jarPath, storedZip([
+        { name: "META-INF/MANIFEST.MF", data: Buffer.from("Manifest-Version: 1.0\nBuild-Jdk-Spec: 17\n") },
+      ]));
+      const result = await javaRequirementDetectionService.detect(jarPath);
+      expect(result).toMatchObject({ requiredMajor: 17, confidence: "medium", method: "manifest" });
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
   });
 });
 

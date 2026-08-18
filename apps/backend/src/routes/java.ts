@@ -1,4 +1,5 @@
 import { Router } from "express";
+import path from "path";
 import { prisma } from "../lib/prisma.js";
 import type { InstallJdkDto, JavaRuntimeProviderId, ServerSoftware } from "@serverlab/shared";
 import { javaRuntimeProviderRegistry } from "../services/java/JavaRuntimeProviders.js";
@@ -69,9 +70,15 @@ javaRoutes.get("/recommendation", async (req, res, next) => {
     if (!minecraftVersion) {
       throw badRequest("minecraftVersion is required");
     }
+    const serverId = typeof req.query.serverId === "string" ? req.query.serverId : undefined;
+    const server = serverId
+      ? await prisma.server.findUnique({ where: { id: serverId }, select: { path: true } })
+      : null;
     const recommendation = await javaRecommendationService.recommend({
       minecraftVersion,
       software,
+      artifactPath: server ? path.join(server.path, "server.jar") : undefined,
+      serverId,
     });
     res.json(recommendation);
   } catch (err) {

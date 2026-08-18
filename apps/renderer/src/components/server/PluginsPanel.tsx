@@ -538,7 +538,7 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
                     <div className="flex flex-wrap gap-1.5">
                       {selectedVersion.dependencies.map((dependency, index) => (
                         <span key={`${dependency.projectId ?? dependency.fileName}-${index}`} className="rounded border border-border bg-rail px-2 py-1 text-xs text-muted">
-                          {dependency.dependencyType} {dependency.projectId ?? dependency.fileName}
+                          {dependency.dependencyType} {dependency.projectName ?? dependency.fileName ?? dependency.projectId ?? "Unknown dependency"}
                         </span>
                       ))}
                     </div>

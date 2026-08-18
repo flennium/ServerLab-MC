@@ -14,6 +14,11 @@ export async function ensureDatabaseSchema(): Promise<void> {
       "targetMinecraftVersion" TEXT,
       "bindAddress" TEXT NOT NULL DEFAULT '0.0.0.0',
       "configurationState" TEXT NOT NULL DEFAULT 'ready',
+      "javaRequirementMajor" INTEGER,
+      "javaRequirementConfidence" TEXT,
+      "javaRequirementMethod" TEXT,
+      "javaRequirementDetails" TEXT,
+      "javaRequirementDetectedAt" DATETIME,
       "javaPath" TEXT NOT NULL,
       "ramMinMb" INTEGER NOT NULL DEFAULT 1024,
       "ramMaxMb" INTEGER NOT NULL DEFAULT 4096,
@@ -237,6 +242,11 @@ export async function ensureDatabaseSchema(): Promise<void> {
   await ensureColumn("servers", "targetMinecraftVersion", '"targetMinecraftVersion" TEXT');
   await ensureColumn("servers", "bindAddress", '"bindAddress" TEXT NOT NULL DEFAULT \'0.0.0.0\'');
   await ensureColumn("servers", "configurationState", '"configurationState" TEXT NOT NULL DEFAULT \'ready\'');
+  await ensureColumn("servers", "javaRequirementMajor", '"javaRequirementMajor" INTEGER');
+  await ensureColumn("servers", "javaRequirementConfidence", '"javaRequirementConfidence" TEXT');
+  await ensureColumn("servers", "javaRequirementMethod", '"javaRequirementMethod" TEXT');
+  await ensureColumn("servers", "javaRequirementDetails", '"javaRequirementDetails" TEXT');
+  await ensureColumn("servers", "javaRequirementDetectedAt", '"javaRequirementDetectedAt" DATETIME');
   await ensureColumn("software_artifacts", "acquisition", '"acquisition" TEXT NOT NULL DEFAULT \'download\'');
   await ensureColumn("software_artifacts", "buildTool", '"buildTool" TEXT');
   await ensureColumn("software_artifacts", "buildToolVersion", '"buildToolVersion" TEXT');

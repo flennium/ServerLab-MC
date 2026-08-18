@@ -63,9 +63,21 @@ modrinthRoutes.get("/projects/:id/versions", async (req, res, next) => {
     if (!req.params.id) throw badRequest("project id is required", "plugin");
     const server = await getServerContext(req.query.serverId);
     const { versions, offline } = await modrinthClient.listVersions(req.params.id);
+    const dependencyIds = versions.flatMap((version) =>
+      version.dependencies
+        .map((dependency) => dependency.projectId)
+        .filter((projectId): projectId is string => Boolean(projectId))
+    );
+    const dependencyNames = await modrinthClient.getProjectNames(dependencyIds).catch(() => new Map<string, string>());
     const payload: ModrinthVersionListResponse = {
       versions: versions.map((version) =>
-        pluginCompatibilityService.withVersionCompatibility(server, version)
+        pluginCompatibilityService.withVersionCompatibility(server, {
+          ...version,
+          dependencies: version.dependencies.map((dependency) => ({
+            ...dependency,
+            projectName: dependency.projectId ? dependencyNames.get(dependency.projectId) ?? null : null,
+          })),
+        })
       ),
       offline,
     };

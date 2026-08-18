@@ -59,6 +59,15 @@ export type JavaRuntimeStatus =
 
 export type JavaOverrideMode = "automatic" | "manual";
 
+export type JavaRequirementConfidence = "high" | "medium" | "low" | "unknown";
+export type JavaRequirementMethod =
+  | "class-file"
+  | "bootstrap-metadata"
+  | "manifest"
+  | "fallback"
+  | "ambiguous"
+  | "unknown";
+
 export type JavaPackageType = "jre" | "jdk";
 
 export type JavaInstallStatus =
@@ -122,6 +131,11 @@ export interface Server {
   targetMinecraftVersion: string | null;
   bindAddress: string;
   configurationState: ServerConfigurationState;
+  javaRequirementMajor: number | null;
+  javaRequirementConfidence: JavaRequirementConfidence | null;
+  javaRequirementMethod: JavaRequirementMethod | null;
+  javaRequirementDetails: string | null;
+  javaRequirementDetectedAt: Date | null;
   javaPath: string;
   javaRuntimeId: string | null;
   javaOverrideMode: JavaOverrideMode;
@@ -236,6 +250,17 @@ export interface SoftwareDownload {
   error: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface JavaRequirementDetection {
+  requiredMajor: number | null;
+  confidence: JavaRequirementConfidence;
+  method: JavaRequirementMethod;
+  jarPath: string;
+  classFileMajor: number | null;
+  metadataMajor: number | null;
+  indicators: string[];
+  warnings: string[];
 }
 
 export interface SoftwareBuildJob {

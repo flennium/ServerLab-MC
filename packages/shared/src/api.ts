@@ -18,6 +18,7 @@ import type {
   PluginInstallJob,
   SoftwareAcquisition,
   SoftwareBuildJob,
+  JavaRequirementDetection,
 } from "./models.js";
 import type { AppError } from "./errors.js";
 
@@ -386,6 +387,7 @@ export interface ModrinthVersionFile {
 
 export interface ModrinthVersionDependency {
   projectId: string | null;
+  projectName?: string | null;
   versionId: string | null;
   fileName: string | null;
   dependencyType: "required" | "optional" | "incompatible" | "embedded";
@@ -487,7 +489,8 @@ export interface JavaRecommendationResponse {
   software: ServerSoftware;
   requiredMajor: number;
   recommendedMajor: number;
-  confidence: "metadata" | "rules" | "unknown";
+  confidence: "jar" | "metadata" | "rules" | "fallback" | "unknown";
+  detection: JavaRequirementDetection | null;
   compatibleRuntime: JavaRuntime | null;
   installedRuntimes: JavaRuntime[];
   missing: boolean;
