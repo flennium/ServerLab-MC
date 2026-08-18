@@ -434,6 +434,25 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
     };
   }, [activeBuildId, activeDownloadId, activeJavaInstallId, buildJobId]);
 
+  useEffect(() => {
+    const failedBuild = buildProgress?.status === "failed" || buildProgress?.status === "cancelled";
+    if (!buildProgress || !failedBuild || buildProgress.error) return;
+
+    let disposed = false;
+    void api.get<SoftwareBuildJobResponse>(`/api/software/builds/${buildProgress.jobId}`)
+      .then((result) => {
+        if (disposed || !result.job.error) return;
+        setBuildProgress((current) => current?.jobId === result.job.id
+          ? { ...current, error: result.job.error, percent: result.job.percent, logAvailable: Boolean(result.job.logPath) }
+          : current);
+      })
+      .catch(() => {});
+
+    return () => {
+      disposed = true;
+    };
+  }, [buildProgress, buildProgress?.jobId, buildProgress?.status, buildProgress?.error]);
+
   async function loadRuntimes() {
     const { runtimes } = await api.get<JavaRuntimeListResponse>("/api/java/runtimes");
     setRuntimes(runtimes);
@@ -563,6 +582,42 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
       action: "cancel-spigot-build",
     }).userMessage));
     setActiveBuildId(null);
+  }
+
+  async function handleRetrySpigotBuild() {
+    if (!buildProgress?.jobId || provider !== "spigot" || !minecraftVersion || !javaRuntimeId) return;
+    const requestId = crypto.randomUUID();
+    setActiveBuildId(requestId);
+    try {
+      const result = await api.post<SoftwareBuildJobResponse>(`/api/software/builds/${buildProgress.jobId}/retry`, {
+        minecraftVersion,
+        javaRuntimeId,
+        requestId,
+      });
+      setBuildJobId(result.job.id);
+      setBuildProgress({
+        jobId: result.job.id,
+        provider: "spigot",
+        minecraftVersion,
+        buildId,
+        status: result.job.status,
+        stage: result.job.stage,
+        bytesReceived: result.job.bytesReceived,
+        totalBytes: result.job.totalBytes,
+        percent: result.job.percent,
+        logAvailable: Boolean(result.job.logPath),
+        error: result.job.error ?? undefined,
+      });
+    } catch (error) {
+      setActiveBuildId(null);
+      setError(reportError(error, {
+        category: "download",
+        userMessage: "Spigot could not be retried.",
+        possibleSolution: "Check the BuildTools log and verify the selected JDK before trying again.",
+        source: "renderer:create-server",
+        action: "retry-spigot-build",
+      }).userMessage);
+    }
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -737,7 +792,7 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
               </label>
             </div>
             <SoftwareStatus acquisition={selectedProvider?.acquisition} cached={selectedBuild?.cached === true} selectedBuild={selectedBuild} progress={softwareProgress} onCancel={handleCancelSoftwareDownload} cancellable={loading && softwareProgress?.stage === "downloading"} />
-            {provider === "spigot" && <SpigotBuildStatus preflight={buildPreflight} progress={buildProgress} active={Boolean(activeBuildId)} onBuild={handleBuildSpigot} onCancel={handleCancelSpigotBuild} />}
+            {provider === "spigot" && <SpigotBuildStatus preflight={buildPreflight} progress={buildProgress} active={Boolean(activeBuildId)} onBuild={handleBuildSpigot} onCancel={handleCancelSpigotBuild} onRetry={handleRetrySpigotBuild} />}
           </>
         )}
 
@@ -748,7 +803,7 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
               <p className="mt-1 text-sm text-muted">ServerLab is resolving the software, verifying the cache, and installing the server files.</p>
             </div>
             <SoftwareStatus acquisition={selectedProvider?.acquisition} cached={selectedBuild?.cached === true} selectedBuild={selectedBuild} progress={softwareProgress} onCancel={handleCancelSoftwareDownload} cancellable={loading && softwareProgress?.stage === "downloading"} />
-            {provider === "spigot" && <SpigotBuildStatus preflight={buildPreflight} progress={buildProgress} active={Boolean(activeBuildId)} onBuild={handleBuildSpigot} onCancel={handleCancelSpigotBuild} />}
+            {provider === "spigot" && <SpigotBuildStatus preflight={buildPreflight} progress={buildProgress} active={Boolean(activeBuildId)} onBuild={handleBuildSpigot} onCancel={handleCancelSpigotBuild} onRetry={handleRetrySpigotBuild} />}
           </div>
         )}
         {error && <Alert tone="danger">{error}</Alert>}
@@ -916,12 +971,14 @@ function SpigotBuildStatus({
   active,
   onBuild,
   onCancel,
+  onRetry,
 }: {
   preflight: BuildToolsPreflightResult | null;
   progress: SoftwareBuildProgressPayload | null;
   active: boolean;
   onBuild: () => void;
   onCancel: () => void;
+  onRetry: () => void;
 }) {
   const [showLog, setShowLog] = useState(false);
   const [log, setLog] = useState<string | null>(null);
@@ -974,11 +1031,15 @@ function SpigotBuildStatus({
       {progress && (
         <div className="mt-3 rounded border border-border bg-surface-console p-3">
           <div className="flex items-center justify-between gap-2 text-xs">
-            <span className={completed ? "font-semibold text-grass" : failed ? "font-semibold text-redstone" : "font-semibold text-white"}>{buildStageLabels[progress.stage] ?? progress.stage}</span>
-            <span className="font-mono text-muted">{progress.percent === null ? "working" : `${Math.round(progress.percent)}%`}</span>
+            <span className={completed ? "font-semibold text-grass" : failed ? "font-semibold text-redstone" : "font-semibold text-white"}>
+              {completed ? "Build complete" : progress.status === "cancelled" ? "Build cancelled" : failed ? "Build failed" : buildStageLabels[progress.stage] ?? progress.stage}
+            </span>
+            <span className="font-mono text-muted">
+              {failed ? "stopped" : completed ? "100%" : progress.percent === null ? "working" : `${Math.round(progress.percent)}%`}
+            </span>
           </div>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-panel">
-            <div className={`h-full ${failed ? "bg-redstone" : completed ? "bg-grass" : "bg-copper"} ${progress.percent === null && !failed && !completed ? "w-1/2 animate-pulse" : "transition-all"}`} style={progress.percent === null ? undefined : { width: `${progress.percent}%` }} />
+            <div className={`h-full ${failed ? "bg-redstone" : completed ? "bg-grass" : "bg-copper"} ${progress.percent === null && !failed && !completed ? "w-1/2 animate-pulse" : "transition-all"}`} style={progress.percent === null ? (failed ? { width: "100%" } : undefined) : { width: `${progress.percent}%` }} />
           </div>
           <div className="mt-2 flex flex-wrap justify-between gap-2 text-xs text-muted">
             <span>{formatBytes(progress.bytesReceived)}{progress.totalBytes ? ` / ${formatBytes(progress.totalBytes)}` : ""}</span>
@@ -990,7 +1051,8 @@ function SpigotBuildStatus({
           </div>
           {progress.currentLogLine && <p className="mt-2 max-h-16 overflow-hidden font-mono text-[0.68rem] text-muted">{progress.currentLogLine}</p>}
           {showLog && log !== null && <pre className="mt-3 max-h-64 overflow-auto rounded border border-border bg-panel p-3 font-mono text-[0.68rem] leading-5 text-muted">{log}</pre>}
-          {progress.error && <p className="mt-2 text-xs text-redstone">{progress.error}</p>}
+          {failed && <p className="mt-2 rounded border border-redstone/40 bg-redstone/10 px-2 py-2 text-xs text-redstone">{progress.error ?? "BuildTools exited before producing a valid Spigot server jar."}</p>}
+          {failed && <div className="mt-2 flex flex-wrap gap-2"><Button type="button" onClick={onRetry} icon={RefreshCw} variant="secondary" size="sm">Retry build</Button></div>}
         </div>
       )}
     </div>
