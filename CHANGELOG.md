@@ -1,16 +1,5 @@
 # Changelog
 
-## 3.1.1
-
-### Fixed
-
-- Fixed packaged startup on existing installations by bootstrapping the Spigot BuildTools job table before recovery checks run.
-- Added schema upgrades for BuildTools metadata columns when packaged Prisma migrations are unavailable.
-
-### Changed
-
-- Bumped app and workspace versions to `3.1.1`.
-
 ## 3.1.0
 
 ### Added
@@ -26,6 +15,8 @@
 - Spigot is no longer presented as an unavailable direct-download provider.
 - BuildTools now receives a private app-managed Git environment and never modifies the system PATH.
 - Server creation now rejects incomplete or mismatched Spigot build jobs and reuses valid cached Spigot artifacts.
+- Packaged startup now bootstraps the Spigot BuildTools job table on existing installations.
+- Existing databases now receive missing BuildTools cache metadata columns automatically.
 
 ### Changed
 
