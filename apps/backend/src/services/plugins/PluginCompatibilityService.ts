@@ -8,8 +8,10 @@ import type {
 const LOADER_ALIASES: Record<ServerFramework, string[]> = {
   paper: ["paper", "spigot", "bukkit"],
   purpur: ["purpur", "paper", "spigot", "bukkit"],
+  folia: ["folia", "paper", "spigot", "bukkit"],
   spigot: ["spigot", "bukkit"],
   fabric: ["fabric"],
+  vanilla: [],
 };
 
 export class PluginCompatibilityService {
@@ -18,6 +20,14 @@ export class PluginCompatibilityService {
     candidate: Pick<ModrinthProject | ModrinthVersion, "loaders" | "gameVersions">
   ): PluginCompatibility {
     const software = server.software as ServerFramework;
+    if (software === "vanilla") {
+      return {
+        status: "incompatible",
+        reason: "Vanilla servers do not support plugins.",
+        matchedLoaders: [],
+        matchedVersions: [],
+      };
+    }
     const acceptedLoaders = LOADER_ALIASES[software] ?? [server.software];
     const candidateLoaders = candidate.loaders.map((loader) => loader.toLowerCase());
     const matchedLoaders = acceptedLoaders.filter((loader) =>

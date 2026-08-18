@@ -7,10 +7,11 @@ import { FileConflictError, FileManager } from "../FileManager.js";
 import { parseStartupArgs } from "../ProcessArgs.js";
 import { parseJavaVersionOutput } from "../java/JavaRuntimeValidator.js";
 import { minimumJavaMajorForMinecraft } from "../java/JavaRecommendationService.js";
-import { assertAllowedHttpsUrl } from "../software/providers.js";
+import { assertAllowedHttpsUrl, softwareProviderRegistry } from "../software/providers.js";
 import { BuildToolsProvider } from "../software/BuildToolsProvider.js";
 import { portManagerService } from "../PortManagerService.js";
 import { sanitizePluginFileName } from "../plugins/PluginInstallService.js";
+import { pluginCompatibilityService } from "../plugins/PluginCompatibilityService.js";
 
 describe("Java runtime parsing", () => {
   it("parses legacy Java 8 output", () => {
@@ -83,6 +84,38 @@ describe("BuildTools URL allow list", () => {
   it("rejects non-official BuildTools hosts", () => {
     const provider = new BuildToolsProvider();
     expect(() => provider.validateDownloadUrl("https://example.com/BuildTools.jar")).toThrow(/not allowed/i);
+  });
+});
+
+describe("server software providers", () => {
+  it("exposes Folia and Vanilla as enabled download providers", () => {
+    const providers = softwareProviderRegistry.list();
+    expect(providers.find((provider) => provider.id === "folia")).toMatchObject({
+      enabled: true,
+      acquisition: "download",
+    });
+    expect(providers.find((provider) => provider.id === "vanilla")).toMatchObject({
+      enabled: true,
+      acquisition: "download",
+      supportedRevisionSource: "minecraft-release-metadata",
+    });
+  });
+
+  it("allows Mojang's official server download host", () => {
+    expect(() => assertAllowedHttpsUrl(
+      "https://piston-data.mojang.com/v1/objects/example/server.jar",
+      ["piston-meta.mojang.com", "piston-data.mojang.com"]
+    )).not.toThrow();
+  });
+
+  it("rejects plugins for Vanilla servers", () => {
+    expect(pluginCompatibilityService.check(
+      { software: "vanilla", version: "1.21.8" },
+      { loaders: ["paper"], gameVersions: ["1.21.8"] }
+    )).toMatchObject({
+      status: "incompatible",
+      reason: "Vanilla servers do not support plugins.",
+    });
   });
 });
 

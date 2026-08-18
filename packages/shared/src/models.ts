@@ -1,6 +1,6 @@
 export type ServerStatus = "stopped" | "starting" | "running" | "stopping" | "crashed";
 
-export type ServerFramework = "paper" | "purpur" | "spigot" | "fabric";
+export type ServerFramework = "paper" | "purpur" | "folia" | "spigot" | "fabric" | "vanilla";
 
 export type ServerSoftware = ServerFramework;
 

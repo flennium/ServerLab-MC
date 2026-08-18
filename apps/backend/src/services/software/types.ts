@@ -14,6 +14,7 @@ export interface SoftwareArtifactMeta {
   downloadUrl: string;
   expectedSizeBytes?: number;
   sha256?: string;
+  sha1?: string;
   upstreamMetadataUrl?: string;
   licenseNotes?: string;
   buildTool?: string;

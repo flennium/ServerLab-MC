@@ -57,10 +57,10 @@ export class JavaRecommendationService {
     minecraftVersion: string,
     software: ServerSoftware | string
   ): Promise<number | null> {
-    if (software !== "paper") return null;
+    if (software !== "paper" && software !== "folia") return null;
     try {
       const response = await fetch(
-        `https://fill.papermc.io/v3/projects/paper/versions/${encodeURIComponent(minecraftVersion)}`,
+        `https://fill.papermc.io/v3/projects/${software}/versions/${encodeURIComponent(minecraftVersion)}`,
         { headers: { Accept: "application/json", "User-Agent": APP_USER_AGENT } }
       );
       if (!response.ok) return null;

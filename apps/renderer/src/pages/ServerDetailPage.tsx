@@ -114,6 +114,10 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
   const currentServerId = server?.id;
 
   useEffect(() => {
+    if (server?.software === "vanilla" && tab === "plugins") setTab("console");
+  }, [server?.software, tab]);
+
+  useEffect(() => {
     if (!currentServerId || !currentServerPort) return;
     const query = new URLSearchParams({
       port: String(currentServerPort),
@@ -334,7 +338,7 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
           </div>
 
           <Tabs
-            items={TABS}
+            items={server.software === "vanilla" ? TABS.filter((item) => item.id !== "plugins") : TABS}
             value={tab}
             onChange={setTab}
             label="Server sections"
@@ -378,7 +382,7 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
                 />
               )}
 
-              {tab === "plugins" && <PluginsPanel server={server} />}
+              {tab === "plugins" && server.software !== "vanilla" && <PluginsPanel server={server} />}
 
               {tab === "monitor" && (
                 <PerformanceMonitor serverId={server.id} ramMaxMb={server.ramMaxMb} />

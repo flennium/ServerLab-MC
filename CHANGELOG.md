@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.2.0
+
+### Added
+
+- Added official Folia server software support through PaperMC metadata and cached downloads.
+- Added official Vanilla server support through Mojang release metadata and SHA-1-verified server jar downloads.
+- Vanilla server pages now omit the Plugins tab, and plugin APIs reject unsupported Vanilla operations with a clear explanation.
+
+### Fixed
+
+- Added Mojang's official server artifact host to the download allowlist so Vanilla downloads complete after metadata resolution.
+- Extended Java metadata recommendations to Folia servers.
+
+### Changed
+
+- Updated the Server Software Manager documentation and support table to match the current product.
+- Removed the outdated Roadmap section from the README.
+
 ## 3.1.0
 
 ### Added

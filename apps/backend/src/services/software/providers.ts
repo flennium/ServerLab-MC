@@ -41,6 +41,11 @@ async function calculateSha256(filePath: string): Promise<string> {
   return crypto.createHash("sha256").update(buffer).digest("hex");
 }
 
+async function calculateSha1(filePath: string): Promise<string> {
+  const buffer = await fs.readFile(filePath);
+  return crypto.createHash("sha1").update(buffer).digest("hex");
+}
+
 abstract class BaseProvider implements SoftwareProvider {
   abstract id: ServerFramework;
   abstract label: string;
@@ -67,6 +72,12 @@ abstract class BaseProvider implements SoftwareProvider {
       const actual = await calculateSha256(filePath);
       if (actual.toLowerCase() !== artifactMeta.sha256.toLowerCase()) {
         throw new Error("Downloaded file checksum does not match provider metadata");
+      }
+    }
+    if (artifactMeta.sha1) {
+      const actual = await calculateSha1(filePath);
+      if (actual.toLowerCase() !== artifactMeta.sha1.toLowerCase()) {
+        throw new Error("Downloaded file SHA-1 does not match provider metadata");
       }
     }
   }
@@ -162,6 +173,57 @@ class PaperProvider extends BaseProvider {
       upstreamMetadataUrl: metadataUrl,
       downloadUrl: download.url,
       licenseNotes: "Paper server software is downloaded from PaperMC.",
+    };
+  }
+}
+
+class FoliaProvider extends BaseProvider {
+  id: ServerFramework = "folia";
+  label = "Folia";
+  homepage = "https://papermc.io/software/folia";
+  enabled = true;
+  supportsBuildSelection = true;
+  allowedHosts = ["fill.papermc.io", "fill-data.papermc.io"];
+
+  async listMinecraftVersions(): Promise<string[]> {
+    const data = await fetchJson<PaperProjectResponse>(
+      "https://fill.papermc.io/v3/projects/folia",
+      this.allowedHosts
+    );
+    return Object.values(data.versions ?? {}).flat();
+  }
+
+  async listBuilds(minecraftVersion: string): Promise<SoftwareBuild[]> {
+    const data = await fetchJson<PaperVersionResponse>(
+      `https://fill.papermc.io/v3/projects/folia/versions/${encodeURIComponent(minecraftVersion)}`,
+      this.allowedHosts
+    );
+    const builds = data.builds ?? [];
+    const latest = builds[0];
+    return builds.map((build) => ({
+      id: String(build),
+      label: `Build ${build}`,
+      recommended: build === latest,
+    }));
+  }
+
+  async resolveArtifact({ minecraftVersion, buildId }: ResolveArtifactRequest): Promise<SoftwareArtifactMeta> {
+    const metadataUrl = `https://fill.papermc.io/v3/projects/folia/versions/${encodeURIComponent(minecraftVersion)}/builds/${encodeURIComponent(buildId)}`;
+    const data = await fetchJson<PaperBuildResponse>(metadataUrl, this.allowedHosts);
+    const download = data.downloads?.["server:default"];
+    if (!download?.name || !download.url) throw new Error("Folia build does not expose a server jar download");
+
+    return {
+      provider: this.id,
+      acquisition: "download",
+      minecraftVersion,
+      buildId,
+      filename: download.name,
+      expectedSizeBytes: download.size,
+      sha256: download.checksums?.sha256,
+      upstreamMetadataUrl: metadataUrl,
+      downloadUrl: download.url,
+      licenseNotes: "Folia server software is downloaded from PaperMC.",
     };
   }
 }
@@ -318,6 +380,81 @@ class FabricProvider extends BaseProvider {
   }
 }
 
+interface MojangVersionEntry {
+  id: string;
+  type?: string;
+  url: string;
+}
+
+interface MojangManifestResponse {
+  versions?: MojangVersionEntry[];
+}
+
+interface MojangServerVersionResponse {
+  downloads?: {
+    server?: {
+      sha1?: string;
+      size?: number;
+      url?: string;
+    };
+  };
+}
+
+class VanillaProvider extends BaseProvider {
+  id: ServerFramework = "vanilla";
+  label = "Vanilla";
+  homepage = "https://www.minecraft.net/download/server";
+  enabled = true;
+  supportsBuildSelection = true;
+  supportedRevisionSource = "minecraft-release-metadata" as const;
+  allowedHosts = ["piston-meta.mojang.com", "piston-data.mojang.com", "launchermeta.mojang.com"];
+
+  async listMinecraftVersions(): Promise<string[]> {
+    const data = await fetchJson<MojangManifestResponse>(
+      "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json",
+      this.allowedHosts
+    );
+    return (data.versions ?? [])
+      .filter((version) => version.type === "release")
+      .map((version) => version.id);
+  }
+
+  async listBuilds(minecraftVersion: string): Promise<SoftwareBuild[]> {
+    return [{
+      id: minecraftVersion,
+      label: "Official Vanilla server jar",
+      recommended: true,
+    }];
+  }
+
+  async resolveArtifact({ minecraftVersion, buildId }: ResolveArtifactRequest): Promise<SoftwareArtifactMeta> {
+    if (minecraftVersion !== buildId) throw new Error("Vanilla builds must match the selected Minecraft release");
+    const manifest = await fetchJson<MojangManifestResponse>(
+      "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json",
+      this.allowedHosts
+    );
+    const version = manifest.versions?.find((entry) => entry.id === minecraftVersion);
+    if (!version?.url) throw new Error(`Minecraft release metadata was not found for ${minecraftVersion}`);
+    if (version.type !== "release") throw new Error("Vanilla only supports official Minecraft releases");
+    const metadata = await fetchJson<MojangServerVersionResponse>(version.url, this.allowedHosts);
+    const server = metadata.downloads?.server;
+    if (!server?.url) throw new Error(`Vanilla ${minecraftVersion} does not expose an official server download`);
+
+    return {
+      provider: this.id,
+      acquisition: "download",
+      minecraftVersion,
+      buildId,
+      filename: `minecraft_server.${minecraftVersion}.jar`,
+      expectedSizeBytes: server.size,
+      sha1: server.sha1,
+      upstreamMetadataUrl: version.url,
+      downloadUrl: server.url,
+      licenseNotes: "Vanilla server software is downloaded from Mojang's official version metadata.",
+    };
+  }
+}
+
 class SpigotProvider extends BaseProvider {
   id: ServerFramework = "spigot";
   label = "Spigot";
@@ -357,7 +494,7 @@ export class SoftwareProviderRegistry {
   private readonly providers = new Map<ServerFramework, SoftwareProvider>();
 
   constructor() {
-    [new PaperProvider(), new PurpurProvider(), new FabricProvider(), new SpigotProvider()].forEach(
+    [new PaperProvider(), new PurpurProvider(), new FoliaProvider(), new FabricProvider(), new VanillaProvider(), new SpigotProvider()].forEach(
       (provider) => this.providers.set(provider.id, provider)
     );
   }

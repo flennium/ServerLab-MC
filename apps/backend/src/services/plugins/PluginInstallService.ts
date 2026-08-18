@@ -69,7 +69,7 @@ export class PluginInstallService {
   private readonly active = new Map<string, ActivePluginDownload>();
 
   async listInstalled(serverId: string): Promise<InstalledPlugin[]> {
-    const server = await prisma.server.findUniqueOrThrow({ where: { id: serverId } });
+    const server = await this.getPluginServer(serverId);
     await this.ensurePluginFolders(server.path);
     const records = await prisma.plugin.findMany({
       where: { serverId },
@@ -88,7 +88,7 @@ export class PluginInstallService {
   }> {
     const action = input.action ?? "install";
     const jobId = input.requestId ?? crypto.randomUUID();
-    const server = await prisma.server.findUniqueOrThrow({ where: { id: input.serverId } });
+    const server = await this.getPluginServer(input.serverId);
     const running = server.status === "running" || server.status === "starting";
     await this.ensurePluginFolders(server.path);
 
@@ -267,7 +267,7 @@ export class PluginInstallService {
     if (plugin.serverId !== serverId || !plugin.sourceProjectId) {
       throw new HttpError(400, "This plugin cannot be updated from Modrinth.", "plugin", "warning");
     }
-    const server = await prisma.server.findUniqueOrThrow({ where: { id: serverId } });
+    const server = await this.getPluginServer(serverId);
     const { versions } = await modrinthClient.listVersions(plugin.sourceProjectId);
     const nextVersion = versions.find((version) =>
       pluginCompatibilityService.check(server, version).status === "compatible"
@@ -324,7 +324,7 @@ export class PluginInstallService {
   }
 
   async cleanupStaging(): Promise<void> {
-    const servers = await prisma.server.findMany();
+    const servers = (await prisma.server.findMany()).filter((server) => server.software !== "vanilla");
     await Promise.all(
       servers.map((server) =>
         fsp.rm(path.join(server.path, "plugins", ".staging"), { recursive: true, force: true })
@@ -343,7 +343,7 @@ export class PluginInstallService {
     enabled: boolean,
     fileNameOverride?: string
   ): Promise<InstalledPlugin> {
-    const server = await prisma.server.findUniqueOrThrow({ where: { id: serverId } });
+    const server = await this.getPluginServer(serverId);
     const plugin = await prisma.plugin.findUniqueOrThrow({ where: { id: pluginId } });
     if (plugin.serverId !== serverId) throw new HttpError(404, "Plugin not found.", "plugin", "warning");
 
@@ -365,6 +365,14 @@ export class PluginInstallService {
       },
     });
     return this.toInstalled(updated);
+  }
+
+  private async getPluginServer(serverId: string) {
+    const server = await prisma.server.findUniqueOrThrow({ where: { id: serverId } });
+    if (server.software === "vanilla") {
+      throw new HttpError(409, "Vanilla servers do not support plugins.", "plugin", "warning", "Choose a Paper, Purpur, Folia, Spigot, or Fabric server for plugin management.");
+    }
+    return server;
   }
 
   private async scanManualPlugins(

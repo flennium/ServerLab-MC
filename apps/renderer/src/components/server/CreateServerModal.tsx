@@ -443,7 +443,7 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
       .then((result) => {
         if (disposed || !result.job.error) return;
         setBuildProgress((current) => current?.jobId === result.job.id
-          ? { ...current, error: result.job.error, percent: result.job.percent, logAvailable: Boolean(result.job.logPath) }
+          ? { ...current, error: result.job.error ?? undefined, percent: result.job.percent, logAvailable: Boolean(result.job.logPath) }
           : current);
       })
       .catch(() => {});
@@ -745,6 +745,7 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
                 active={Boolean(activeBuildId)}
                 onBuild={handleBuildSpigot}
                 onCancel={handleCancelSpigotBuild}
+                onRetry={handleRetrySpigotBuild}
               />
             )}
           </>
