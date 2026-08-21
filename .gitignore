@@ -46,6 +46,9 @@ apps/data/
 logs/
 pino-*.log
 
+# Local planning prompts
+/lightplan.md
+
 # Backups (generated at runtime)
 apps/backend/backups/
 
