@@ -14,7 +14,7 @@ const ALLOWED_HOSTS = ["api.modrinth.com", "cdn.modrinth.com"];
 const SEARCH_TTL_MS = 5 * 60 * 1000;
 const METADATA_TTL_MS = 12 * 60 * 60 * 1000;
 
-type CacheKind = "search" | "project" | "versions" | "tags";
+type CacheKind = "search" | "project" | "versions" | "tags" | "members";
 
 interface RawSearchResponse {
   hits?: RawSearchHit[];
@@ -44,6 +44,7 @@ interface RawProject {
   id?: string;
   slug?: string;
   author?: string;
+  team?: string | null;
   title?: string;
   description?: string;
   body?: string;
@@ -59,6 +60,16 @@ interface RawProject {
   source_url?: string | null;
   issues_url?: string | null;
   wiki_url?: string | null;
+}
+
+interface RawProjectMember {
+  role?: string;
+  accepted?: boolean;
+  ordering?: number;
+  user?: {
+    username?: string;
+    name?: string | null;
+  };
 }
 
 interface RawVersion {
@@ -137,7 +148,33 @@ export class ModrinthClient {
       `${API_ROOT}/project/${id}`,
       METADATA_TTL_MS
     );
-    return { project: normalizeProject(data.payload), offline: data.offline };
+    let project = normalizeProject(data.payload);
+
+    // Team-owned projects commonly have no author field. Resolve the public
+    // member list so the UI can show a useful author without exposing private data.
+    if (!project.author && !data.offline) {
+      try {
+        const members = await this.getCachedOrFetch<RawProjectMember[]>(
+          `members:${idOrSlug}`,
+          "members",
+          `${API_ROOT}/project/${id}/members`,
+          METADATA_TTL_MS
+        );
+        const owner = [...members.payload]
+          .filter((member) => member.accepted !== false && member.user?.username)
+          .sort((a, b) => {
+            const ownerRank = (member: RawProjectMember) =>
+              member.role?.toLowerCase() === "owner" ? 0 : 1;
+            return ownerRank(a) - ownerRank(b) || (a.ordering ?? 0) - (b.ordering ?? 0);
+          })[0];
+        const author = owner?.user?.username ?? owner?.user?.name ?? null;
+        if (author) project = { ...project, author };
+      } catch {
+        // The project remains usable when member metadata is unavailable.
+      }
+    }
+
+    return { project, offline: data.offline };
   }
 
   async listVersions(projectId: string): Promise<{ versions: ModrinthVersion[]; offline: boolean }> {

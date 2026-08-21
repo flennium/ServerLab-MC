@@ -4,6 +4,11 @@ module.exports = {
   productName: "ServerLab MC",
   artifactName: "ServerLab-MC-Setup-${version}.${ext}",
   copyright: "Copyright (c) 2026 ServerLab MC",
+  asar: true,
+  electronLanguages: ["en-US"],
+  // Packaged runtime dependencies are bundled or copied explicitly; none
+  // require Electron ABI rebuilding during every packaging run.
+  npmRebuild: false,
 
   // Stage dir is a clean folder containing only main.js, preload.js, package.json
   // This is what gets packed into the asar archive
@@ -27,6 +32,7 @@ module.exports = {
     {
       from: "apps/backend/dist",
       to: "backend/dist",
+      filter: ["**/*", "!**/*.map"],
     },
     // @prisma/client (has native query engine .node file)
     {

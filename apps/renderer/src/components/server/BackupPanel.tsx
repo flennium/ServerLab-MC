@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Archive, RotateCcw, Trash2, X } from "lucide-react";
 import { api } from "../../lib/apiClient.js";
@@ -33,6 +33,7 @@ export function BackupPanel({ serverId }: BackupPanelProps) {
   const [confirmDelete, setConfirmDelete] = useState<Backup | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<Record<string, number>>({});
+  const completionTimers = useRef(new Set<number>());
   const reduceMotion = useReducedMotion();
 
   const fetchBackups = useCallback(async () => {
@@ -59,11 +60,15 @@ export function BackupPanel({ serverId }: BackupPanelProps) {
     fetchBackups();
 
     let cleanup = () => {};
+    let disposed = false;
+    const timerSet = completionTimers.current;
     getSocket().then((socket) => {
+      if (disposed) return;
       const handler = ({ backupId, percent }: { backupId: string; percent: number }) => {
         setProgress((current) => ({ ...current, [backupId]: percent }));
         if (percent >= 100) {
-          setTimeout(() => {
+          const timer = window.setTimeout(() => {
+            timerSet.delete(timer);
             setProgress((current) => {
               const next = { ...current };
               delete next[backupId];
@@ -72,20 +77,29 @@ export function BackupPanel({ serverId }: BackupPanelProps) {
             fetchBackups();
             setCreating(false);
           }, 1200);
+          timerSet.add(timer);
         }
       };
       socket.on("backup:progress", handler);
       cleanup = () => socket.off("backup:progress", handler);
-    }).catch((error) => reportError(error, {
+    }).catch((error) => {
+      if (disposed) return;
+      reportError(error, {
       category: "network",
       severity: "warning",
       userMessage: "Live backup progress is unavailable.",
       possibleSolution: "Retry after the backend reconnects.",
       source: "renderer:backups",
       action: "subscribe-backup-progress",
-    }));
+      });
+    });
 
-    return () => cleanup();
+    return () => {
+      disposed = true;
+      cleanup();
+      timerSet.forEach((timer) => window.clearTimeout(timer));
+      timerSet.clear();
+    };
   }, [serverId, fetchBackups]);
 
   async function handleCreate() {

@@ -18,6 +18,7 @@ interface ConsoleStore {
 }
 
 const MAX_LINES = 1000;
+let socketInitPromise: Promise<void> | null = null;
 
 function pushBounded(lines: ConsoleLine[], line: ConsoleLine): ConsoleLine[] {
   const next = [...lines, line];
@@ -61,34 +62,41 @@ export const useConsoleStore = create<ConsoleStore>((set, get) => ({
 
   initSocket: async () => {
     if (get().initialized) return;
+    if (socketInitPromise) return socketInitPromise;
 
-    const socket = await getSocket();
-    socket.off("console:output");
-    socket.on("console:output", (payload: ConsoleOutputPayload) => {
-      const nextLine = { timestamp: payload.timestamp, text: payload.line };
-      const serverId = payload.serverId;
+    socketInitPromise = (async () => {
+      const socket = await getSocket();
+      socket.on("console:output", (payload: ConsoleOutputPayload) => {
+        const nextLine = { timestamp: payload.timestamp, text: payload.line };
+        const serverId = payload.serverId;
 
-      set((state) => {
-        if (state.pausedByServer[serverId]) {
+        set((state) => {
+          if (state.pausedByServer[serverId]) {
+            return {
+              pausedBuffersByServer: {
+                ...state.pausedBuffersByServer,
+                [serverId]: pushBounded(
+                  state.pausedBuffersByServer[serverId] ?? [],
+                  nextLine
+                ),
+              },
+            };
+          }
+
           return {
-            pausedBuffersByServer: {
-              ...state.pausedBuffersByServer,
-              [serverId]: pushBounded(
-                state.pausedBuffersByServer[serverId] ?? [],
-                nextLine
-              ),
+            linesByServer: {
+              ...state.linesByServer,
+              [serverId]: pushBounded(state.linesByServer[serverId] ?? [], nextLine),
             },
           };
-        }
-
-        return {
-          linesByServer: {
-            ...state.linesByServer,
-            [serverId]: pushBounded(state.linesByServer[serverId] ?? [], nextLine),
-          },
-        };
+        });
       });
+      set({ initialized: true });
+    })().catch((error) => {
+      socketInitPromise = null;
+      throw error;
     });
-    set({ initialized: true });
+
+    return socketInitPromise;
   },
 }));

@@ -12,6 +12,7 @@ import type {
 
 interface ServerStore {
   servers: Server[];
+  initialized: boolean;
   fetchServers: () => Promise<void>;
   createServer: (dto: CreateServerDto) => Promise<Server>;
   deleteServer: (id: string) => Promise<DeleteServerResponse>;
@@ -24,8 +25,11 @@ interface ServerStore {
   initSocket: () => Promise<void>;
 }
 
+let socketInitPromise: Promise<void> | null = null;
+
 export const useServerStore = create<ServerStore>((set, get) => ({
   servers: [],
+  initialized: false,
 
   fetchServers: async () => {
     const { servers } = await api.get<ServerListResponse>("/api/servers");
@@ -66,14 +70,25 @@ export const useServerStore = create<ServerStore>((set, get) => ({
   },
 
   initSocket: async () => {
-    const socket = await getSocket();
+    if (get().initialized) return;
+    if (socketInitPromise) return socketInitPromise;
 
-    socket.on("server:status", ({ serverId, status }) => {
-      get()._patchStatus(serverId, status);
+    socketInitPromise = (async () => {
+      const socket = await getSocket();
+
+      socket.on("server:status", ({ serverId, status }) => {
+        get()._patchStatus(serverId, status);
+      });
+
+      socket.on("server:stats", (payload) => {
+        useStatsStore.getState().pushStats(payload);
+      });
+      set({ initialized: true });
+    })().catch((error) => {
+      socketInitPromise = null;
+      throw error;
     });
 
-    socket.on("server:stats", (payload) => {
-      useStatsStore.getState().pushStats(payload);
-    });
+    return socketInitPromise;
   },
 }));

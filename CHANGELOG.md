@@ -1,5 +1,28 @@
 # Changelog
 
+## 3.4.1
+
+### Improved
+
+- Virtualized console logs and server file listings so large workspaces stay responsive.
+- Monitor updates now pause when no Monitor view is subscribed and prevent overlapping system scans.
+- Electron startup logging, updater settings, and backend shutdown now use safer asynchronous paths.
+- Socket and backend configuration initialization now reuse one connection/configuration promise.
+
+### Fixed
+
+- Prevented duplicate Socket.IO clients after temporary backend disconnects.
+- Ensured backup, plugin, and server-detail listeners and completion timers are cleaned up when views close.
+- Removed unused legacy renderer file-manager components.
+
+### Packaging
+
+- Production packages now use ASAR, include only the English Electron locale, and omit source maps.
+
+### Changed
+
+- Bumped app and workspace versions to `3.4.1`.
+
 ## 3.4.0
 
 ### Added

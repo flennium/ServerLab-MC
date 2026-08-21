@@ -26,15 +26,12 @@ import type {
   Server as ServerModel,
 } from "@serverlab/shared";
 
-type ServerStats = ReturnType<typeof useStatsStore.getState>["stats"][string]["latest"];
-
 interface EnvironmentSummary {
   validRuntimes: number;
 }
 
 export function DashboardPage() {
   const { servers, fetchServers, startServer, stopServer } = useServerStore();
-  const { getStats } = useStatsStore();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [environment, setEnvironment] = useState<EnvironmentSummary>({
@@ -165,7 +162,6 @@ export function DashboardPage() {
                 >
                   <ServerOverviewCard
                     server={server}
-                    stats={getStats(server.id).latest}
                     onStart={() => runServerAction(server.id, "start")}
                     onStop={() => runServerAction(server.id, "stop")}
                   />
@@ -245,15 +241,14 @@ function buildAttentionItems(
 
 function ServerOverviewCard({
   server,
-  stats,
   onStart,
   onStop,
 }: {
   server: ServerModel;
-  stats: ServerStats;
   onStart: () => void;
   onStop: () => void;
 }) {
+  const stats = useStatsStore((state) => state.stats[server.id]?.latest ?? null);
   const isActive = server.status === "running" || server.status === "starting";
   const isStopping = server.status === "stopping";
   const ramPercent = stats ? stats.ramMb / server.ramMaxMb : 0;

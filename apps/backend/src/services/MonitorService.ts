@@ -20,6 +20,7 @@ export function updatePlayers(serverId: string, count: number) {
 
 // Map OS process IDs to ServerLab servers for CPU/RAM attribution.
 const pidMap = new Map<number, string>();
+const monitorSubscriptions = new Map<string, number>();
 
 export function trackPid(serverId: string, pid: number) {
   pidMap.set(pid, serverId);
@@ -29,18 +30,31 @@ export function untrackPid(pid: number) {
   pidMap.delete(pid);
 }
 
+export function subscribeMonitor(serverId: string): void {
+  monitorSubscriptions.set(serverId, (monitorSubscriptions.get(serverId) ?? 0) + 1);
+}
+
+export function unsubscribeMonitor(serverId: string): void {
+  const count = monitorSubscriptions.get(serverId) ?? 0;
+  if (count <= 1) monitorSubscriptions.delete(serverId);
+  else monitorSubscriptions.set(serverId, count - 1);
+}
+
 let pollTimer: NodeJS.Timeout | null = null;
+let pollInFlight = false;
 
 export function startMonitor() {
   if (pollTimer) return;
   pollTimer = setInterval(async () => {
-    if (pidMap.size === 0) return;
+    if (pollInFlight || pidMap.size === 0 || monitorSubscriptions.size === 0) return;
+    pollInFlight = true;
 
     try {
       // Get per-process CPU + memory stats
       const processList = await si.processes();
 
       for (const [pid, serverId] of pidMap.entries()) {
+        if (!monitorSubscriptions.has(serverId)) continue;
         const proc = processList.list.find((p) => p.pid === pid);
         if (!proc) continue;
 
@@ -65,6 +79,8 @@ export function startMonitor() {
         action: "poll-server-metrics",
       });
       void errorService.record(error);
+    } finally {
+      pollInFlight = false;
     }
   }, POLL_INTERVAL_MS);
 
@@ -76,4 +92,5 @@ export function stopMonitor() {
     clearInterval(pollTimer);
     pollTimer = null;
   }
+  pollInFlight = false;
 }

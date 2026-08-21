@@ -9,7 +9,9 @@ let socketInstance: AppSocket | null = null;
 let socketPromise: Promise<AppSocket> | null = null;
 
 export async function getSocket(): Promise<AppSocket> {
-  if (socketInstance?.connected) return socketInstance;
+  // Keep one socket instance across temporary disconnects so Socket.IO's
+  // built-in reconnect does not race a second client into existence.
+  if (socketInstance) return socketInstance;
   if (socketPromise) return socketPromise;
 
   socketPromise = api
@@ -45,10 +47,6 @@ export async function getSocket(): Promise<AppSocket> {
           }),
           { report: true }
         );
-      });
-
-      socketInstance.on("disconnect", () => {
-        socketPromise = null;
       });
 
       return socketInstance;

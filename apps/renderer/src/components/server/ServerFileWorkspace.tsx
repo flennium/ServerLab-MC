@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent, MouseEvent } from "react";
+import type { DragEvent, MouseEvent, ReactNode } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { yaml } from "@codemirror/lang-yaml";
@@ -837,7 +837,7 @@ export function ServerFileWorkspace({
         {listError && <div className="p-3"><InlineError error={listError} /></div>}
         {serverSearchError && <div className="p-3"><InlineError error={serverSearchError} /></div>}
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="flex min-h-0 flex-1 flex-col">
           {(loading || serverSearchLoading) && (
             <div className="grid gap-1 p-2">
               {[1, 2, 3, 4, 5, 6].map((index) => (
@@ -862,23 +862,26 @@ export function ServerFileWorkspace({
             </div>
           )}
 
-          {!loading && !serverSearchLoading &&
-            rows.map((entry) => (
-              <FileTreeRow
-                key={entry.path}
-                entry={entry}
-                showPath={searchEntireServer && trimmedSearch.length >= 2}
-                selected={selectedPath === entry.path || activePath === entry.path}
-                renaming={renaming?.path === entry.path}
-                renameValue={renameValue}
-                onRenameValue={setRenameValue}
-                onConfirmRename={renameEntry}
-                onCancelRename={() => setRenaming(null)}
-                onSelect={() => setSelectedPath(entry.path)}
-                onOpen={() => openEntry(entry)}
-                onContextMenu={(event) => openContextMenu(entry, event)}
-              />
-            ))}
+          {!loading && !serverSearchLoading && rows.length > 0 && (
+            <VirtualFileList rows={rows}>
+              {(entry) => (
+                <FileTreeRow
+                  key={entry.path}
+                  entry={entry}
+                  showPath={searchEntireServer && trimmedSearch.length >= 2}
+                  selected={selectedPath === entry.path || activePath === entry.path}
+                  renaming={renaming?.path === entry.path}
+                  renameValue={renameValue}
+                  onRenameValue={setRenameValue}
+                  onConfirmRename={renameEntry}
+                  onCancelRename={() => setRenaming(null)}
+                  onSelect={() => setSelectedPath(entry.path)}
+                  onOpen={() => openEntry(entry)}
+                  onContextMenu={(event) => openContextMenu(entry, event)}
+                />
+              )}
+            </VirtualFileList>
+          )}
 
           {!loading && !serverSearchLoading && searchEntireServer && serverSearchMeta?.truncated && (
             <p className="border-t border-border px-3 py-2 text-xs text-muted">
@@ -1202,6 +1205,73 @@ function FileContextMenu({
   );
 }
 
+const FILE_ROW_HEIGHT = 52;
+const FILE_ROW_OVERSCAN = 12;
+
+function VirtualFileList({
+  rows,
+  children,
+}: {
+  rows: FileEntry[];
+  children: (entry: FileEntry) => ReactNode;
+}) {
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(520);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+
+    const updateHeight = () => setViewportHeight(element.clientHeight);
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      if (frameRef.current !== null) window.cancelAnimationFrame(frameRef.current);
+    };
+  }, []);
+
+  const firstVisible = Math.max(
+    0,
+    Math.floor(scrollTop / FILE_ROW_HEIGHT) - FILE_ROW_OVERSCAN
+  );
+  const visibleCount =
+    Math.ceil(viewportHeight / FILE_ROW_HEIGHT) + FILE_ROW_OVERSCAN * 2;
+  const lastVisible = Math.min(rows.length, firstVisible + visibleCount);
+
+  return (
+    <div
+      ref={scrollRef}
+      className="min-h-0 flex-1 overflow-y-auto"
+      onScroll={() => {
+        if (frameRef.current !== null) return;
+        frameRef.current = window.requestAnimationFrame(() => {
+          frameRef.current = null;
+          setScrollTop(scrollRef.current?.scrollTop ?? 0);
+        });
+      }}
+    >
+      <div className="relative" style={{ height: `${rows.length * FILE_ROW_HEIGHT}px` }}>
+        {rows.slice(firstVisible, lastVisible).map((entry, visibleIndex) => (
+          <div
+            key={entry.path}
+            className="absolute left-0 right-0"
+            style={{
+              height: `${FILE_ROW_HEIGHT}px`,
+              top: `${(firstVisible + visibleIndex) * FILE_ROW_HEIGHT}px`,
+            }}
+          >
+            {children(entry)}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function FileTreeRow({
   entry,
   showPath,
@@ -1233,7 +1303,7 @@ function FileTreeRow({
       onDoubleClick={onOpen}
       onContextMenu={onContextMenu}
       className={clsx(
-        "cursor-pointer px-3 py-2 text-sm transition-colors hover:bg-rail",
+        "h-[52px] cursor-pointer px-3 py-2 text-sm transition-colors hover:bg-rail",
         selected && "bg-rail"
       )}
     >

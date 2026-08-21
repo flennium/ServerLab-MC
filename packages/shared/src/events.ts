@@ -119,6 +119,10 @@ export interface ConsoleCommandPayload {
   command: string;
 }
 
+export interface MonitorSubscriptionPayload {
+  serverId: string;
+}
+
 export interface ServerToClientEvents {
   "console:output": (payload: ConsoleOutputPayload) => void;
   "server:status": (payload: ServerStatusPayload) => void;
@@ -136,4 +140,6 @@ export interface ClientToServerEvents {
     payload: ConsoleCommandPayload,
     ack?: (result: { ok: boolean; error?: AppError }) => void
   ) => void;
+  "monitor:subscribe": (payload: MonitorSubscriptionPayload) => void;
+  "monitor:unsubscribe": (payload: MonitorSubscriptionPayload) => void;
 }

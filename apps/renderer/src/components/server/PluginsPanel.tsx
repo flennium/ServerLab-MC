@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import {
   CheckCircle2,
@@ -22,6 +22,7 @@ import type {
   AppError,
   InstalledPlugin,
   InstalledPluginListResponse,
+  ModrinthProjectResponse,
   ModrinthProjectSearchHit,
   ModrinthSearchResponse,
   ModrinthVersion,
@@ -57,6 +58,7 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
   const [selectedVersionId, setSelectedVersionId] = useState("");
   const [allowWarning, setAllowWarning] = useState(false);
   const [progress, setProgress] = useState<PluginInstallProgressPayload | null>(null);
+  const completionTimers = useRef(new Set<number>());
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<AppError | null>(null);
   const [pendingInstall, setPendingInstall] = useState<ModrinthVersion | null>(null);
@@ -155,14 +157,20 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
     setAllowWarning(false);
     setError(null);
     try {
-      const data = await api.get<ModrinthVersionListResponse>(
-        `/api/modrinth/projects/${project.id}/versions?serverId=${server.id}`
-      );
-      setVersions(data.versions);
+      const [projectData, versionsData] = await Promise.all([
+        api.get<ModrinthProjectResponse>(
+          `/api/modrinth/projects/${project.id}?serverId=${server.id}`
+        ),
+        api.get<ModrinthVersionListResponse>(
+          `/api/modrinth/projects/${project.id}/versions?serverId=${server.id}`
+        ),
+      ]);
+      setSelectedProject({ ...project, ...projectData.project });
+      setVersions(versionsData.versions);
       const best =
-        data.versions.find((version) => version.compatibility?.status === "compatible") ??
-        data.versions.find((version) => version.compatibility?.status === "warning") ??
-        data.versions[0];
+        versionsData.versions.find((version) => version.compatibility?.status === "compatible") ??
+        versionsData.versions.find((version) => version.compatibility?.status === "warning") ??
+        versionsData.versions[0];
       setSelectedVersionId(best?.id ?? "");
     } catch (err) {
       setError(
@@ -309,7 +317,10 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
 
   useEffect(() => {
     let cleanup = () => {};
+    let disposed = false;
+    const timerSet = completionTimers.current;
     getSocket().then((socket) => {
+      if (disposed) return;
       const handler = (payload: PluginInstallProgressPayload) => {
         if (payload.serverId !== server.id) return;
         setProgress(payload);
@@ -327,20 +338,32 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
           void loadPlugins();
         }
         if (payload.status === "completed" || payload.status === "failed" || payload.status === "cancelled") {
-          window.setTimeout(() => setProgress(null), 1200);
+          const timer = window.setTimeout(() => {
+            timerSet.delete(timer);
+            setProgress(null);
+          }, 1200);
+          timerSet.add(timer);
         }
       };
       socket.on("plugin:install-progress", handler);
       cleanup = () => socket.off("plugin:install-progress", handler);
-    }).catch((error) => reportError(error, {
+    }).catch((error) => {
+      if (disposed) return;
+      reportError(error, {
       category: "network",
       severity: "warning",
       userMessage: "Live plugin installation updates are unavailable.",
       possibleSolution: "Retry after the backend reconnects.",
       source: "renderer:plugins",
       action: "subscribe-plugin-progress",
-    }));
-    return () => cleanup();
+      });
+    });
+    return () => {
+      disposed = true;
+      cleanup();
+      timerSet.forEach((timer) => window.clearTimeout(timer));
+      timerSet.clear();
+    };
     // loadPlugins is intentionally captured here so a completed socket job refreshes the installed list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportError, server.id]);

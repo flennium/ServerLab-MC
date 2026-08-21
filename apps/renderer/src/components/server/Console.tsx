@@ -31,6 +31,8 @@ interface ConsoleProps {
 const EMPTY_LINES: ReturnType<typeof useConsoleStore.getState>["linesByServer"][string] =
   [];
 const MAX_RENDERED_LINES = 1000;
+const CONSOLE_ROW_HEIGHT = 24;
+const CONSOLE_OVERSCAN = 24;
 
 export function Console({ serverId, serverStatus }: ConsoleProps) {
   const lines = useConsoleStore((state) => state.linesByServer[serverId] ?? EMPTY_LINES);
@@ -46,10 +48,12 @@ export function Console({ serverId, serverStatus }: ConsoleProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeMatchIndex, setActiveMatchIndex] = useState(0);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const matchRefs = useRef(new Map<string, HTMLSpanElement>());
+  const scrollFrameRef = useRef<number | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(560);
   const canSendCommands = serverStatus === undefined || serverStatus === "running";
 
   const searchMatches = useMemo(() => {
@@ -83,19 +87,47 @@ export function Console({ serverId, serverStatus }: ConsoleProps) {
     if (!searchMatches.length) return;
     const match = searchMatches[activeMatchIndex % searchMatches.length];
     const node = matchRefs.current.get(matchKey(match.lineIndex, match.start));
-    node?.scrollIntoView({
-      block: "center",
-      behavior: prefersReducedMotion() ? "auto" : "smooth",
-    });
-  }, [activeMatchIndex, searchMatches]);
-
-  useEffect(() => {
-    if (autoScroll) {
-      bottomRef.current?.scrollIntoView({
+    if (node) {
+      node.scrollIntoView({
+        block: "center",
         behavior: prefersReducedMotion() ? "auto" : "smooth",
       });
+    } else if (scrollRef.current) {
+      scrollRef.current.scrollTop = Math.max(
+        0,
+        match.lineIndex * CONSOLE_ROW_HEIGHT - viewportHeight / 2
+      );
+      setScrollTop(scrollRef.current.scrollTop);
     }
+  }, [activeMatchIndex, searchMatches, viewportHeight]);
+
+  useEffect(() => {
+    if (!autoScroll || !scrollRef.current) return;
+    window.requestAnimationFrame(() => {
+      const element = scrollRef.current;
+      if (!element) return;
+      element.scrollTop = element.scrollHeight;
+      setScrollTop(element.scrollTop);
+    });
   }, [lines, autoScroll]);
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+
+    const updateHeight = () => setViewportHeight(element.clientHeight);
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+      if (scrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     function onWindowKeyDown(event: KeyboardEvent) {
@@ -119,6 +151,12 @@ export function Console({ serverId, serverStatus }: ConsoleProps) {
     if (!el) return;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
     setAutoScroll(atBottom);
+    if (scrollFrameRef.current === null) {
+      scrollFrameRef.current = window.requestAnimationFrame(() => {
+        scrollFrameRef.current = null;
+        setScrollTop(el.scrollTop);
+      });
+    }
   }
 
   const sendCommand = useCallback(async () => {
@@ -210,6 +248,14 @@ export function Console({ serverId, serverStatus }: ConsoleProps) {
       : searchQuery.trim()
         ? "0/0"
         : "-";
+  const firstVisibleLine = Math.max(
+    0,
+    Math.floor(scrollTop / CONSOLE_ROW_HEIGHT) - CONSOLE_OVERSCAN
+  );
+  const visibleLineCount =
+    Math.ceil(viewportHeight / CONSOLE_ROW_HEIGHT) + CONSOLE_OVERSCAN * 2;
+  const lastVisibleLine = Math.min(lines.length, firstVisibleLine + visibleLineCount);
+  const renderedLines = lines.slice(firstVisibleLine, lastVisibleLine);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-surface-console shadow-2xl">
@@ -231,9 +277,11 @@ export function Console({ serverId, serverStatus }: ConsoleProps) {
               <Button
                 onClick={() => {
                   setAutoScroll(true);
-                  bottomRef.current?.scrollIntoView({
-                    behavior: prefersReducedMotion() ? "auto" : "smooth",
-                  });
+                  const element = scrollRef.current;
+                  if (element) {
+                    element.scrollTop = element.scrollHeight;
+                    setScrollTop(element.scrollTop);
+                  }
                 }}
                 icon={ArrowDownCircle}
                 variant="quiet"
@@ -329,7 +377,7 @@ export function Console({ serverId, serverStatus }: ConsoleProps) {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="console-font min-h-0 flex-1 overflow-y-auto px-4 py-3 text-[13px]"
+        className="console-font min-h-0 flex-1 overflow-auto px-4 py-3 text-[13px]"
         role="log"
         aria-live="polite"
         aria-label="Server console output"
@@ -339,29 +387,39 @@ export function Console({ serverId, serverStatus }: ConsoleProps) {
             Console output appears here after the server starts.
           </p>
         )}
-        {lines.map((line, index) => (
+        {lines.length > 0 && (
           <div
-            key={`${line.timestamp}-${index}`}
-            className={clsx(
-              "grid grid-cols-[4.75rem_minmax(0,1fr)] gap-3 whitespace-pre-wrap break-words rounded px-1 py-0.5 leading-relaxed",
-              lineTone(line.text)
-            )}
+            className="relative min-w-max"
+            style={{ height: `${lines.length * CONSOLE_ROW_HEIGHT}px` }}
           >
-            <span className="mr-3 select-none text-muted/60">
-              {new Date(line.timestamp).toLocaleTimeString()}
-            </span>
-            <span>
-              <ConsoleLineText
-                lineIndex={index}
-                text={line.text}
-                searchQuery={searchQuery}
-                activeMatch={activeSearchMatch}
-                matchRefs={matchRefs}
-              />
-            </span>
+            {renderedLines.map((line, visibleIndex) => {
+              const index = firstVisibleLine + visibleIndex;
+              return (
+                <div
+                  key={`${line.timestamp}-${index}`}
+                  className={clsx(
+                    "absolute left-0 right-0 grid h-6 grid-cols-[4.75rem_minmax(0,1fr)] items-center gap-3 whitespace-pre rounded px-1",
+                    lineTone(line.text)
+                  )}
+                  style={{ top: `${index * CONSOLE_ROW_HEIGHT}px` }}
+                >
+                  <span className="mr-3 select-none text-muted/60">
+                    {new Date(line.timestamp).toLocaleTimeString()}
+                  </span>
+                  <span>
+                    <ConsoleLineText
+                      lineIndex={index}
+                      text={line.text}
+                      searchQuery={searchQuery}
+                      activeMatch={activeSearchMatch}
+                      matchRefs={matchRefs}
+                    />
+                  </span>
+                </div>
+              );
+            })}
           </div>
-        ))}
-        <div ref={bottomRef} />
+        )}
       </div>
 
       <div className="flex border-t border-border bg-carbon">

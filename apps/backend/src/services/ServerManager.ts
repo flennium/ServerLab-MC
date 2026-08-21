@@ -489,14 +489,31 @@ class ServerManager {
       allowStopRequested: true,
     });
     await new Promise<void>((resolve) => {
+      let settled = false;
       const forceKillTimeout = setTimeout(() => {
+        if (settled) return;
         if (entry.process.pid) treeKill(entry.process.pid, "SIGKILL");
+        finish();
       }, options.timeoutMs ?? 15_000);
-      entry.process.once("exit", () => {
+      const finish = () => {
+        if (settled) return;
+        settled = true;
         clearTimeout(forceKillTimeout);
+        entry.process.off("exit", finish);
+        entry.process.off("error", finish);
         resolve();
-      });
-      entry.process.stdin?.write(`${entry.stopCommand}\n`);
+      };
+      entry.process.once("exit", finish);
+      entry.process.once("error", finish);
+      if (entry.process.exitCode !== null) {
+        finish();
+        return;
+      }
+      try {
+        entry.process.stdin?.write(`${entry.stopCommand}\n`);
+      } catch {
+        finish();
+      }
     });
   }
 

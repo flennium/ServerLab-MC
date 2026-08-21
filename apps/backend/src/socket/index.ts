@@ -1,6 +1,7 @@
 import type { Server as IOServer } from "socket.io";
 import type { AppError, ServerToClientEvents, ClientToServerEvents } from "@serverlab/shared";
 import { serverManager } from "../services/ServerManager.js";
+import { subscribeMonitor, unsubscribeMonitor } from "../services/MonitorService.js";
 import { logger } from "../lib/logger.js";
 import { errorService } from "../services/ErrorService.js";
 
@@ -25,6 +26,18 @@ export function registerSocketHandlers(
 
   io.on("connection", (socket) => {
     logger.info({ socketId: socket.id }, "Client connected");
+    const subscribedMonitors = new Set<string>();
+
+    socket.on("monitor:subscribe", ({ serverId }) => {
+      if (!serverId || subscribedMonitors.has(serverId)) return;
+      subscribedMonitors.add(serverId);
+      subscribeMonitor(serverId);
+    });
+
+    socket.on("monitor:unsubscribe", ({ serverId }) => {
+      if (!subscribedMonitors.delete(serverId)) return;
+      unsubscribeMonitor(serverId);
+    });
 
     socket.on(
       "console:command",
@@ -80,6 +93,8 @@ export function registerSocketHandlers(
     );
 
     socket.on("disconnect", (reason) => {
+      for (const serverId of subscribedMonitors) unsubscribeMonitor(serverId);
+      subscribedMonitors.clear();
       logger.info({ socketId: socket.id, reason }, "Client disconnected");
     });
   });

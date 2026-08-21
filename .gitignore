@@ -47,6 +47,7 @@ logs/
 pino-*.log
 
 # Local planning prompts
+/lightplan.md
 /UI UX redesign.md
 /docs/UI-UX-REDESIGN-AUDIT.md
 /docs/

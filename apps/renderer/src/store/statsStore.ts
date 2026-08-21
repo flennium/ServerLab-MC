@@ -4,7 +4,7 @@ import type { ServerStatsPayload } from "@serverlab/shared";
 // Keep last N stat ticks per server for sparkline charts
 const MAX_HISTORY = 30;
 
-interface StatHistory {
+export interface StatHistory {
   cpu: number[];
   ramMb: number[];
   tps: number[];
@@ -12,10 +12,17 @@ interface StatHistory {
   latest: ServerStatsPayload | null;
 }
 
+export const EMPTY_STATS: StatHistory = {
+  cpu: [],
+  ramMb: [],
+  tps: [],
+  players: [],
+  latest: null,
+};
+
 interface StatsStore {
   stats: Record<string, StatHistory>;
   pushStats: (payload: ServerStatsPayload) => void;
-  getStats: (serverId: string) => StatHistory;
 }
 
 const emptyHistory = (): StatHistory => ({
@@ -26,7 +33,7 @@ const emptyHistory = (): StatHistory => ({
   latest: null,
 });
 
-export const useStatsStore = create<StatsStore>((set, get) => ({
+export const useStatsStore = create<StatsStore>((set) => ({
   stats: {},
 
   pushStats: (payload) => {
@@ -48,6 +55,4 @@ export const useStatsStore = create<StatsStore>((set, get) => ({
       };
     });
   },
-
-  getStats: (serverId) => get().stats[serverId] ?? emptyHistory(),
 }));

@@ -6,6 +6,7 @@ interface BackendConfig {
 }
 
 let configCache: BackendConfig | null = null;
+let configPromise: Promise<BackendConfig> | null = null;
 const RETRYABLE_FETCH_ATTEMPTS = 20;
 const RETRY_DELAY_MS = 250;
 
@@ -17,15 +18,23 @@ function sleep(ms: number): Promise<void> {
 
 async function getConfig(): Promise<BackendConfig> {
   if (configCache) return configCache;
+  if (configPromise) return configPromise;
 
-  if (typeof window !== "undefined" && window.serverlab) {
-    configCache = await window.serverlab.getBackendConfig();
-  } else {
-    // Standalone Vite dev server, no Electron.
-    configCache = { origin: "http://127.0.0.1:3001", token: "" };
-  }
+  configPromise = (async () => {
+    if (typeof window !== "undefined" && window.serverlab) {
+      configCache = await window.serverlab.getBackendConfig();
+    } else {
+      // Standalone Vite dev server, no Electron.
+      configCache = { origin: "http://127.0.0.1:3001", token: "" };
+    }
 
-  return configCache!;
+    return configCache;
+  })().catch((error) => {
+    configPromise = null;
+    throw error;
+  });
+
+  return configPromise;
 }
 
 async function fetchWithStartupRetry(

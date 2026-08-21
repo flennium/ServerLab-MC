@@ -1,5 +1,8 @@
+import { memo, useMemo } from "react";
+import { useEffect } from "react";
 import { Activity, Gauge } from "lucide-react";
-import { useStatsStore } from "../../store/statsStore.js";
+import { EMPTY_STATS, useStatsStore } from "../../store/statsStore.js";
+import { getSocket } from "../../lib/socket.js";
 import {
   AreaChart,
   Area,
@@ -16,9 +19,42 @@ interface PerformanceMonitorProps {
 }
 
 export function PerformanceMonitor({ serverId, ramMaxMb }: PerformanceMonitorProps) {
-  const { getStats } = useStatsStore();
-  const stats = getStats(serverId);
+  const stats = useStatsStore((state) => state.stats[serverId] ?? EMPTY_STATS);
   const { latest } = stats;
+
+  useEffect(() => {
+    let active = true;
+    let socket: Awaited<ReturnType<typeof getSocket>> | null = null;
+
+    const subscribe = () => {
+      if (active) socket?.emit("monitor:subscribe", { serverId });
+    };
+
+    void getSocket()
+      .then((connectedSocket) => {
+        if (!active) return;
+        socket = connectedSocket;
+        socket.on("connect", subscribe);
+        subscribe();
+      })
+      .catch(() => {
+        // The empty state remains useful while live monitor events reconnect.
+      });
+
+    return () => {
+      active = false;
+      socket?.off("connect", subscribe);
+      socket?.emit("monitor:unsubscribe", { serverId });
+    };
+  }, [serverId]);
+  const chartData = useMemo(
+    () => stats.cpu.map((cpu, index) => ({
+      cpu,
+      ramMb: stats.ramMb[index] ?? 0,
+      tps: stats.tps[index] ?? 20,
+    })),
+    [stats.cpu, stats.ramMb, stats.tps]
+  );
 
   if (!latest) {
     return (
@@ -29,12 +65,6 @@ export function PerformanceMonitor({ serverId, ramMaxMb }: PerformanceMonitorPro
       />
     );
   }
-
-  const chartData = stats.cpu.map((cpu, index) => ({
-    cpu,
-    ramMb: stats.ramMb[index] ?? 0,
-    tps: stats.tps[index] ?? 20,
-  }));
 
   return (
     <div className="flex flex-col gap-4">
@@ -72,7 +102,7 @@ export function PerformanceMonitor({ serverId, ramMaxMb }: PerformanceMonitorPro
   );
 }
 
-function ChartCard({
+const ChartCard = memo(function ChartCard({
   title,
   color,
   dataKey,
@@ -128,4 +158,4 @@ function ChartCard({
       </ResponsiveContainer>
     </Card>
   );
-}
+});

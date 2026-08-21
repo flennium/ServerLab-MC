@@ -32,7 +32,8 @@ const common = {
   target: "node20",
   format: "cjs",
   external: ["electron"],
-  sourcemap: true,
+  // Production packages exclude maps; opt in locally when debugging bundled code.
+  sourcemap: process.env.SOURCEMAP === "1",
   minify: false,
   alias: sharedAlias,
 };

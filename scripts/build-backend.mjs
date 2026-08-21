@@ -43,7 +43,8 @@ await build({
   ],
   // These packages are copied through electron-builder extraResources.
   packages: "bundle",
-  sourcemap: true,
+  // Production packages exclude maps; opt in locally when debugging the bundle.
+  sourcemap: process.env.SOURCEMAP === "1",
   minify: false, // keep readable for debugging
   define: {
     "process.env.NODE_ENV": '"production"',

@@ -141,8 +141,10 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
 
   useEffect(() => {
     let cleanup = () => {};
+    let disposed = false;
 
     getSocket().then((socket) => {
+      if (disposed) return;
       const handler = (payload: ServerDeleteProgressPayload) => {
         if (payload.serverId !== serverId) return;
         if (payload.status === "failed") {
@@ -163,16 +165,22 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
       };
       socket.on("server:delete-progress", handler);
       cleanup = () => socket.off("server:delete-progress", handler);
-    }).catch((error) => reportError(error, {
+    }).catch((error) => {
+      if (disposed) return;
+      reportError(error, {
       category: "network",
       severity: "warning",
       userMessage: "Live server deletion progress is unavailable.",
       possibleSolution: "Retry after the backend reconnects.",
       source: "renderer:server-detail",
       action: "subscribe-delete-progress",
-    }));
+      });
+    });
 
-    return () => cleanup();
+    return () => {
+      disposed = true;
+      cleanup();
+    };
   }, [serverId]);
 
   if (loading) {

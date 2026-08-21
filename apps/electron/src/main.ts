@@ -1,7 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import path from "path";
 import fs from "fs";
-import { spawn, ChildProcess } from "child_process";
+import fsp from "fs/promises";
+import { execFile, spawn, ChildProcess } from "child_process";
 import { createServer } from "net";
 import http from "http";
 import { autoUpdater } from "electron-updater";
@@ -35,6 +36,11 @@ let updateSettings: UpdateSettings = {
 let lastUpdateCheckAt = 0;
 let latestUpdate: AppUpdateInfo | null = null;
 let updateTimer: NodeJS.Timeout | null = null;
+let initialUpdateTimer: NodeJS.Timeout | null = null;
+let isQuitting = false;
+let launchLogQueue: Promise<void> = Promise.resolve();
+let updaterLogQueue: Promise<void> = Promise.resolve();
+let devRoot: string | null = null;
 
 const isDev = !app.isPackaged;
 const allowMultipleInstances = isDev && process.env.SERVERLAB_ALLOW_MULTI_INSTANCE === "1";
@@ -52,6 +58,7 @@ app.on("second-instance", () => {
 });
 
 function getDevRoot(): string {
+  if (devRoot) return devRoot;
   const candidates = [path.join(__dirname, ".."), path.join(__dirname, "../../..")];
 
   for (const candidate of candidates) {
@@ -59,35 +66,35 @@ function getDevRoot(): string {
       fs.existsSync(path.join(candidate, "package.json")) &&
       fs.existsSync(path.join(candidate, "apps", "backend"))
     ) {
-      return candidate;
+      devRoot = candidate;
+      return devRoot;
     }
   }
 
-  return path.join(__dirname, "../../..");
+  devRoot = path.join(__dirname, "../../..");
+  return devRoot;
 }
 
 function getDataDir(): string {
   if (isDev) {
-    const devDir = path.join(getDevRoot(), "data");
-    fs.mkdirSync(devDir, { recursive: true });
-    return devDir;
+    return path.join(getDevRoot(), "data");
   }
   // app.getPath("userData") = %APPDATA%\ServerLab MC on Windows
   return app.getPath("userData");
 }
 
 function writeLaunchLog(message: string): void {
-  try {
-    const logDir = path.join(getDataDir(), "logs");
-    fs.mkdirSync(logDir, { recursive: true });
-    fs.appendFileSync(
-      path.join(logDir, "electron-main.log"),
-      `[${new Date().toISOString()}] ${message}\n`,
-      "utf8"
-    );
-  } catch {
-    // Logging must never block startup.
-  }
+  const logDir = path.join(getDataDir(), "logs");
+  const logPath = path.join(logDir, "electron-main.log");
+  const line = `[${new Date().toISOString()}] ${message}\n`;
+  launchLogQueue = launchLogQueue
+    .then(async () => {
+      await fsp.mkdir(logDir, { recursive: true });
+      await fsp.appendFile(logPath, line, "utf8");
+    })
+    .catch(() => {
+      // Logging must never block startup or surface a secondary error.
+    });
 }
 
 function createElectronError(input: {
@@ -250,7 +257,7 @@ type ResetDataOptions = {
   logs?: boolean;
 };
 
-function resetDataDirectories(input: ResetDataOptions): string[] {
+async function resetDataDirectories(input: ResetDataOptions): Promise<string[]> {
   const dataDir = getDataDir();
   const removed: string[] = [];
   const targets: Array<[keyof ResetDataOptions, string[]]> = [
@@ -266,8 +273,8 @@ function resetDataDirectories(input: ResetDataOptions): string[] {
       if (!pathInside(target, dataDir) || target === dataDir) {
         throw new Error(`Refusing to reset unsafe data path: ${target}`);
       }
-      fs.rmSync(target, { recursive: true, force: true });
-      fs.mkdirSync(target, { recursive: true });
+      await fsp.rm(target, { recursive: true, force: true });
+      await fsp.mkdir(target, { recursive: true });
       removed.push(directory);
     }
   }
@@ -278,8 +285,8 @@ function resetDataDirectories(input: ResetDataOptions): string[] {
       if (!pathInside(target, dataDir)) {
         throw new Error(`Refusing to reset unsafe temporary path: ${target}`);
       }
-      fs.rmSync(target, { recursive: true, force: true });
-      fs.mkdirSync(target, { recursive: true });
+      await fsp.rm(target, { recursive: true, force: true });
+      await fsp.mkdir(target, { recursive: true });
       removed.push(directory);
     }
   }
@@ -339,30 +346,30 @@ function updaterSettingsPath(): string {
 }
 
 function writeUpdaterLog(event: string, details: Record<string, unknown> = {}): void {
-  try {
-    const logDir = path.join(getDataDir(), "logs");
-    fs.mkdirSync(logDir, { recursive: true });
-    const logPath = path.join(logDir, "updater.log");
-    if (fs.existsSync(logPath) && fs.statSync(logPath).size > 5 * 1024 * 1024) {
-      for (let index = 2; index >= 1; index -= 1) {
-        const source = index === 1 ? logPath : `${logPath}.${index - 1}`;
-        const target = `${logPath}.${index}`;
-        if (fs.existsSync(source)) fs.renameSync(source, target);
+  const logDir = path.join(getDataDir(), "logs");
+  const logPath = path.join(logDir, "updater.log");
+  const line = `${JSON.stringify({ timestamp: new Date().toISOString(), event, ...details })}\n`;
+  updaterLogQueue = updaterLogQueue
+    .then(async () => {
+      await fsp.mkdir(logDir, { recursive: true });
+      const stat = await fsp.stat(logPath).catch(() => null);
+      if (stat && stat.size > 5 * 1024 * 1024) {
+        for (let index = 2; index >= 1; index -= 1) {
+          const source = index === 1 ? logPath : `${logPath}.${index - 1}`;
+          const target = `${logPath}.${index}`;
+          await fsp.rename(source, target).catch(() => {});
+        }
       }
-    }
-    fs.appendFileSync(
-      logPath,
-      `${JSON.stringify({ timestamp: new Date().toISOString(), event, ...details })}\n`,
-      "utf8"
-    );
-  } catch {
-    // Update diagnostics must never prevent the app from running.
-  }
+      await fsp.appendFile(logPath, line, "utf8");
+    })
+    .catch(() => {
+      // Update diagnostics must never prevent the app from running.
+    });
 }
 
-function loadUpdaterSettings(): void {
+async function loadUpdaterSettings(): Promise<void> {
   try {
-    const parsed = JSON.parse(fs.readFileSync(updaterSettingsPath(), "utf8")) as Partial<UpdateSettings>;
+    const parsed = JSON.parse(await fsp.readFile(updaterSettingsPath(), "utf8")) as Partial<UpdateSettings>;
     updateSettings = {
       ...updateSettings,
       autoCheck: parsed.autoCheck !== false,
@@ -376,10 +383,10 @@ function loadUpdaterSettings(): void {
   }
 }
 
-function saveUpdaterSettings(): void {
+async function saveUpdaterSettings(): Promise<void> {
   const settingsPath = updaterSettingsPath();
-  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-  fs.writeFileSync(settingsPath, JSON.stringify(updateSettings, null, 2), "utf8");
+  await fsp.mkdir(path.dirname(settingsPath), { recursive: true });
+  await fsp.writeFile(settingsPath, JSON.stringify(updateSettings, null, 2), "utf8");
 }
 
 function sendUpdaterEvent(channel: string, payload: unknown): void {
@@ -484,9 +491,9 @@ function updaterErrorPayload(error: unknown): UpdateErrorPayload {
   };
 }
 
-function setupUpdater(): void {
+async function setupUpdater(): Promise<void> {
   if (isDev) return;
-  loadUpdaterSettings();
+  await loadUpdaterSettings();
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.allowPrerelease = false;
@@ -563,7 +570,7 @@ async function checkForUpdates(): Promise<UpdateCheckResult> {
   }
   lastUpdateCheckAt = Date.now();
   updateSettings.lastCheckedAt = new Date().toISOString();
-  saveUpdaterSettings();
+  await saveUpdaterSettings();
   sendUpdaterEvent("checking", { checkedAt: updateSettings.lastCheckedAt });
   writeUpdaterLog("check-start", { currentVersion: app.getVersion() });
   const result = await autoUpdater.checkForUpdates();
@@ -630,7 +637,9 @@ function scheduleUpdaterCheck(): void {
   const sixHours = 6 * 60 * 60 * 1000;
   const jitter = Math.floor(Math.random() * 15 * 60 * 1000);
   updateTimer = setTimeout(() => {
-    if (updateSettings.autoCheck) {
+    const windowAvailable =
+      !mainWindow || (mainWindow.isVisible() && !mainWindow.isMinimized());
+    if (updateSettings.autoCheck && windowAvailable) {
       void checkForUpdates().catch(reportUpdaterError);
     }
     scheduleUpdaterCheck();
@@ -691,14 +700,16 @@ async function waitForBackend(timeoutMs = 30000): Promise<void> {
   throw new Error(`Backend did not become ready within ${timeoutMs}ms`);
 }
 
-function startBackend(): void {
+async function startBackend(): Promise<void> {
   const dataDir = getDataDir();
 
-  fs.mkdirSync(path.join(dataDir, "backups"), { recursive: true });
-  fs.mkdirSync(path.join(dataDir, "logs"), { recursive: true });
-  fs.mkdirSync(path.join(dataDir, "servers"), { recursive: true });
-  fs.mkdirSync(path.join(dataDir, "java-runtimes"), { recursive: true });
-  fs.mkdirSync(path.join(dataDir, "software-cache"), { recursive: true });
+  await Promise.all([
+    "backups",
+    "logs",
+    "servers",
+    "java-runtimes",
+    "software-cache",
+  ].map((directory) => fsp.mkdir(path.join(dataDir, directory), { recursive: true })));
 
   const dbPath = path.join(dataDir, "serverlab.db");
 
@@ -715,7 +726,8 @@ function startBackend(): void {
     }
   } else {
     const bundledNode = path.join(process.resourcesPath, "node", "node.exe");
-    command = fs.existsSync(bundledNode) ? bundledNode : process.execPath;
+    const hasBundledNode = await fsp.access(bundledNode).then(() => true).catch(() => false);
+    command = hasBundledNode ? bundledNode : process.execPath;
     args = [path.join(process.resourcesPath, "backend", "dist", "index.js")];
   }
 
@@ -768,10 +780,39 @@ function startBackend(): void {
   });
 }
 
-function stopBackend(): void {
-  if (backendProcess && !backendProcess.killed) {
-    backendProcess.kill("SIGTERM");
+async function stopBackend(): Promise<void> {
+  const child = backendProcess;
+  if (!child) return;
+
+  if (child.exitCode === null && !child.killed) child.kill("SIGTERM");
+
+  await Promise.race([
+    new Promise<void>((resolve) => {
+      if (child.exitCode !== null) {
+        resolve();
+        return;
+      }
+      child.once("exit", () => resolve());
+      child.once("error", () => resolve());
+    }),
+    sleep(25_000),
+  ]);
+
+  if (child.exitCode === null) {
+    writeLaunchLog("[main] backend did not exit after SIGTERM; forcing process exit");
+    if (process.platform === "win32" && child.pid) {
+      await new Promise<void>((resolve) => {
+        execFile(
+          "taskkill",
+          ["/pid", String(child.pid), "/t", "/f"],
+          () => resolve()
+        );
+      });
+    } else {
+      child.kill();
+    }
   }
+  if (backendProcess === child) backendProcess = null;
 }
 
 async function runMigrations(): Promise<void> {
@@ -785,7 +826,7 @@ async function runMigrations(): Promise<void> {
     "schema.prisma"
   );
   const bundledNode = path.join(process.resourcesPath, "node", "node.exe");
-  const hasBundledNode = fs.existsSync(bundledNode);
+  const hasBundledNode = await fsp.access(bundledNode).then(() => true).catch(() => false);
   const nodeCmd = hasBundledNode ? bundledNode : process.execPath;
   const prismaCli = path.join(
     process.resourcesPath,
@@ -795,7 +836,8 @@ async function runMigrations(): Promise<void> {
     "prisma"
   );
 
-  if (!fs.existsSync(prismaCli)) {
+  const hasPrismaCli = await fsp.access(prismaCli).then(() => true).catch(() => false);
+  if (!hasPrismaCli) {
     console.log("[migrations] prisma CLI not found, skipping");
     return;
   }
@@ -925,7 +967,7 @@ safeIpcHandler("app:openInstallDirectory", async () => {
   if (error) throw new Error(error);
 });
 
-safeIpcHandler("app:resetData", (input: ResetDataOptions) => {
+safeIpcHandler("app:resetData", async (input: ResetDataOptions) => {
   if (!input || typeof input !== "object") {
     throw new Error("Invalid reset options.");
   }
@@ -936,7 +978,7 @@ safeIpcHandler("app:resetData", (input: ResetDataOptions) => {
     }
   }
 
-  const removed = resetDataDirectories(input);
+  const removed = await resetDataDirectories(input);
   writeLaunchLog(`[data] reset directories=${removed.join(",") || "none"}`);
   return { removed };
 });
@@ -960,7 +1002,7 @@ safeIpcHandler("logs:export", async () => backendJson("/api/logs/export"));
 
 safeIpcHandler("updater:get-settings", () => updateSettings);
 
-safeIpcHandler("updater:set-settings", (input: Partial<UpdateSettings>) => {
+safeIpcHandler("updater:set-settings", async (input: Partial<UpdateSettings>) => {
   if (typeof input !== "object" || input === null) {
     throw new Error("Invalid updater settings.");
   }
@@ -977,7 +1019,7 @@ safeIpcHandler("updater:set-settings", (input: Partial<UpdateSettings>) => {
     throw new Error("Invalid skipped update version.");
   }
   updateSettings = { ...updateSettings, ...input };
-  saveUpdaterSettings();
+  await saveUpdaterSettings();
   return updateSettings;
 });
 
@@ -985,10 +1027,10 @@ safeIpcHandler("updater:check", () => checkForUpdates());
 safeIpcHandler("updater:download", () => downloadUpdate());
 safeIpcHandler("updater:install", () => installUpdate(false));
 safeIpcHandler("updater:stop-and-install", () => installUpdate(true));
-safeIpcHandler("updater:skip", (version: string) => {
+safeIpcHandler("updater:skip", async (version: string) => {
   if (typeof version !== "string" || !version.trim()) throw new Error("Invalid update version.");
   updateSettings.skippedVersion = version.trim();
-  saveUpdaterSettings();
+  await saveUpdaterSettings();
   return updateSettings;
 });
 
@@ -1028,7 +1070,7 @@ app.whenReady().then(async () => {
   }
   backendPort = await findBackendPort();
   writeLaunchLog(`[main] selected backend port ${backendPort}`);
-  startBackend();
+  await startBackend();
 
   try {
     await waitForBackend();
@@ -1050,9 +1092,12 @@ app.whenReady().then(async () => {
   });
 
   if (!isDev) {
-    setupUpdater();
-    setTimeout(() => {
-      if (updateSettings.autoCheck) {
+    await setupUpdater();
+    initialUpdateTimer = setTimeout(() => {
+      initialUpdateTimer = null;
+      const windowAvailable =
+        !mainWindow || (mainWindow.isVisible() && !mainWindow.isMinimized());
+      if (updateSettings.autoCheck && windowAvailable) {
         void checkForUpdates().catch(reportUpdaterError);
       }
     }, 5_000);
@@ -1061,12 +1106,22 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
-  stopBackend();
   if (process.platform !== "darwin") app.quit();
 });
 
-app.on("before-quit", () => {
-  stopBackend();
+app.on("before-quit", (event) => {
+  if (isQuitting) return;
+  event.preventDefault();
+  isQuitting = true;
+  if (updateTimer) {
+    clearTimeout(updateTimer);
+    updateTimer = null;
+  }
+  if (initialUpdateTimer) {
+    clearTimeout(initialUpdateTimer);
+    initialUpdateTimer = null;
+  }
+  void stopBackend().finally(() => app.quit());
 });
 
 app.on("web-contents-created", (_e, contents) => {
