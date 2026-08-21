@@ -67,6 +67,13 @@ export interface SoftwareDownloadProgressPayload {
   error?: string;
 }
 
+export interface ServerJavaRuntimePayload {
+  serverId: string;
+  runtimeId: string;
+  major: number;
+  reason: string;
+}
+
 export interface SoftwareBuildProgressPayload {
   jobId: string;
   provider: ServerFramework;
@@ -127,6 +134,7 @@ export interface ServerToClientEvents {
   "console:output": (payload: ConsoleOutputPayload) => void;
   "server:status": (payload: ServerStatusPayload) => void;
   "server:stats": (payload: ServerStatsPayload) => void;
+  "server:java-runtime": (payload: ServerJavaRuntimePayload) => void;
   "server:delete-progress": (payload: ServerDeleteProgressPayload) => void;
   "backup:progress": (payload: BackupProgressPayload) => void;
   "software:download-progress": (payload: SoftwareDownloadProgressPayload) => void;

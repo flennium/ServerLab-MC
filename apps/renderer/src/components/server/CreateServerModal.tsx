@@ -144,6 +144,10 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
   const compatibleRuntimes = recommendation
     ? runtimes.filter((runtime) => runtime.status === "valid" && runtime.major >= recommendation.requiredMajor)
     : runtimes.filter((runtime) => runtime.status === "valid");
+  const detectionReady = Boolean(
+    recommendation &&
+      (manualJava || (recommendation.status !== "ambiguous" && recommendation.status !== "unavailable"))
+  );
   const canCreate = useMemo(
     () =>
       Boolean(
@@ -154,6 +158,7 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
           buildId &&
           (!selectedProvider?.requiresEula || eulaAccepted) &&
           (manualJava ? form.javaPath.trim() : javaRuntimeId) &&
+          detectionReady &&
           (provider !== "spigot" || (!manualJava && Boolean(javaRuntimeId))) &&
           portStatus?.available &&
           (provider !== "spigot" || Boolean(selectedBuild?.cached || buildProgress?.status === "completed")) &&
@@ -168,6 +173,7 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
       form.javaPath,
       form.name,
       form.path,
+      detectionReady,
       javaRuntimeId,
       loading,
       manualJava,
@@ -629,7 +635,9 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
     if (!selectedProvider?.enabled) return setError(selectedProvider?.reasonUnavailable ?? "Provider unavailable.");
     if (!minecraftVersion || !buildId) return setError("Choose a Minecraft version and build.");
     if (selectedProvider?.requiresEula && !eulaAccepted) return setError("Accept the Minecraft EULA before creating the server.");
-    if (!manualJava && !javaRuntimeId) return setError("Install or select a compatible Java runtime.");
+    if (!manualJava && (!javaRuntimeId || !recommendation || recommendation.status === "ambiguous" || recommendation.status === "unavailable")) {
+      return setError("Confirm the server JAR Java requirement and select a compatible runtime.");
+    }
 
     const requestId = crypto.randomUUID();
     setActiveDownloadId(requestId);
@@ -676,7 +684,41 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
     }
   }
 
-  function nextStep() {
+  async function prepareSoftwareForJava() {
+    if (provider === "spigot" && !selectedBuild?.cached && buildProgress?.status !== "completed") {
+      throw new Error("Complete the Spigot BuildTools build before choosing Java.");
+    }
+
+    if (provider !== "spigot" && !selectedBuild?.cached) {
+      const requestId = crypto.randomUUID();
+      setActiveDownloadId(requestId);
+      setSoftwareProgress(null);
+      await api.post("/api/software/downloads", {
+        provider,
+        minecraftVersion,
+        buildId,
+        requestId,
+      });
+      setActiveDownloadId(null);
+      setSoftwareProgress(null);
+      setBuilds((current) => current.map((build) => build.id === buildId ? { ...build, cached: true } : build));
+    }
+
+    const result = await api.get<{
+      cached: boolean;
+      recommendation: JavaRecommendationResponse | null;
+    }>(`/api/software/cache/java-recommendation?provider=${encodeURIComponent(provider)}&minecraftVersion=${encodeURIComponent(minecraftVersion)}&buildId=${encodeURIComponent(buildId)}`);
+    if (!result.cached || !result.recommendation) {
+      throw new Error("The selected server JAR could not be inspected yet.");
+    }
+    setRecommendation(result.recommendation);
+    if (!manualJava) {
+      setJavaRuntimeId(result.recommendation.compatibleRuntime?.id ?? "");
+      if (result.recommendation.compatibleRuntime) set("javaPath", result.recommendation.compatibleRuntime.executablePath);
+    }
+  }
+
+  async function nextStep() {
     setError(null);
     if (step === 1 && (!form.name.trim() || !form.path.trim())) {
       setError("Add a server name and folder before continuing.");
@@ -686,7 +728,25 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
       setError("Choose an available framework, Minecraft version, and build.");
       return;
     }
-    if (step === 3 && (!manualJava && !javaRuntimeId || provider === "spigot" && manualJava)) {
+    if (step === 2) {
+      setLoading(true);
+      try {
+        await prepareSoftwareForJava();
+      } catch (error) {
+        setError(reportError(error, {
+          category: "download",
+          userMessage: "The selected server software could not be prepared for Java detection.",
+          possibleSolution: "Retry the download or choose a cached build before continuing.",
+          source: "renderer:create-server",
+          action: "prepare-server-software",
+        }).userMessage);
+        setLoading(false);
+        setActiveDownloadId(null);
+        return;
+      }
+      setLoading(false);
+    }
+    if (step === 3 && ((!manualJava && (!javaRuntimeId || !recommendation || recommendation.status === "ambiguous" || recommendation.status === "unavailable")) || provider === "spigot" && manualJava)) {
       setError("Install or select a compatible Java runtime before continuing.");
       return;
     }
@@ -819,7 +879,7 @@ export function CreateServerModal({ onClose }: CreateServerModalProps) {
           <Button type="button" onClick={onClose} disabled={loading} icon={X} variant="secondary">Cancel</Button>
           <div className="flex gap-2">
             {step > 1 && <Button type="button" disabled={loading} onClick={() => { setError(null); setStep((current) => current - 1); }} variant="secondary">Back</Button>}
-            {step < 4 ? <Button type="button" onClick={nextStep} variant="primary">Continue</Button> : step === 4 ? <Button type="submit" disabled={!canCreate} icon={loading ? Download : Plus} variant="primary">{loading ? "Creating..." : "Create server"}</Button> : <Button type="button" disabled icon={Download} variant="primary">Installing...</Button>}
+            {step < 4 ? <Button type="button" onClick={() => void nextStep()} disabled={loading} variant="primary">{loading ? "Checking server JAR..." : "Continue"}</Button> : step === 4 ? <Button type="submit" disabled={!canCreate} icon={loading ? Download : Plus} variant="primary">{loading ? "Creating..." : "Create server"}</Button> : <Button type="button" disabled icon={Download} variant="primary">Installing...</Button>}
           </div>
         </div>
       </form>
@@ -864,12 +924,12 @@ function JavaRuntimePanel({
         <div className="flex items-center gap-2">
           <Coffee className="h-4 w-4 text-copper" aria-hidden="true" />
           <span className="font-semibold text-white">Java runtime</span>
-          {recommendation && <span className="rounded border border-border bg-surface-console px-2 py-1 text-xs text-muted">Java {recommendation.requiredMajor} required</span>}
+          {recommendation && <span className="rounded border border-border bg-surface-console px-2 py-1 text-xs text-muted">Minimum Java {recommendation.minimumMajor}</span>}
         </div>
         <div className="flex gap-2">
           <Button type="button" onClick={onScan} icon={RefreshCw} variant="secondary" size="sm">Scan</Button>
-          {!manualJava && recommendation?.missing && (
-            <Button type="button" onClick={onInstall} disabled={installing} icon={Download} variant="primary" size="sm">Install Java {recommendation.requiredMajor}</Button>
+          {!manualJava && recommendation?.missing && recommendation.status !== "ambiguous" && recommendation.status !== "unavailable" && (
+            <Button type="button" onClick={onInstall} disabled={installing} icon={Download} variant="primary" size="sm">Install Java {recommendation.minimumMajor}</Button>
           )}
         </div>
       </div>
@@ -894,6 +954,23 @@ function JavaRuntimePanel({
       <div className="mt-3 rounded border border-border bg-surface-console px-3 py-3">
         <Switch label="Use manual Java path" checked={manualJava} onChange={setManualJava} />
       </div>
+
+      {recommendation && (
+        <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+          <div className="rounded border border-border bg-surface-console px-3 py-2 text-muted">
+            <span className="text-white">Requirement:</span> Java {recommendation.minimumMajor}
+            {recommendation.recommendedMajor !== recommendation.minimumMajor ? ` (recommended ${recommendation.recommendedMajor})` : ""}
+          </div>
+          <div className="rounded border border-border bg-surface-console px-3 py-2 text-muted">
+            <span className="text-white">Detection:</span> {recommendation.status} via {recommendation.source}
+          </div>
+          {recommendation.status === "ambiguous" || recommendation.status === "unavailable" ? (
+            <div className="sm:col-span-2">
+              <Alert tone="warning">The server JAR requirement is not confirmed. Scan again or use an explicit manual Java path after reviewing the compatibility details.</Alert>
+            </div>
+          ) : null}
+        </div>
+      )}
 
       {progress && (
         <div className="mt-3">

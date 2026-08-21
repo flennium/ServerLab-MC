@@ -458,6 +458,7 @@ function ServerSettings({
   );
   const [portStatus, setPortStatus] = useState<PortStatus | null>(null);
   const [runtimeLoading, setRuntimeLoading] = useState(false);
+  const [refreshingRuntime, setRefreshingRuntime] = useState(false);
   const manualJava = form.javaOverrideMode === "manual";
   const selectedRuntime = useMemo(
     () => runtimes.find((runtime) => runtime.id === form.javaRuntimeId) ?? null,
@@ -471,15 +472,14 @@ function ServerSettings({
     }
     if (!selectedRuntime) return "Select a Java runtime before saving.";
     if (!recommendation) return null;
-    if (selectedRuntime.major < recommendation.requiredMajor) {
-      return `Java ${recommendation.requiredMajor} is required for ${server.software} ${server.version}.`;
+    if (recommendation.status === "ambiguous" || recommendation.status === "unavailable") {
+      return "The server JAR Java requirement needs verification before automatic runtime selection.";
     }
-    if (
-      server.software !== "waterfall" &&
-      selectedRuntime.major > recommendation.requiredMajor &&
-      !form.allowUnsupportedJava
-    ) {
-      return `Java ${selectedRuntime.major} is newer than the recommended Java ${recommendation.requiredMajor}. Enable unsupported Java only if you want this override.`;
+    if (selectedRuntime.major < recommendation.minimumMajor) {
+      return `Java ${recommendation.minimumMajor} is required for ${server.software} ${server.version}.`;
+    }
+    if (recommendation.maximumMajor && selectedRuntime.major > recommendation.maximumMajor && !form.allowUnsupportedJava) {
+      return `Java ${selectedRuntime.major} is above the supported maximum Java ${recommendation.maximumMajor}. Enable the advanced override only if you understand the risk.`;
     }
     return null;
   }, [
@@ -536,13 +536,18 @@ function ServerSettings({
   }, [server.id, server.software, server.version]);
 
   useEffect(() => {
-    if (manualJava || form.javaRuntimeId || !recommendation?.compatibleRuntime) return;
+    if (manualJava || !recommendation?.compatibleRuntime) return;
+    const selected = runtimes.find((runtime) => runtime.id === form.javaRuntimeId);
+    const selectedCompatible = selected &&
+      selected.major >= recommendation.minimumMajor &&
+      (!recommendation.maximumMajor || selected.major <= recommendation.maximumMajor);
+    if (selectedCompatible) return;
     setForm((current) => ({
       ...current,
       javaRuntimeId: recommendation.compatibleRuntime?.id ?? current.javaRuntimeId,
       javaPath: recommendation.compatibleRuntime?.executablePath ?? current.javaPath,
     }));
-  }, [form.javaRuntimeId, manualJava, recommendation]);
+  }, [form.javaRuntimeId, manualJava, recommendation, runtimes]);
 
   function set<K extends keyof UpdateServerDto>(key: K, value: UpdateServerDto[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -585,6 +590,39 @@ function ServerSettings({
       }).userMessage);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleRefreshRuntime() {
+    setRefreshingRuntime(true);
+    setError(null);
+    try {
+      const result = await api.post<{
+        server: ServerModel;
+        recommendation: JavaRecommendationResponse;
+        autoSelectedRuntime: boolean;
+      }>(`/api/servers/${server.id}/java/refresh`);
+      setRecommendation(result.recommendation);
+      if (result.autoSelectedRuntime && result.server.javaRuntimeId) {
+        setForm((current) => ({
+          ...current,
+          javaRuntimeId: result.server.javaRuntimeId,
+          javaPath: result.server.javaPath,
+        }));
+      }
+      await fetchServers();
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2500);
+    } catch (error) {
+      setError(reportError(error, {
+        category: "java",
+        userMessage: "The server JAR Java requirement could not be refreshed.",
+        possibleSolution: "Check that server.jar exists, then retry or choose a manual runtime.",
+        source: "renderer:server-settings",
+        action: "refresh-java-requirement",
+      }).userMessage);
+    } finally {
+      setRefreshingRuntime(false);
     }
   }
 
@@ -687,16 +725,24 @@ function ServerSettings({
           <div className="min-w-0">
             <div className="mb-2 flex items-center gap-2">
               <ShieldAlert className="h-4 w-4 text-copper" aria-hidden="true" />
-              <h3 className="font-display text-sm font-semibold text-white">
-                Compatibility
-              </h3>
+              <h3 className="font-display text-sm font-semibold text-white">Compatibility</h3>
+              <Button
+                type="button"
+                onClick={handleRefreshRuntime}
+                icon={RotateCcw}
+                variant="secondary"
+                size="sm"
+                disabled={refreshingRuntime}
+              >
+                {refreshingRuntime ? "Checking..." : "Rescan JAR"}
+              </Button>
             </div>
             <div className="grid min-w-0 gap-2">
               <LabelValue label="Server" value={`${server.software} ${server.version}`} />
               <LabelValue
-                label="Required Java"
+                label="Minimum Java"
                 value={
-                  recommendation ? `Java ${recommendation.requiredMajor}` : "Checking..."
+                  recommendation ? `Java ${recommendation.minimumMajor}` : "Checking..."
                 }
               />
               <LabelValue
@@ -706,6 +752,14 @@ function ServerSettings({
               <LabelValue
                 label="Detection method"
                 value={recommendation?.detection?.method ?? "Provider/version fallback"}
+              />
+              <LabelValue
+                label="Status"
+                value={recommendation?.status ?? "Checking..."}
+              />
+              <LabelValue
+                label="Source"
+                value={recommendation?.source ?? "Unknown"}
               />
             </div>
           </div>

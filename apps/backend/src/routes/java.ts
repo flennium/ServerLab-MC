@@ -96,6 +96,7 @@ javaRoutes.get("/guidance", async (_req, res, next) => {
         sourceUrl: recommendation.sourceUrl,
         detectionMethod: recommendation.detection?.method ?? null,
         detectionConfidence: recommendation.detection?.confidence ?? null,
+        detectionStatus: recommendation.status,
         warnings: recommendation.warnings,
         checkedAt: recommendation.checkedAt,
       };
@@ -137,7 +138,7 @@ javaRoutes.post("/installations", async (req, res, next) => {
   try {
     const body = req.body as InstallJdkDto;
     const major = Number(body.major);
-    if (!Number.isInteger(major) || major < 8 || major > 25) {
+    if (!Number.isInteger(major) || major < 8 || major > 99) {
       throw badRequest("major must be a supported Java version");
     }
     const result = await javaInstallService.install({

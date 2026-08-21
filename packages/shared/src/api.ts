@@ -491,13 +491,21 @@ export interface JavaRecommendationResponse {
   minecraftVersion: string;
   software: ServerSoftware;
   requiredMajor: number;
+  minimumMajor: number;
+  maximumMajor: number | null;
   recommendedMajor: number;
   confidence: "jar" | "metadata" | "rules" | "fallback" | "unknown";
+  status: "confirmed" | "provisional" | "ambiguous" | "unavailable";
   detection: JavaRequirementDetection | null;
   source: "jar-class-files" | "jar-metadata" | "online-provider-metadata" | "official-guidance" | "fallback-rules";
   sourceUrl: string | null;
   checkedAt: string;
+  artifactSha256: string | null;
+  artifactSizeBytes: number | null;
+  artifactCheckedAt: string | null;
   compatibleRuntime: JavaRuntime | null;
+  autoSelectedRuntime: boolean;
+  runtimeSelectionReason: string | null;
   installedRuntimes: JavaRuntime[];
   missing: boolean;
   warnings: string[];
@@ -518,6 +526,7 @@ export interface JavaGuidanceEntry {
   sourceUrl: string | null;
   detectionMethod: string | null;
   detectionConfidence: "high" | "medium" | "low" | "unknown" | null;
+  detectionStatus?: JavaRecommendationResponse["status"];
   warnings: string[];
   checkedAt: string;
 }

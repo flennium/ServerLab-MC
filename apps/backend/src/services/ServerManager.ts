@@ -146,50 +146,127 @@ class ServerManager {
     software: string;
     path: string;
   }): Promise<string> {
-    if (server.javaOverrideMode === "manual" || !server.javaRuntimeId) {
-      const validated = await javaRuntimeValidator.validateExecutable(server.javaPath);
-      await this.assertJavaCompatible(server, validated.major);
-      return server.javaPath;
-    }
-
-    const runtime = await javaRuntimeRegistry.getRuntime(server.javaRuntimeId);
-    if (!runtime)
-      throw new Error("Selected Java runtime is missing. Choose or install a runtime.");
-    const validated = await javaRuntimeValidator.validateRuntime(runtime);
-    if (validated.status !== "valid") {
-      throw new Error(
-        "Selected Java runtime is missing or corrupted. Validate, repair, or choose another runtime."
-      );
-    }
-
-    await this.assertJavaCompatible(server, validated.major);
-
-    await javaRuntimeRegistry.touchUsed(validated.id);
-    return validated.executablePath;
-  }
-
-  private async assertJavaCompatible(
-    server: { id: string; path: string; version: string; software: string; allowUnsupportedJava: boolean },
-    major: number
-  ): Promise<void> {
     const recommendation = await javaRecommendationService.recommend({
       minecraftVersion: server.version,
       software: server.software,
       artifactPath: path.join(server.path, "server.jar"),
       serverId: server.id,
     });
-    if (javaRecommendationService.isCompatible(major, recommendation.requiredMajor, server.allowUnsupportedJava, server.software)) {
-      return;
+
+    if (
+      (recommendation.status === "ambiguous" || recommendation.status === "unavailable") &&
+      !server.allowUnsupportedJava &&
+      server.javaOverrideMode !== "manual"
+    ) {
+      throw new HttpError(
+        409,
+        "The server JAR Java requirement could not be confirmed.",
+        "java",
+        "warning",
+        "Rescan the server JAR or enable the advanced compatibility override after reviewing the detection details.",
+        ["retry", "open-settings", "open-java-center", "copy-details", "dismiss"]
+      );
     }
 
-    throw new HttpError(
-      409,
-      `Java ${recommendation.requiredMajor} is required for ${server.software} ${server.version}.`,
-      "java",
-      "warning",
-      `Install or select Java ${recommendation.requiredMajor} in the Java Runtime Center, then start the server again.`,
-      ["retry", "open-java-center", "copy-details", "dismiss"]
+    if (server.javaOverrideMode === "manual") {
+      const validated = await javaRuntimeValidator.validateExecutable(server.javaPath || "java");
+      if (!javaRecommendationService.isCompatible(
+        validated.major,
+        recommendation.requiredMajor,
+        server.allowUnsupportedJava,
+        server.software,
+        recommendation.maximumMajor
+      )) {
+        throw new HttpError(
+          409,
+          `Java ${recommendation.requiredMajor} is required, but Java ${validated.major} is selected.`,
+          "java",
+          "warning",
+          `Select or install Java ${recommendation.requiredMajor} in the Java Runtime Center, then start the server again.`,
+          ["retry", "open-java-center", "open-settings", "copy-details", "dismiss"]
+        );
+      }
+      return server.javaPath || "java";
+    }
+
+    let runtime = server.javaRuntimeId
+      ? await javaRuntimeRegistry.getRuntime(server.javaRuntimeId)
+      : null;
+    let validated = runtime
+      ? await javaRuntimeValidator.validateRuntime(runtime)
+      : null;
+    const currentIsCompatible = Boolean(
+      validated?.status === "valid" &&
+      javaRecommendationService.isCompatible(
+        validated.major,
+        recommendation.requiredMajor,
+        server.allowUnsupportedJava,
+        server.software,
+        recommendation.maximumMajor
+      )
     );
+
+    if (!currentIsCompatible) {
+      const replacement = recommendation.compatibleRuntime;
+      if (replacement) {
+        validated = await javaRuntimeValidator.validateRuntime(replacement);
+        if (validated.status === "valid") {
+          runtime = validated;
+          await prisma.server.update({
+            where: { id: server.id },
+            data: {
+              javaRuntimeId: validated.id,
+              javaPath: validated.executablePath,
+              javaRequirementMajor: recommendation.minimumMajor,
+              javaRequirementConfidence: recommendation.detection?.confidence ?? null,
+              javaRequirementMethod: recommendation.detection?.method ?? null,
+              javaRequirementDetails: JSON.stringify({
+                minimumMajor: recommendation.minimumMajor,
+                maximumMajor: recommendation.maximumMajor,
+                status: recommendation.status,
+                artifactSha256: recommendation.artifactSha256,
+                artifactSizeBytes: recommendation.artifactSizeBytes,
+                artifactCheckedAt: recommendation.artifactCheckedAt,
+                indicators: recommendation.detection?.indicators ?? [],
+                warnings: recommendation.warnings,
+                runtimeAutoSelected: true,
+              }),
+              javaRequirementDetectedAt: new Date(),
+            },
+          });
+          io.emit("server:java-runtime", {
+            serverId: server.id,
+            runtimeId: validated.id,
+            major: validated.major,
+            reason: `Selected the lowest compatible managed runtime for Java ${recommendation.minimumMajor}.`,
+          });
+        }
+      }
+    }
+
+    if (
+      !validated ||
+      validated.status !== "valid" ||
+      !javaRecommendationService.isCompatible(
+        validated.major,
+        recommendation.requiredMajor,
+        server.allowUnsupportedJava,
+        server.software,
+        recommendation.maximumMajor
+      )
+    ) {
+      throw new HttpError(
+        409,
+        `Java ${recommendation.requiredMajor} is required, but no compatible runtime is selected.`,
+        "java",
+        "warning",
+        `Install or select Java ${recommendation.requiredMajor} in the Java Runtime Center, then start the server again.`,
+        ["retry", "open-java-center", "open-settings", "copy-details", "dismiss"]
+      );
+    }
+
+    await javaRuntimeRegistry.touchUsed(validated.id);
+    return validated.executablePath;
   }
 
   private async setStatus(serverId: string, status: ServerStatus) {

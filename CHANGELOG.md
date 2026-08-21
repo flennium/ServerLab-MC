@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.4.3
+
+### Fixed
+
+- Server and proxy Java requirements are now detected from the actual JAR class files, including nested launcher archives.
+- Prevented Java 17 from being selected for artifacts compiled for Java 25.
+- Automatically switches automatic-mode servers to the lowest compatible managed runtime before startup.
+- Added server JAR rescanning and clearer compatibility status, source, confidence, and runtime guidance.
+
+### Improved
+
+- The Create Server wizard prepares the selected software artifact before showing Java installation guidance.
+- Java runtime installation now accepts future provider-supported majors instead of stopping at Java 25.
+
+### Changed
+
+- Bumped app and workspace versions to `3.4.3`.
+
 ## 3.4.2
 
 ### Improved

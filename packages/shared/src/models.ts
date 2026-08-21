@@ -60,10 +60,13 @@ export type JavaRuntimeStatus =
 export type JavaOverrideMode = "automatic" | "manual";
 
 export type JavaRequirementConfidence = "high" | "medium" | "low" | "unknown";
+export type JavaRequirementStatus = "confirmed" | "provisional" | "ambiguous" | "unavailable";
 export type JavaRequirementMethod =
   | "class-file"
+  | "nested-class-file"
   | "bootstrap-metadata"
   | "manifest"
+  | "provider-metadata"
   | "fallback"
   | "ambiguous"
   | "unknown";
@@ -253,11 +256,17 @@ export interface SoftwareDownload {
 
 export interface JavaRequirementDetection {
   requiredMajor: number | null;
+  minimumMajor: number | null;
+  maximumMajor: number | null;
   confidence: JavaRequirementConfidence;
+  status: JavaRequirementStatus;
   method: JavaRequirementMethod;
   jarPath: string;
   classFileMajor: number | null;
   metadataMajor: number | null;
+  artifactSha256: string | null;
+  artifactSizeBytes: number | null;
+  artifactCheckedAt: string;
   indicators: string[];
   warnings: string[];
 }

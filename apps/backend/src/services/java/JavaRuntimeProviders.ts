@@ -68,8 +68,8 @@ abstract class BaseJavaProvider implements JavaRuntimeProvider {
   validateResolvedRuntime(runtime: ResolvedJavaRuntime): void {
     assertAllowedJavaUrl(runtime.downloadUrl, this.allowedHosts);
     if (runtime.checksumUrl) assertAllowedJavaUrl(runtime.checksumUrl, this.allowedHosts);
-    if (!this.supportedMajors.includes(runtime.major)) {
-      throw new Error(`${this.label} does not support Java ${runtime.major}`);
+    if (!Number.isInteger(runtime.major) || runtime.major < 8 || runtime.major > 99) {
+      throw new Error(`${this.label} returned an invalid Java major ${runtime.major}`);
     }
   }
 

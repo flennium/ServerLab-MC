@@ -13,7 +13,6 @@ import { spigotBuildService } from "../services/software/SpigotBuildService.js";
 import { javaRuntimeRegistry } from "../services/java/JavaRuntimeRegistry.js";
 import { javaRuntimeValidator } from "../services/java/JavaRuntimeValidator.js";
 import { javaRecommendationService } from "../services/java/JavaRecommendationService.js";
-import { javaRequirementDetectionService } from "../services/java/JavaRequirementDetectionService.js";
 import {
   PortConflictError,
   portManagerService,
@@ -33,6 +32,7 @@ import type {
   DuplicateFileDto,
   PluginInstallRequest,
   ServerDeleteProgressPayload,
+  SoftwareArtifact,
 } from "@serverlab/shared";
 
 export const serverRoutes = Router();
@@ -129,7 +129,7 @@ async function resolveJavaSelection(input: {
   recommendation: Awaited<ReturnType<typeof javaRecommendationService.recommend>>;
 }> {
   const javaOverrideMode =
-    input.javaOverrideMode ?? (input.javaRuntimeId ? "automatic" : "manual");
+    input.javaOverrideMode ?? (input.strict || input.javaRuntimeId ? "automatic" : "manual");
   const allowUnsupportedJava = input.allowUnsupportedJava ?? false;
 
   const recommendation = await javaRecommendationService.recommend({
@@ -139,14 +139,27 @@ async function resolveJavaSelection(input: {
     serverId: input.serverId,
   });
 
+  if (
+    input.strict &&
+    (recommendation.status === "ambiguous" || recommendation.status === "unavailable") &&
+    !allowUnsupportedJava &&
+    javaOverrideMode !== "manual"
+  ) {
+    throw badRequest(
+      "The server JAR Java requirement could not be confirmed. Rescan the artifact or explicitly enable the advanced compatibility override.",
+      "java"
+    );
+  }
+
   if (javaOverrideMode === "manual") {
     try {
-      const validated = await javaRuntimeValidator.validateExecutable(input.javaPath);
+      const validated = await javaRuntimeValidator.validateExecutable(input.javaPath || "java");
       if (!javaRecommendationService.isCompatible(
         validated.major,
         recommendation.requiredMajor,
         allowUnsupportedJava,
-        input.software
+        input.software,
+        recommendation.maximumMajor
       )) {
         throw new Error(`Java ${recommendation.requiredMajor} is required for ${input.software}.`);
       }
@@ -159,7 +172,7 @@ async function resolveJavaSelection(input: {
     }
     return {
       javaRuntimeId: null,
-      javaPath: input.javaPath,
+      javaPath: input.javaPath || "java",
       javaOverrideMode,
       allowUnsupportedJava,
       recommendation,
@@ -178,21 +191,39 @@ async function resolveJavaSelection(input: {
     }
     return {
       javaRuntimeId: null,
-      javaPath: input.javaPath,
+      javaPath: input.javaPath || "java",
       javaOverrideMode: "manual",
       allowUnsupportedJava,
       recommendation,
     };
   }
 
-  const validated = await javaRuntimeValidator.validateRuntime(runtime);
+  let validated = await javaRuntimeValidator.validateRuntime(runtime);
+  const selectedIsCompatible =
+    validated.status === "valid" &&
+    javaRecommendationService.isCompatible(
+      validated.major,
+      recommendation.requiredMajor,
+      allowUnsupportedJava,
+      input.software,
+      recommendation.maximumMajor
+    );
+
+  if (!selectedIsCompatible) {
+    const replacement = recommendation.compatibleRuntime;
+    if (replacement) {
+      validated = await javaRuntimeValidator.validateRuntime(replacement);
+    }
+  }
+
   if (
     validated.status !== "valid" ||
     !javaRecommendationService.isCompatible(
       validated.major,
       recommendation.requiredMajor,
       allowUnsupportedJava,
-      input.software
+      input.software,
+      recommendation.maximumMajor
     )
   ) {
     throw badRequest(
@@ -210,15 +241,36 @@ async function resolveJavaSelection(input: {
 }
 
 async function refreshJavaRequirement(serverId: string, serverPath: string): Promise<void> {
-  const jarPath = path.join(serverPath, "server.jar");
-  const detection = await javaRequirementDetectionService.detect(jarPath);
+  const server = await prisma.server.findUniqueOrThrow({ where: { id: serverId } });
+  const recommendation = await javaRecommendationService.recommend({
+    minecraftVersion: server.version,
+    software: server.software,
+    artifactPath: path.join(serverPath, "server.jar"),
+    serverId,
+  });
+  const canAutoSelect =
+    server.javaOverrideMode === "automatic" &&
+    recommendation.status !== "ambiguous" &&
+    recommendation.status !== "unavailable" &&
+    recommendation.compatibleRuntime;
   await prisma.server.update({
     where: { id: serverId },
     data: {
-      javaRequirementMajor: detection.requiredMajor,
-      javaRequirementConfidence: detection.confidence,
-      javaRequirementMethod: detection.method,
-      javaRequirementDetails: JSON.stringify({ indicators: detection.indicators, warnings: detection.warnings }),
+      javaRuntimeId: canAutoSelect ? recommendation.compatibleRuntime!.id : undefined,
+      javaPath: canAutoSelect ? recommendation.compatibleRuntime!.executablePath : undefined,
+      javaRequirementMajor: recommendation.detection?.requiredMajor ?? recommendation.minimumMajor,
+      javaRequirementConfidence: recommendation.detection?.confidence ?? null,
+      javaRequirementMethod: recommendation.detection?.method ?? null,
+      javaRequirementDetails: JSON.stringify({
+        minimumMajor: recommendation.minimumMajor,
+        maximumMajor: recommendation.maximumMajor,
+        status: recommendation.status,
+        artifactSha256: recommendation.artifactSha256,
+        artifactSizeBytes: recommendation.artifactSizeBytes,
+        artifactCheckedAt: recommendation.artifactCheckedAt,
+        indicators: recommendation.detection?.indicators ?? [],
+        warnings: recommendation.warnings,
+      }),
       javaRequirementDetectedAt: new Date(),
     },
   });
@@ -268,9 +320,9 @@ serverRoutes.post("/", async (req, res, next) => {
     const port = body.port ?? (await portManagerService.suggestPort());
     await portManagerService.assertAvailableForServer(port, null, bindAddress);
 
+    const requestId = body.softwareSource?.requestId;
+    let artifact: SoftwareArtifact | null = null;
     if (body.softwareSource) {
-      const requestId = body.softwareSource.requestId;
-      let artifact;
       if (body.softwareSource.sourceType === "build" || body.softwareSource.provider === "spigot") {
         artifact = await softwareCacheService.findValidArtifact(
           "spigot",
@@ -303,17 +355,6 @@ serverRoutes.post("/", async (req, res, next) => {
           requestId,
         });
         artifact = result.artifact;
-        if (requestId) await softwareDownloadService.markStage(requestId, "installing-server-files");
-      }
-      await serverSoftwareInstaller.install({
-        artifact,
-        serverPath: body.path,
-        eulaAccepted: body.eulaAccepted === true,
-        requiresEula,
-      });
-      if (requestId) {
-        if (requiresEula) await softwareDownloadService.markStage(requestId, "writing-eula");
-        await softwareDownloadService.markStage(requestId, "done");
       }
     }
 
@@ -325,8 +366,22 @@ serverRoutes.post("/", async (req, res, next) => {
       javaOverrideMode: body.javaOverrideMode,
       allowUnsupportedJava: body.allowUnsupportedJava,
       strict: Boolean(body.softwareSource),
-      artifactPath: path.join(body.path, "server.jar"),
+      artifactPath: artifact?.cachedPath ?? path.join(body.path, "server.jar"),
     });
+
+    if (artifact) {
+      if (requestId) await softwareDownloadService.markStage(requestId, "installing-server-files");
+      await serverSoftwareInstaller.install({
+        artifact,
+        serverPath: body.path,
+        eulaAccepted: body.eulaAccepted === true,
+        requiresEula,
+      });
+      if (requestId) {
+        if (requiresEula) await softwareDownloadService.markStage(requestId, "writing-eula");
+        await softwareDownloadService.markStage(requestId, "done");
+      }
+    }
 
     const server = await prisma.server.create({
       data: {
@@ -344,6 +399,12 @@ serverRoutes.post("/", async (req, res, next) => {
         javaRequirementMethod: javaSelection.recommendation.detection?.method ?? null,
         javaRequirementDetails: javaSelection.recommendation.detection
           ? JSON.stringify({
+              minimumMajor: javaSelection.recommendation.minimumMajor,
+              maximumMajor: javaSelection.recommendation.maximumMajor,
+              status: javaSelection.recommendation.status,
+              artifactSha256: javaSelection.recommendation.artifactSha256,
+              artifactSizeBytes: javaSelection.recommendation.artifactSizeBytes,
+              artifactCheckedAt: javaSelection.recommendation.artifactCheckedAt,
               indicators: javaSelection.recommendation.detection.indicators,
               warnings: javaSelection.recommendation.detection.warnings,
             })
@@ -377,6 +438,56 @@ serverRoutes.get("/:id", async (req, res, next) => {
       where: { id: req.params.id },
     });
     res.json({ server });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/servers/:id/java/refresh
+serverRoutes.post("/:id/java/refresh", async (req, res, next) => {
+  try {
+    const existing = await prisma.server.findUniqueOrThrow({ where: { id: req.params.id } });
+    const recommendation = await javaRecommendationService.recommend({
+      minecraftVersion: existing.version,
+      software: existing.software,
+      artifactPath: path.join(existing.path, "server.jar"),
+      serverId: existing.id,
+    });
+
+    let server = existing;
+    if (
+      existing.javaOverrideMode === "automatic" &&
+      recommendation.status !== "ambiguous" &&
+      recommendation.status !== "unavailable" &&
+      recommendation.compatibleRuntime &&
+      recommendation.compatibleRuntime.id !== existing.javaRuntimeId
+    ) {
+      server = await prisma.server.update({
+        where: { id: existing.id },
+        data: {
+          javaRuntimeId: recommendation.compatibleRuntime.id,
+          javaPath: recommendation.compatibleRuntime.executablePath,
+          javaRequirementMajor: recommendation.minimumMajor,
+          javaRequirementConfidence: recommendation.detection?.confidence ?? null,
+          javaRequirementMethod: recommendation.detection?.method ?? null,
+          javaRequirementDetails: recommendation.detection
+            ? JSON.stringify({
+                minimumMajor: recommendation.minimumMajor,
+                maximumMajor: recommendation.maximumMajor,
+                status: recommendation.status,
+                artifactSha256: recommendation.artifactSha256,
+                artifactSizeBytes: recommendation.artifactSizeBytes,
+                artifactCheckedAt: recommendation.artifactCheckedAt,
+                indicators: recommendation.detection.indicators,
+                warnings: recommendation.detection.warnings,
+              })
+            : null,
+          javaRequirementDetectedAt: new Date(),
+        },
+      });
+    }
+
+    res.json({ server, recommendation, autoSelectedRuntime: server.javaRuntimeId !== existing.javaRuntimeId });
   } catch (err) {
     next(err);
   }
@@ -442,7 +553,16 @@ serverRoutes.patch("/:id/java-runtime", async (req, res, next) => {
         javaRequirementConfidence: recommendation.detection?.confidence ?? null,
         javaRequirementMethod: recommendation.detection?.method ?? null,
         javaRequirementDetails: recommendation.detection
-          ? JSON.stringify({ indicators: recommendation.detection.indicators, warnings: recommendation.detection.warnings })
+          ? JSON.stringify({
+              minimumMajor: recommendation.minimumMajor,
+              maximumMajor: recommendation.maximumMajor,
+              status: recommendation.status,
+              artifactSha256: recommendation.artifactSha256,
+              artifactSizeBytes: recommendation.artifactSizeBytes,
+              artifactCheckedAt: recommendation.artifactCheckedAt,
+              indicators: recommendation.detection.indicators,
+              warnings: recommendation.detection.warnings,
+            })
           : undefined,
         javaRequirementDetectedAt: recommendation.detection ? new Date() : undefined,
       },

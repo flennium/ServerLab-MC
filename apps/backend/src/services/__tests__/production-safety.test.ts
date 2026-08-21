@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { FileConflictError, FileManager } from "../FileManager.js";
 import { parseStartupArgs } from "../ProcessArgs.js";
 import { parseJavaVersionOutput } from "../java/JavaRuntimeValidator.js";
-import { minimumJavaMajorForMinecraft } from "../java/JavaRecommendationService.js";
+import { javaRecommendationService, minimumJavaMajorForMinecraft } from "../java/JavaRecommendationService.js";
 import { assertAllowedHttpsUrl, softwareProviderRegistry } from "../software/providers.js";
 import { BuildToolsProvider } from "../software/BuildToolsProvider.js";
 import { portManagerService } from "../PortManagerService.js";
@@ -120,9 +120,39 @@ describe("JAR Java requirement detection", () => {
       await rm(parent, { recursive: true, force: true });
     }
   });
+
+  it("treats the highest class-file version as authoritative over lower metadata", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "serverlab-jar-authority-"));
+    const jarPath = path.join(parent, "authoritative.jar");
+    try {
+      await writeFile(jarPath, storedZip([
+        { name: "META-INF/MANIFEST.MF", data: Buffer.from("Manifest-Version: 1.0\nBuild-Jdk-Spec: 17\n") },
+        { name: "com/example/Main.class", data: classFile(69) },
+      ]));
+      const result = await javaRequirementDetectionService.detect(jarPath);
+      expect(result).toMatchObject({
+        minimumMajor: 25,
+        requiredMajor: 25,
+        status: "confirmed",
+        method: "class-file",
+        artifactSizeBytes: expect.any(Number),
+      });
+      expect(result.warnings.some((warning) => /metadata/i.test(warning))).toBe(true);
+      expect(result.artifactSha256).toMatch(/^[a-f0-9]{64}$/);
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("Minecraft Java recommendations", () => {
+  it("accepts newer runtimes when they meet the minimum", () => {
+    expect(javaRecommendationService.isCompatible(25, 17, false)).toBe(true);
+    expect(javaRecommendationService.isCompatible(17, 25, false)).toBe(false);
+    expect(javaRecommendationService.isCompatible(26, 17, false, "paper", 25)).toBe(false);
+    expect(javaRecommendationService.isCompatible(26, 17, true, "paper", 25)).toBe(true);
+  });
+
   it("requires Java 25 for Fabric-era Minecraft 1.21.9 and newer", () => {
     expect(minimumJavaMajorForMinecraft("1.21.9")).toBe(25);
     expect(minimumJavaMajorForMinecraft("1.21.11")).toBe(25);

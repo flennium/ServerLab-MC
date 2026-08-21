@@ -4,7 +4,9 @@ import { softwareProviderRegistry } from "../services/software/providers.js";
 import { softwareCacheService } from "../services/software/SoftwareCacheService.js";
 import { softwareDownloadService } from "../services/software/SoftwareDownloadService.js";
 import { spigotBuildService } from "../services/software/SpigotBuildService.js";
+import { javaRecommendationService } from "../services/java/JavaRecommendationService.js";
 import { badRequest, HttpError } from "../middleware/error.js";
+import path from "path";
 
 export const softwareRoutes = Router();
 
@@ -140,6 +142,30 @@ softwareRoutes.post("/downloads", async (req, res, next) => {
       requestId: typeof req.body.requestId === "string" ? req.body.requestId : undefined,
     });
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+softwareRoutes.get("/cache/java-recommendation", async (req, res, next) => {
+  try {
+    const provider = providerId(req.query.provider);
+    const minecraftVersion = String(req.query.minecraftVersion ?? "");
+    const buildId = String(req.query.buildId ?? "");
+    if (!minecraftVersion || !buildId) {
+      throw badRequest("provider, minecraftVersion, and buildId are required", "java");
+    }
+    const artifact = await softwareCacheService.findValidArtifact(provider, minecraftVersion, buildId);
+    if (!artifact) {
+      res.json({ cached: false, recommendation: null });
+      return;
+    }
+    const recommendation = await javaRecommendationService.recommend({
+      minecraftVersion,
+      software: provider,
+      artifactPath: path.resolve(artifact.cachedPath),
+    });
+    res.json({ cached: true, recommendation });
   } catch (err) {
     next(err);
   }

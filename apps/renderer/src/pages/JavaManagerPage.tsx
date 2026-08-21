@@ -15,7 +15,7 @@ import { reportError } from "../lib/errorStore.js";
 import { Alert, Card, DangerZone, ManagementHeader, StatTile } from "../components/ui/Layout.js";
 import { Button, IconButton } from "../components/ui/Button.js";
 import { ConfirmModal } from "../components/ui/ConfirmModal.js";
-import { Field, Select } from "../components/ui/Form.js";
+import { Field, Select, TextInput } from "../components/ui/Form.js";
 import {
   getTerminalJobMessage,
   isSuccessfulJobStatus,
@@ -69,10 +69,8 @@ export function JavaManagerPage() {
 
   const providerOptions = useMemo(
     () =>
-      providers.filter(
-        (item) => item.enabled && item.supportedMajors.includes(installMajor)
-      ),
-    [installMajor, providers]
+      providers.filter((item) => item.enabled),
+    [providers]
   );
 
   useEffect(() => {
@@ -379,17 +377,14 @@ export function JavaManagerPage() {
             </h2>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="Java major">
-              <Select
+            <Field label="Java major" hint="Enter any major offered by the selected provider, including future releases.">
+              <TextInput
+                type="number"
+                min={8}
+                max={99}
                 value={installMajor}
                 onChange={(event) => setInstallMajor(Number(event.target.value))}
-              >
-                {INSTALL_TARGETS.map((major) => (
-                  <option key={major} value={major}>
-                    Java {major}
-                  </option>
-                ))}
-              </Select>
+              />
             </Field>
             <Field label="Provider">
               <Select

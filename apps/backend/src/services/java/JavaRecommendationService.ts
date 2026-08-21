@@ -23,51 +23,53 @@ export class JavaRecommendationService {
     const detection = input.artifactPath
       ? await javaRequirementDetectionService.detect(input.artifactPath)
       : null;
-    const jarMajor = detection?.requiredMajor ?? null;
-    const providerMetadata = jarMajor
+    const jarMajor = detection?.minimumMajor ?? detection?.requiredMajor ?? null;
+    const providerMetadata = jarMajor || detection?.status === "confirmed"
       ? null
       : await this.tryProviderMetadata(input.minecraftVersion, input.software);
     const proxyRule = proxyJavaRule(input.software, input.minecraftVersion);
     const fallbackMajor = proxyRule?.minimum ?? minimumJavaMajorForMinecraft(input.minecraftVersion);
     const providerMetadataMajor = providerMetadata?.major ?? null;
-    const requiredMajor = jarMajor ?? providerMetadataMajor ?? fallbackMajor;
+    const minimumMajor = jarMajor ?? providerMetadataMajor ?? fallbackMajor;
+    const requiredMajor = minimumMajor ?? 21;
     const confidence = jarMajor
-      ? "jar"
+      ? detection?.status === "confirmed" ? "jar" : "fallback"
       : providerMetadataMajor
         ? "metadata"
-        : requiredMajor
-          ? detection?.method === "ambiguous"
-            ? "fallback"
-            : "rules"
+        : minimumMajor
+          ? "rules"
           : "unknown";
-    const recommendedMajor = jarMajor ?? providerMetadataMajor ?? proxyRule?.recommended ?? requiredMajor ?? 21;
-    const selectionMajor = requiredMajor ?? recommendedMajor;
+    const recommendedMajor = proxyRule?.recommended ?? providerMetadataMajor ?? minimumMajor ?? 21;
     const source = jarMajor
-      ? detection?.method === "class-file" ? "jar-class-files" : "jar-metadata"
+      ? detection?.method === "class-file" || detection?.method === "nested-class-file" ? "jar-class-files" : "jar-metadata"
       : providerMetadata
         ? "online-provider-metadata"
         : proxyRule
           ? "official-guidance"
           : "fallback-rules";
-    const sourceUrl = detection?.method === "class-file" || detection?.method === "manifest" || detection?.method === "bootstrap-metadata"
+    const sourceUrl = detection?.method === "class-file" || detection?.method === "nested-class-file" || detection?.method === "manifest" || detection?.method === "bootstrap-metadata"
       ? null
       : providerMetadata?.sourceUrl ?? proxyRule?.sourceUrl ?? "https://docs.papermc.io/paper/getting-started/";
     const installedRuntimes = await javaRuntimeRegistry.listRuntimes();
     const compatibleRuntime =
       installedRuntimes
-        .filter((runtime) => runtime.status === "valid" && runtime.major >= selectionMajor)
+        .filter((runtime) => runtime.status === "valid" && runtime.major >= requiredMajor && (!proxyRule?.maximum || runtime.major <= proxyRule.maximum))
         .sort((a, b) => a.major - b.major || Number(a.source === "system") - Number(b.source === "system"))[0] ??
       null;
     const warnings: string[] = [...(detection?.warnings ?? [])];
+    // A fallback is provisional only when there was no artifact to inspect.
+    // Once a JAR was supplied, an unreadable or ambiguous inspection must stay
+    // visible as such so startup and creation cannot silently guess.
+    const status = detection ? detection.status : "provisional";
 
-    if (!requiredMajor) {
+    if (!minimumMajor) {
       warnings.push("Java compatibility is unknown for this version.");
     } else if (compatibleRuntime && compatibleRuntime.major > recommendedMajor) {
-      warnings.push(`Java ${compatibleRuntime.major} is newer than the recommended Java ${recommendedMajor}.`);
+      warnings.push(`Java ${compatibleRuntime.major} is newer than the recommended Java ${recommendedMajor}, but meets the minimum requirement.`);
     }
 
-    if (detection?.confidence === "low" || detection?.confidence === "unknown") {
-      warnings.push("The JAR requirement could not be confirmed from class files; the displayed Java version is a safe provider fallback.");
+    if (detection?.status === "ambiguous" || detection?.status === "unavailable") {
+      warnings.push("The JAR requirement could not be confirmed; the displayed version is provisional and needs a rescan or explicit advanced confirmation.");
     }
 
     if (input.serverId && detection) {
@@ -77,7 +79,16 @@ export class JavaRecommendationService {
           javaRequirementMajor: detection.requiredMajor,
           javaRequirementConfidence: detection.confidence,
           javaRequirementMethod: detection.method,
-          javaRequirementDetails: JSON.stringify({ indicators: detection.indicators, warnings: detection.warnings }),
+          javaRequirementDetails: JSON.stringify({
+            minimumMajor: detection.minimumMajor,
+            maximumMajor: detection.maximumMajor,
+            status: detection.status,
+            artifactSha256: detection.artifactSha256,
+            artifactSizeBytes: detection.artifactSizeBytes,
+            artifactCheckedAt: detection.artifactCheckedAt,
+            indicators: detection.indicators,
+            warnings: detection.warnings,
+          }),
           javaRequirementDetectedAt: new Date(),
         },
       }).catch(() => {});
@@ -86,16 +97,26 @@ export class JavaRecommendationService {
     return {
       minecraftVersion: input.minecraftVersion,
       software: input.software as ServerSoftware,
-      requiredMajor: requiredMajor ?? recommendedMajor,
+      requiredMajor,
+      minimumMajor: requiredMajor,
+      maximumMajor: proxyRule?.maximum ?? null,
       recommendedMajor,
       confidence,
+      status,
       detection,
       source,
       sourceUrl,
       checkedAt: new Date().toISOString(),
+      artifactSha256: detection?.artifactSha256 ?? null,
+      artifactSizeBytes: detection?.artifactSizeBytes ?? null,
+      artifactCheckedAt: detection?.artifactCheckedAt ?? null,
       compatibleRuntime,
+      autoSelectedRuntime: Boolean(compatibleRuntime),
+      runtimeSelectionReason: compatibleRuntime
+        ? `Lowest valid runtime meeting Java ${requiredMajor}`
+        : `No valid managed runtime meets Java ${requiredMajor}`,
       installedRuntimes,
-      missing: !compatibleRuntime,
+      missing: !compatibleRuntime || status === "ambiguous" || status === "unavailable",
       warnings,
     };
   }
@@ -104,11 +125,11 @@ export class JavaRecommendationService {
     runtimeMajor: number,
     requiredMajor: number,
     allowUnsupported: boolean,
-    software?: string
+    _software?: string,
+    maximumMajor?: number | null
   ): boolean {
     if (runtimeMajor < requiredMajor) return false;
-    if (software === "waterfall") return true;
-    if (runtimeMajor > requiredMajor && !allowUnsupported) return false;
+    if (maximumMajor && runtimeMajor > maximumMajor && !allowUnsupported) return false;
     return true;
   }
 
@@ -124,7 +145,8 @@ export class JavaRecommendationService {
       );
       if (!response.ok) return null;
       const data = (await response.json()) as PaperVersionMetadata;
-      const major = data.version?.java?.version?.minimum;
+      const rawMajor = data.version?.java?.version?.minimum;
+      const major = parseJavaMajor(rawMajor);
       return major ? { major, sourceUrl: `https://fill.papermc.io/v3/projects/${software}/versions/${encodeURIComponent(minecraftVersion)}` } : null;
     } catch {
       return null;
@@ -133,10 +155,18 @@ export class JavaRecommendationService {
 
 }
 
+function parseJavaMajor(value: unknown): number | null {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 8) return value;
+  if (typeof value !== "string") return null;
+  const match = value.match(/(?:^|\D)(1\.)?(\d{1,3})(?:\D|$)/);
+  const major = match ? Number(match[2]) : NaN;
+  return Number.isInteger(major) && major >= 8 ? major : null;
+}
+
 function proxyJavaRule(
   software: string,
   _version: string
-): { minimum: number; recommended: number; sourceUrl: string } | null {
+): { minimum: number; recommended: number; maximum?: number; sourceUrl: string } | null {
   switch (software) {
     case "velocity":
       return { minimum: 21, recommended: 25, sourceUrl: "https://docs.papermc.io/velocity/faq/" };

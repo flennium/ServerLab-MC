@@ -1,5 +1,8 @@
 import fs from "fs/promises";
+import fsSync from "fs";
 import path from "path";
+import os from "os";
+import crypto from "crypto";
 import { inflateRawSync } from "zlib";
 import type { JavaRequirementDetection } from "@serverlab/shared";
 
@@ -9,6 +12,8 @@ const ZIP_LOCAL_SIGNATURE = 0x04034b50;
 const MAX_CENTRAL_DIRECTORY_BYTES = 64 * 1024 * 1024;
 const MAX_METADATA_BYTES = 8 * 1024 * 1024;
 const MAX_CLASS_ENTRIES = 250_000;
+const MAX_NESTED_ARCHIVE_BYTES = 64 * 1024 * 1024;
+const MAX_NESTED_ARCHIVES = 8;
 
 interface ZipEntry {
   name: string;
@@ -25,16 +30,30 @@ interface ClassVersionSummary {
 }
 
 function emptyDetection(jarPath: string, warning: string): JavaRequirementDetection {
+  const checkedAt = new Date().toISOString();
   return {
     requiredMajor: null,
+    minimumMajor: null,
+    maximumMajor: null,
     confidence: "unknown",
+    status: "unavailable",
     method: "unknown",
     jarPath,
     classFileMajor: null,
     metadataMajor: null,
+    artifactSha256: null,
+    artifactSizeBytes: null,
+    artifactCheckedAt: checkedAt,
     indicators: [],
     warnings: [warning],
   };
+}
+
+async function hashFile(filePath: string): Promise<string> {
+  const hash = crypto.createHash("sha256");
+  const stream = fsSync.createReadStream(filePath);
+  for await (const chunk of stream) hash.update(chunk as Buffer);
+  return hash.digest("hex");
 }
 
 function javaMajorFromClassFile(classFileMajor: number): number | null {
@@ -184,7 +203,7 @@ async function scanClassVersions(handle: fs.FileHandle, entries: ZipEntry[]): Pr
 }
 
 export class JavaRequirementDetectionService {
-  async detect(jarPath: string): Promise<JavaRequirementDetection> {
+  async detect(jarPath: string, depth = 0): Promise<JavaRequirementDetection> {
     const resolvedPath = path.resolve(jarPath);
     const handle = await fs.open(resolvedPath, "r").catch(() => null);
     if (!handle) return emptyDetection(resolvedPath, "The server JAR could not be opened for Java detection.");
@@ -194,6 +213,9 @@ export class JavaRequirementDetectionService {
       if (!stat.isFile() || stat.size < 4) {
         return emptyDetection(resolvedPath, "The server JAR is missing or empty.");
       }
+
+      const artifactSha256 = await hashFile(resolvedPath).catch(() => null);
+      const artifactCheckedAt = new Date().toISOString();
 
       const entries = await readZipEntries(handle, stat.size);
       const byName = new Map(entries.map((entry) => [entry.name, entry]));
@@ -226,8 +248,8 @@ export class JavaRequirementDetectionService {
       }
 
       const classes = await scanClassVersions(handle, entries);
-      const classMajor = classes.major;
-      const classJavaMajor = classMajor === null ? null : javaMajorFromClassFile(classMajor);
+      let classMajor = classes.major;
+      let classJavaMajor = classMajor === null ? null : javaMajorFromClassFile(classMajor);
       if (classMajor !== null) {
         indicators.push(`Scanned ${classes.count} class files; highest class-file version is ${classMajor} (Java ${classJavaMajor}).`);
       }
@@ -235,27 +257,72 @@ export class JavaRequirementDetectionService {
         warnings.push(`${classes.unsupportedEntries} class entries could not be inspected.`);
       }
 
+      // Fabric and launcher-based distributions may embed the actual server
+      // classes in a nested JAR. Inspect a small, bounded set of archives so
+      // detection remains safe for untrusted or malformed server files.
+      if (depth < 1) {
+        const nestedEntries = entries
+          .filter((entry) => entry.name.toLowerCase().endsWith(".jar") && entry.uncompressedSize <= MAX_NESTED_ARCHIVE_BYTES)
+          .slice(0, MAX_NESTED_ARCHIVES);
+        for (const entry of nestedEntries) {
+          const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "serverlab-java-detect-"));
+          const nestedPath = path.join(tempRoot, "nested.jar");
+          try {
+            await fs.writeFile(nestedPath, await readZipEntry(handle, entry, MAX_NESTED_ARCHIVE_BYTES));
+            const nested = await this.detect(nestedPath, depth + 1);
+            if (nested.classFileMajor !== null && (!classMajor || nested.classFileMajor > classMajor)) {
+              classMajor = nested.classFileMajor;
+              classJavaMajor = nested.minimumMajor;
+              indicators.push(`Nested archive ${entry.name} requires Java ${classJavaMajor}.`);
+            }
+            if (nested.metadataMajor && (!metadataMajor || nested.metadataMajor > metadataMajor)) {
+              metadataMajor = nested.metadataMajor;
+            }
+            indicators.push(...nested.indicators.map((indicator) => `${entry.name}: ${indicator}`));
+            warnings.push(...nested.warnings.map((warning) => `${entry.name}: ${warning}`));
+          } catch (error) {
+            warnings.push(`Nested archive ${entry.name} could not be inspected: ${error instanceof Error ? error.message : "invalid archive"}`);
+          } finally {
+            await fs.rm(tempRoot, { recursive: true, force: true }).catch(() => {});
+          }
+        }
+      }
+
       if (classJavaMajor !== null) {
         return {
           requiredMajor: classJavaMajor,
+          minimumMajor: classJavaMajor,
+          maximumMajor: null,
           confidence: classes.unsupportedEntries > 0 ? "medium" : "high",
-          method: "class-file",
+          status: "confirmed",
+          method: depth > 0 ? "nested-class-file" : "class-file",
           jarPath: resolvedPath,
           classFileMajor: classMajor,
           metadataMajor,
+          artifactSha256,
+          artifactSizeBytes: stat.size,
+          artifactCheckedAt,
           indicators,
-          warnings,
+          warnings: metadataMajor && metadataMajor !== classJavaMajor
+            ? [...warnings, `Metadata reports Java ${metadataMajor}, but class files require Java ${classJavaMajor}; class files are authoritative.`]
+            : warnings,
         };
       }
 
       if (metadataMajor !== null) {
         return {
           requiredMajor: metadataMajor,
+          minimumMajor: metadataMajor,
+          maximumMajor: null,
           confidence: "medium",
+          status: "provisional",
           method: manifestEntry ? "manifest" : "bootstrap-metadata",
           jarPath: resolvedPath,
           classFileMajor: null,
           metadataMajor,
+          artifactSha256,
+          artifactSizeBytes: stat.size,
+          artifactCheckedAt,
           indicators,
           warnings: [...warnings, "Class files were not available; Java was read from JAR metadata."],
         };
@@ -263,11 +330,17 @@ export class JavaRequirementDetectionService {
 
       return {
         requiredMajor: null,
+        minimumMajor: null,
+        maximumMajor: null,
         confidence: "low",
+        status: "ambiguous",
         method: "ambiguous",
         jarPath: resolvedPath,
         classFileMajor: null,
         metadataMajor: null,
+        artifactSha256,
+        artifactSizeBytes: stat.size,
+        artifactCheckedAt,
         indicators,
         warnings: [...warnings, "The JAR did not expose a reliable Java requirement."],
       };
