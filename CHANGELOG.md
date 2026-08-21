@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.4.2
+
+### Improved
+
+- Reworked the Modrinth Plugins tab into a fixed-height workspace for faster browsing.
+- Kept the Installed/Browse switch, search controls, and selected plugin showcase visible while plugin results scroll independently.
+- Added clearer result counts, active project styling, responsive narrow-window layout, and a quick search-clear control.
+
+### Changed
+
+- Bumped app and workspace versions to `3.4.2`.
+
 ## 3.4.1
 
 ### Improved

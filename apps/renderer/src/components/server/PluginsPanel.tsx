@@ -4,11 +4,13 @@ import {
   CheckCircle2,
   Download,
   ExternalLink,
+  ListFilter,
   Package,
   Power,
   RefreshCw,
   Search,
   Trash2,
+  X,
 } from "lucide-react";
 import { api } from "../../lib/apiClient.js";
 import { getSocket } from "../../lib/socket.js";
@@ -369,19 +371,25 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
   }, [reportError, server.id]);
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex w-fit items-center gap-1 rounded border border-border bg-rail p-1" role="tablist" aria-label="Plugin workspace">
-        <button type="button" role="tab" aria-selected={viewMode === "installed"} onClick={() => setViewMode("installed")} className={clsx("rounded px-3 py-1.5 text-xs font-semibold transition-colors", viewMode === "installed" ? "bg-copper text-carbon" : "text-muted hover:text-white")}>
-          Installed <span className="ml-1 font-mono">{plugins.length}</span>
-        </button>
-        <button type="button" role="tab" aria-selected={viewMode === "browse"} onClick={() => setViewMode("browse")} className={clsx("rounded px-3 py-1.5 text-xs font-semibold transition-colors", viewMode === "browse" ? "bg-copper text-carbon" : "text-muted hover:text-white")}>
-          Browse Modrinth
-        </button>
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-rail p-1.5" role="tablist" aria-label="Plugin workspace">
+        <div className="flex items-center gap-1">
+          <button type="button" role="tab" aria-selected={viewMode === "installed"} onClick={() => setViewMode("installed")} className={clsx("rounded-md px-3 py-1.5 text-xs font-semibold transition-colors", viewMode === "installed" ? "bg-copper text-carbon" : "text-muted hover:text-white")}>
+            Installed <span className="ml-1 font-mono">{plugins.length}</span>
+          </button>
+          <button type="button" role="tab" aria-selected={viewMode === "browse"} onClick={() => setViewMode("browse")} className={clsx("rounded-md px-3 py-1.5 text-xs font-semibold transition-colors", viewMode === "browse" ? "bg-copper text-carbon" : "text-muted hover:text-white")}>
+            Browse Modrinth
+          </button>
+        </div>
+        <div className="flex items-center gap-2 px-2 text-[0.68rem] text-muted">
+          <ListFilter className="h-3.5 w-3.5 text-copper" aria-hidden="true" />
+          <span>{viewMode === "browse" ? `${totalResults ? formatNumber(totalResults) : "No"} matching plugins` : "Server plugin inventory"}</span>
+        </div>
       </div>
 
-      <div className="grid min-h-[620px] gap-4">
-      <Card className={clsx("flex min-h-[520px] flex-col overflow-hidden", viewMode !== "installed" && "hidden")}>
-        <div className="border-b border-border bg-carbon px-4 py-3">
+      <div className="min-h-0 flex-1">
+      <Card className={clsx("flex h-full min-h-0 flex-col overflow-hidden", viewMode !== "installed" && "hidden")}>
+        <div className="shrink-0 border-b border-border bg-carbon px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="font-display text-base font-semibold text-white">Installed plugins</h2>
@@ -410,7 +418,7 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
         )}
         {error && <div className="m-3 mb-0"><InlineError error={error} /></div>}
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
           {plugins.length === 0 && !pluginsLoading ? (
             <EmptyState
               icon={<Package className="h-10 w-10" aria-hidden="true" />}
@@ -434,9 +442,15 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
         </div>
       </Card>
 
-      <Card className={clsx("flex min-h-[520px] flex-col overflow-hidden", viewMode !== "browse" && "hidden")}>
-        <div className="border-b border-border bg-carbon px-4 py-3">
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_10rem_9rem_auto]">
+      <Card className={clsx("grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden", viewMode !== "browse" && "hidden")}>
+        <div className="shrink-0 border-b border-border bg-carbon px-4 py-3">
+          <form
+            className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_10rem_9rem_auto]"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void searchProjects();
+            }}
+          >
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted" />
               <TextInput
@@ -446,10 +460,21 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
                   if (event.key === "Enter") void searchProjects();
                 }}
                 placeholder="Search Modrinth plugins"
-                className="h-9 pl-9 text-sm"
+                aria-label="Search Modrinth plugins"
+                className="h-9 pl-9 pr-9 text-sm"
               />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  className="absolute right-2 top-1.5 grid h-6 w-6 place-items-center rounded text-muted hover:bg-rail hover:text-white"
+                  aria-label="Clear plugin search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
-            <Select value={sort} onChange={(event) => setSort(event.target.value)} className="h-9 py-1 text-xs">
+            <Select aria-label="Sort plugin results" value={sort} onChange={(event) => setSort(event.target.value)} className="h-9 py-1 text-xs">
               {SORTS.map((item) => (
                 <option key={item.value} value={item.value}>{item.label}</option>
               ))}
@@ -458,16 +483,25 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
               value={category}
               onChange={(event) => setCategory(event.target.value)}
               placeholder="Category"
+              aria-label="Filter by plugin category"
               className="h-9 text-xs"
             />
-            <Button onClick={() => void searchProjects()} disabled={searching} icon={Search} variant="primary" size="sm">
+            <Button type="submit" disabled={searching} icon={Search} variant="primary" size="sm">
               {searching ? "Searching" : "Search"}
             </Button>
+          </form>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[0.68rem] text-muted">
+            <span>Search official Modrinth plugin projects for this server.</span>
+            <span className="font-mono">{results.length > 0 ? `${results.length} loaded` : "Ready"}</span>
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(220px,0.8fr)_minmax(300px,1.2fr)]">
-          <div className="min-h-0 overflow-y-auto border-b border-border md:border-b-0 md:border-r">
+        <div className="grid min-h-0 h-full grid-rows-[minmax(190px,0.8fr)_minmax(250px,1.2fr)] md:grid-cols-[minmax(220px,0.8fr)_minmax(300px,1.2fr)] md:grid-rows-1">
+          <div className="min-h-0 overflow-y-auto overscroll-contain border-b border-border md:border-b-0 md:border-r">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-surface-console/95 px-4 py-2 text-[0.68rem] text-muted backdrop-blur">
+              <span className="font-semibold uppercase tracking-[0.14em]">Plugin projects</span>
+              <span className="font-mono">{results.length}/{totalResults || 0}</span>
+            </div>
             {results.length === 0 ? (
               <div className="px-4 py-10 text-center text-sm text-muted">
                 Search results appear here. Compatibility is shown on each result, so projects with
@@ -481,8 +515,9 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
                   onClick={() => openProject(project)}
                   className={clsx(
                     "grid w-full gap-1 border-b border-border px-3 py-3 text-left transition-colors hover:bg-rail",
-                    selectedProject?.id === project.id && "bg-rail"
+                    selectedProject?.id === project.id && "border-l-2 border-l-copper bg-rail"
                   )}
+                  aria-current={selectedProject?.id === project.id ? "true" : undefined}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate font-semibold text-white">{project.title}</span>
@@ -510,7 +545,7 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
             )}
           </div>
 
-          <div className="min-h-0 overflow-y-auto p-4">
+          <div className="min-h-0 overflow-hidden p-4">
             {!selectedProject ? (
               <EmptyState
                 icon={<Search className="h-10 w-10" aria-hidden="true" />}
@@ -518,7 +553,7 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
                 description="Select a Modrinth result to review versions and install it."
               />
             ) : (
-              <div className="grid gap-4">
+              <div className="grid gap-3">
                 <div className="flex items-start gap-3">
                   {selectedProject.iconUrl ? (
                     <img src={selectedProject.iconUrl} alt="" className="h-12 w-12 rounded border border-border" />
@@ -529,7 +564,7 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
                   )}
                   <div className="min-w-0 flex-1">
                     <h3 className="truncate font-display text-lg font-semibold text-white">{selectedProject.title}</h3>
-                    <p className="mt-1 text-sm leading-6 text-muted">{selectedProject.description}</p>
+                    <p className="mt-1 line-clamp-3 text-sm leading-6 text-muted">{selectedProject.description}</p>
                     <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted">
                       {selectedProject.author && <span>by {selectedProject.author}</span>}
                       <span>{formatNumber(selectedProject.downloads)} downloads</span>
@@ -548,7 +583,7 @@ export function PluginsPanel({ server }: PluginsPanelProps) {
                   </a>
                 </div>
 
-                <Field label="Version">
+                <Field label="Version" hint={selectedVersion ? `${selectedVersion.files.length} downloadable file${selectedVersion.files.length === 1 ? "" : "s"}` : "Loading versions..."}>
                   <Select value={selectedVersionId} onChange={(event) => setSelectedVersionId(event.target.value)}>
                     {versions.map((version) => (
                       <option key={version.id} value={version.id}>

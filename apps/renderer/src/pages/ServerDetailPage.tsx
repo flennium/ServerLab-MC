@@ -357,7 +357,7 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
       <div
         className={clsx(
           "min-h-0 flex-1 overscroll-contain pr-1",
-          tab === "console" ? "overflow-hidden" : "overflow-y-auto"
+          tab === "console" || tab === "plugins" ? "overflow-hidden" : "overflow-y-auto"
         )}
       >
         <AnimatePresence mode="wait">
@@ -365,7 +365,7 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
             key={tab}
             className={clsx(
               "relative z-0",
-              tab === "console" ? "h-full min-h-0" : "min-h-full"
+              tab === "console" || tab === "plugins" ? "h-full min-h-0" : "min-h-full"
             )}
             initial={reduceMotion ? false : { opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
@@ -375,7 +375,7 @@ export function ServerDetailPage({ serverId }: { serverId: string }) {
             <Suspense
               fallback={
                 <Skeleton
-                  className={tab === "console" ? "h-full min-h-0 w-full" : "h-64 w-full"}
+                  className={tab === "console" || tab === "plugins" ? "h-full min-h-0 w-full" : "h-64 w-full"}
                 />
               }
             >
